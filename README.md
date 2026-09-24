@@ -14,9 +14,11 @@ database rather than an in-memory queue, so they survive restarts and crashes.
 go get github.com/rafaelaugustos/kiln
 go get github.com/rafaelaugustos/kiln/pgstore
 go get github.com/rafaelaugustos/kiln/mysqlstore
+go get github.com/rafaelaugustos/kiln/sqlitestore
 ```
 
-`kiln` itself has no external dependencies; `pgstore` pulls in `pgx/v5`.
+Requires Go 1.27. `kiln` itself has no external dependencies; each store module pulls in only what its
+database needs (`pgstore` uses `pgx/v5`, the others take a `*sql.DB` from the driver you already use).
 
 ## Quick start
 
@@ -202,6 +204,7 @@ implementation must pass.
 |---|---|---|
 | PostgreSQL (CI runs 17) | `pgstore` | `LISTEN`/`NOTIFY` wakeups, pgx v5, schema option |
 | MySQL 8.0.19+ (CI runs 8.4) | `mysqlstore` | any `*sql.DB`, table prefix option, servers poll instead of being notified |
+| SQLite 3.35+ | `sqlitestore` | any `database/sql` driver, WAL, servers in the same process are notified, others poll |
 | in memory | `memstore` | tests and single-process tools |
 
 Every backend passes the same conformance suite, `drivertest.Run`, so the semantics (retries,
@@ -218,16 +221,39 @@ db, _ := sql.Open("mysql", "user:pass@tcp(localhost:3306)/app")
 store, err := mysqlstore.New(ctx, db)
 ```
 
+`sqlitestore` is tested with `modernc.org/sqlite` (no cgo), `mattn/go-sqlite3` and
+`ncruces/go-sqlite3`. SQLite allows one writer at a time, so the store keeps one pooled connection
+for its writes and starts every write transaction with `BEGIN IMMEDIATE`; reads run alongside it in
+WAL mode.
+
+```go
+db, _ := sql.Open("sqlite", "file:app.db?_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)&_txlock=immediate")
+store, err := sqlitestore.New(ctx, db)
+```
+
+- `busy_timeout` has to be in the DSN: it is set per connection, and `New` rejects a pool without it.
+- `New` switches the file to WAL. In-memory databases cannot use WAL; use `memstore` for those.
+- Use `_txlock=immediate` for transactions you pass to `store.Tx`, and keep them short: while one is
+  open, every other writer on the file waits, kiln's servers included.
+- Leave `SetMaxOpenConns` at 2 or more.
+
+## Upgrading
+
+Every release is tested against the previous one on the same database: the `compat` module runs the
+published version and the new code side by side while jobs move between them. Schema changes only ever
+add things, so servers on two consecutive versions can run together during a rolling deploy.
+
 ## Performance
 
-Apple M4 Max, databases in Docker on the same machine. Medians; see the benchmark code for ranges.
+Apple M4 Max. PostgreSQL and MySQL run in Docker on the same machine; SQLite writes to the local SSD
+with `synchronous=NORMAL`. Medians; see the benchmark code for ranges.
 
-| | PostgreSQL | MySQL 8.4 |
-|---|---|---|
-| Bulk insert, 10k jobs per call | ~250k jobs/s | ~77k jobs/s |
-| Claim + finish, 50 per fetch | ~45k jobs/s | ~15k jobs/s |
-| One server, 100 workers, no-op handler | ~21k jobs/s | ~6k jobs/s |
-| Enqueue to handler start | p50 3.3ms, p99 6.6ms | bounded by `PollInterval` |
+| | PostgreSQL | MySQL 8.4 | SQLite (modernc) |
+|---|---|---|---|
+| Bulk insert, 10k jobs per call | ~250k jobs/s | ~77k jobs/s | ~300k jobs/s |
+| Claim + finish, 50 per fetch | ~45k jobs/s | ~15k jobs/s | ~80k jobs/s |
+| One server, 100 workers, no-op handler | ~21k jobs/s | ~6k jobs/s | ~70k jobs/s |
+| Enqueue to handler start | p50 3.3ms, p99 6.6ms | bounded by `PollInterval` | p50 0.16ms in the same process |
 
 The MySQL numbers are dominated by commit latency on this setup (binlog with `sync_binlog=1`,
 4-6ms per commit); a server with a faster disk will do noticeably better.
