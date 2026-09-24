@@ -1,8 +1,6 @@
-module github.com/rafaelaugustos/kiln/compat
+module github.com/rafaelaugustos/kiln/compat/v020
 
 go 1.27.0
-
-toolchain go1.27.1
 
 require (
 	github.com/go-sql-driver/mysql v1.10.1
@@ -30,11 +28,4 @@ require (
 	modernc.org/libc v1.75.7 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
-)
-
-replace (
-	github.com/rafaelaugustos/kiln => ../
-	github.com/rafaelaugustos/kiln/mysqlstore => ../mysqlstore
-	github.com/rafaelaugustos/kiln/pgstore => ../pgstore
-	github.com/rafaelaugustos/kiln/sqlitestore => ../sqlitestore
 )

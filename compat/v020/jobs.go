@@ -56,6 +56,12 @@ func (Limited) InsertOptions() []kiln.InsertOption {
 	return []kiln.InsertOption{kiln.Limit{Key: limitKey, Max: 2}}
 }
 
+type Rated struct {
+	N int `json:"n"`
+}
+
+func (Rated) Kind() string { return "compat.rated" }
+
 func echo(ctx context.Context, j *kiln.Job[Echo]) error {
 	if err := pause(ctx, 20*time.Millisecond); err != nil {
 		return err
@@ -118,6 +124,10 @@ func limited(ctx context.Context, _ *kiln.Job[Limited]) error {
 	return pause(ctx, 30*time.Millisecond)
 }
 
+func rated(context.Context, *kiln.Job[Rated]) error {
+	return nil
+}
+
 func pause(ctx context.Context, d time.Duration) error {
 	t := time.NewTimer(d)
 	defer t.Stop()
@@ -148,6 +158,7 @@ func (w *worker) mux() *kiln.Mux {
 	kiln.Handle(m, child)
 	kiln.Handle(m, handoff)
 	kiln.Handle(m, limited)
+	kiln.Handle(m, rated)
 	return m
 }
 

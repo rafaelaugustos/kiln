@@ -15,11 +15,9 @@ import (
 	"time"
 )
 
-var published = []string{
-	"github.com/rafaelaugustos/kiln",
-	"github.com/rafaelaugustos/kiln/pgstore",
-	"github.com/rafaelaugustos/kiln/mysqlstore",
-}
+const module = "github.com/rafaelaugustos/kiln"
+
+var stores = []string{"pgstore", "mysqlstore", "sqlitestore"}
 
 type binary struct {
 	path string
@@ -30,11 +28,15 @@ func build(t *testing.T) binary {
 	t.Helper()
 	gocmd, err := exec.LookPath("go")
 	if err != nil {
-		t.Skip("the go command is not in PATH, cannot build the v0.1.0 binary")
+		t.Skipf("the go command is not in PATH, cannot build the %s binary", oldVersion)
 	}
 	env := append(os.Environ(), "GOWORK=off", "GOFLAGS=-mod=readonly")
+	published := []string{module}
+	for _, s := range stores {
+		published = append(published, module+"/"+s)
+	}
 	dl := exec.Command(gocmd, append([]string{"mod", "download", "-json"}, published...)...)
-	dl.Dir, dl.Env = "v010", env
+	dl.Dir, dl.Env = oldDir, env
 	out, err := dl.Output()
 	mods := make(map[string]string)
 	var failed []string
@@ -59,18 +61,18 @@ func build(t *testing.T) binary {
 		}
 		msg := strings.Join(failed, "\n")
 		if strings.Contains(msg, "SECURITY ERROR") {
-			t.Fatalf("the published v0.1.0 modules do not match v010/go.sum:\n%s", msg)
+			t.Fatalf("the published %s modules do not match %s/go.sum:\n%s", oldVersion, oldDir, msg)
 		}
-		t.Skipf("cannot download kiln v0.1.0, is the module proxy reachable? %v\n%s", err, msg)
+		t.Skipf("cannot download kiln %s, is the module proxy reachable? %v\n%s", oldVersion, err, msg)
 	}
-	path := filepath.Join(t.TempDir(), "v010")
+	path := filepath.Join(t.TempDir(), oldDir)
 	if runtime.GOOS == "windows" {
 		path += ".exe"
 	}
 	cmd := exec.Command(gocmd, "build", "-o", path, ".")
-	cmd.Dir, cmd.Env = "v010", env
+	cmd.Dir, cmd.Env = oldDir, env
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("build the v0.1.0 binary: %v\n%s", err, out)
+		t.Fatalf("build the %s binary: %v\n%s", oldVersion, err, out)
 	}
 	return binary{path: path, mods: mods}
 }
@@ -98,7 +100,7 @@ func start(t *testing.T, bin string, args ...string) *proc {
 		t.Fatal(err)
 	}
 	if err := p.cmd.Start(); err != nil {
-		t.Fatalf("start v0.1.0: %v", err)
+		t.Fatalf("start %s: %v", oldVersion, err)
 	}
 	p.stdin = stdin
 	go func() {
@@ -126,15 +128,15 @@ func (p *proc) recv(what string) message {
 	case b, ok := <-p.lines:
 		if !ok {
 			<-p.exited
-			p.t.Fatalf("v0.1.0 exited (%v) while the test waited for %s\n%s", p.err, what, p.stderr.Bytes())
+			p.t.Fatalf("%s exited (%v) while the test waited for %s\n%s", oldVersion, p.err, what, p.stderr.Bytes())
 		}
 		var m message
 		if err := json.Unmarshal(b, &m); err != nil {
-			p.t.Fatalf("v0.1.0 printed %q: %v", b, err)
+			p.t.Fatalf("%s printed %q: %v", oldVersion, b, err)
 		}
 		return m
 	case <-time.After(time.Minute):
-		p.t.Fatalf("v0.1.0 printed nothing for a minute while the test waited for %s", what)
+		p.t.Fatalf("%s printed nothing for a minute while the test waited for %s", oldVersion, what)
 	}
 	return message{}
 }
@@ -144,9 +146,9 @@ func (p *proc) result() *result {
 	m := p.recv("a result")
 	switch {
 	case m.Result == nil:
-		p.t.Fatalf("v0.1.0 printed a summary instead of a result: %+v", m.Summary)
+		p.t.Fatalf("%s printed a summary instead of a result: %+v", oldVersion, m.Summary)
 	case m.Result.Err != "":
-		p.t.Fatalf("v0.1.0 client: %s", m.Result.Err)
+		p.t.Fatalf("%s client: %s", oldVersion, m.Result.Err)
 	}
 	return m.Result
 }
@@ -158,7 +160,7 @@ func (p *proc) send(pl plan) *result {
 		p.t.Fatal(err)
 	}
 	if _, err := p.stdin.Write(append(b, '\n')); err != nil {
-		p.t.Fatalf("send a plan to v0.1.0: %v", err)
+		p.t.Fatalf("send a plan to %s: %v", oldVersion, err)
 	}
 	return p.result()
 }
@@ -168,12 +170,12 @@ func (p *proc) stop() (*summary, error) {
 	p.stdin.Close()
 	m := p.recv("its summary")
 	if m.Summary == nil {
-		p.t.Fatalf("v0.1.0 printed a result instead of its summary: %+v", m.Result)
+		p.t.Fatalf("%s printed a result instead of its summary: %+v", oldVersion, m.Result)
 	}
 	select {
 	case <-p.exited:
 	case <-time.After(30 * time.Second):
-		p.t.Fatal("v0.1.0 printed its summary but did not exit")
+		p.t.Fatalf("%s printed its summary but did not exit", oldVersion)
 	}
 	return m.Summary, p.err
 }
@@ -183,7 +185,7 @@ func once(bin string, args ...string) (*summary, error) {
 	lines := bytes.Split(bytes.TrimSpace(out), []byte("\n"))
 	var m message
 	if jerr := json.Unmarshal(lines[len(lines)-1], &m); jerr != nil || m.Summary == nil {
-		return nil, errors.Join(err, jerr, errors.New("v0.1.0 printed no summary"))
+		return nil, errors.Join(err, jerr, errors.New(oldVersion+" printed no summary"))
 	}
 	return m.Summary, err
 }

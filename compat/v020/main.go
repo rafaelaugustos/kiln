@@ -23,9 +23,14 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 	"github.com/rafaelaugustos/kiln/mysqlstore"
 	"github.com/rafaelaugustos/kiln/pgstore"
+	"github.com/rafaelaugustos/kiln/sqlitestore"
+	_ "modernc.org/sqlite"
 )
 
-const version = "v0.1.0"
+const (
+	version = "v0.2.0"
+	pragmas = "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_txlock=immediate"
+)
 
 type config struct {
 	backend  string
@@ -60,12 +65,12 @@ type message struct {
 
 func main() {
 	c := config{plan: plan{Delay: 5 * time.Second}}
-	flag.StringVar(&c.backend, "backend", "postgres", "postgres or mysql")
-	flag.StringVar(&c.dsn, "dsn", "", "connection string")
+	flag.StringVar(&c.backend, "backend", "postgres", "postgres, mysql or sqlite")
+	flag.StringVar(&c.dsn, "dsn", "", "connection string, or the database file for sqlite")
 	flag.StringVar(&c.schema, "schema", "kiln", "postgres schema")
-	flag.StringVar(&c.prefix, "prefix", "kiln_", "mysql table prefix")
+	flag.StringVar(&c.prefix, "prefix", "kiln_", "mysql and sqlite table prefix")
 	flag.StringVar(&c.role, "role", "both", "worker, enqueue or both")
-	flag.StringVar(&c.name, "name", "compat-v010", "server name")
+	flag.StringVar(&c.name, "name", "compat-v020", "server name")
 	flag.IntVar(&c.workers, "workers", 8, "worker goroutines")
 	flag.DurationVar(&c.poll, "poll", 100*time.Millisecond, "poll interval")
 	flag.DurationVar(&c.backoff, "backoff", 150*time.Millisecond, "delay before a retry")
@@ -223,6 +228,17 @@ func open(ctx context.Context, c config) (driver.Store, func(), error) {
 		db := sql.OpenDB(conn)
 		db.SetMaxIdleConns(16)
 		st, err := mysqlstore.New(ctx, db, mysqlstore.Prefix(c.prefix))
+		if err != nil {
+			db.Close()
+			return nil, nil, err
+		}
+		return st, func() { st.Close(); db.Close() }, nil
+	case "sqlite":
+		db, err := sql.Open("sqlite", "file:"+c.dsn+pragmas)
+		if err != nil {
+			return nil, nil, err
+		}
+		st, err := sqlitestore.New(ctx, db, sqlitestore.Prefix(c.prefix))
 		if err != nil {
 			db.Close()
 			return nil, nil, err
