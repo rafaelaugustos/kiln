@@ -150,6 +150,18 @@ cluster, independent of queue or worker pool. A job over the cap sits in `thrott
 frees up. This is kiln's equivalent of Hangfire's `DisableConcurrentExecution` and Hangfire Ace's
 semaphores, without needing a separate package.
 
+`Rate` and `Per` cap how many jobs of a key may start per period, and `Burst` how many may start back
+to back (it defaults to `Rate`). When a job is admitted kiln reserves its start time, so a backlog of
+10,000 jobs against a 100/s limit is released at that pace, each job written once, instead of being
+retried until it fits:
+
+```go
+client.Enqueue(ctx, ChargeCard{OrderID: id}, kiln.Limit{Key: "stripe", Rate: 100, Per: time.Second})
+```
+
+`Max` and `Rate` can be combined on one key: `Max` bounds how many run at once, `Rate` how often
+they start.
+
 ### Transactional enqueue
 
 `EnqueueTx` and `EnqueueManyTx` take a `driver.Writer` bound to your own transaction, so a job is
@@ -189,13 +201,16 @@ implementation must pass.
 | Retries with backoff            | built-in                     | built-in                           |
 | Continuations                   | built-in                     | built-in (`After`, `Needs`/`Flow`) |
 | Batches + batch continuations   | Pro                          | built-in                           |
-| Concurrency limits / semaphores | Ace (Hangfire.Throttling)    | built-in (`Limit`)                 |
+| Concurrency limits / semaphores | Ace (Hangfire.Throttling)    | built-in (`Limit{Max}`)            |
+| Rate limiting                   | Ace (window counters)        | built-in (`Limit{Rate, Per}`)      |
+| Continuation with many parents  | Pro (batch continuations)    | built-in (`After{a, b}`, `Needs`)  |
+| Pause and resume a queue        | third-party                  | built-in (`PauseQueue`)            |
 | Unique / idempotent jobs        | third-party / manual         | built-in (`Unique`)                |
 | Recurring (cron)                | built-in                     | built-in, with `TZ` + `Misfire`    |
 | Transactional enqueue           | built-in (ambient tx)        | explicit (`EnqueueTx`, `Tx`)       |
 | Job cancellation                | built-in (CancellationToken) | built-in (`Delete`)                |
 | Dashboard                       | built-in                     | built-in                           |
-| Storage                         | SQL Server/Redis/others      | PostgreSQL, driver SPI for more    |
+| Storage                         | SQL Server/Redis/others      | PostgreSQL, MySQL, SQLite          |
 | Language                        | .NET                         | Go                                 |
 
 ## Storage backends
@@ -242,6 +257,15 @@ store, err := sqlitestore.New(ctx, db)
 Every release is tested against the previous one on the same database: the `compat` module runs the
 published version and the new code side by side while jobs move between them. Schema changes only ever
 add things, so servers on two consecutive versions can run together during a rolling deploy.
+
+v0.3 adds the rate limit columns. During a rolling deploy from v0.2, jobs on a key with a `Rate` and no
+`Max` are released only by servers already running v0.3, at the pace the rate allows; once released, any
+server may run them. On a key with both, v0.2 servers still enforce `Max` but not the rate until they are
+upgraded. Everything else is processed by both versions.
+
+Additive changes are recorded in a `schema_changes` table next to the jobs tables. If the database role
+kiln runs with was granted privileges table by table, grant it the same on `schema_changes` after the
+upgrade.
 
 ## Performance
 
