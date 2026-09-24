@@ -19,8 +19,7 @@ const (
 )
 
 func mysqlError(err error) *mysql.MySQLError {
-	var me *mysql.MySQLError
-	if errors.As(err, &me) {
+	if me, ok := errors.AsType[*mysql.MySQLError](err); ok {
 		return me
 	}
 	return nil

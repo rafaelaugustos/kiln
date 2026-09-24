@@ -73,10 +73,8 @@ func TestLimitUnderConcurrency(t *testing.T) {
 		running, peak, done atomic.Int64
 		wg                  sync.WaitGroup
 	)
-	for w := 0; w < 8; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 8 {
+		wg.Go(func() {
 			for done.Load() < jobs {
 				got, err := s.Claim(ctx, driver.ClaimQuery{Queues: []string{"default"}, Limit: 2, Server: "srv"})
 				if err != nil {
@@ -113,7 +111,7 @@ func TestLimitUnderConcurrency(t *testing.T) {
 					outs = busy
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if p := peak.Load(); p > max {

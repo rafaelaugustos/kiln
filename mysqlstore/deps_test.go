@@ -64,11 +64,9 @@ func TestFanInResolvedOnce(t *testing.T) {
 		}
 		var wg sync.WaitGroup
 		for _, j := range jobs {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				finishUntilDone(t, s, driver.Outcome{Ref: j.Ref, State: driver.Succeeded})
-			}()
+			})
 		}
 		wg.Wait()
 		if r := record(t, s, child); r.State != driver.Enqueued || r.PendingDeps != 0 {

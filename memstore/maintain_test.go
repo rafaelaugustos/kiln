@@ -145,7 +145,7 @@ func TestPrune(t *testing.T) {
 	finish(t, s, done(claimOne(t, s), driver.Succeeded))
 	beat(t, s, driver.ServerInfo{ID: "alive"})
 
-	n, err := s.Prune(ctx, driver.PruneParams{Retention: driver.Retention{Succeeded: 24 * time.Hour, Deleted: 24 * time.Hour, Failed: -1}})
+	n, err := s.Prune(ctx, driver.PruneParams{Succeeded: 24 * time.Hour, Deleted: 24 * time.Hour, Failed: -1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestPrune(t *testing.T) {
 	if cs, _ := s.Counts(ctx); cs.Succeeded != 2 || cs.Deleted != 1 || cs.Failed != 1 {
 		t.Fatalf("totals changed by prune: %+v", cs)
 	}
-	if n, _ := s.Prune(ctx, driver.PruneParams{Retention: driver.Retention{Failed: 0}}); n == 0 {
+	if n, _ := s.Prune(ctx, driver.PruneParams{Failed: 0}); n == 0 {
 		t.Fatalf("failed retention did not prune")
 	}
 	if _, err := s.Job(ctx, old[1]); !errors.Is(err, driver.ErrNotFound) {

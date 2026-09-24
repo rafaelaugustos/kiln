@@ -20,11 +20,9 @@ func TestMigrate(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, 4)
 	for range 4 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			errs <- Migrate(ctx, db)
-		}()
+		})
 	}
 	wg.Wait()
 	close(errs)

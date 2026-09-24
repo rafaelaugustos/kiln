@@ -81,10 +81,8 @@ func BenchmarkClaimFinish(b *testing.B) {
 				wg            sync.WaitGroup
 			)
 			b.ResetTimer()
-			for w := 0; w < 8; w++ {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
+			for w := range 8 {
+				wg.Go(func() {
 					server := "w" + strconv.Itoa(w)
 					outs := make([]driver.Outcome, 0, fetch)
 					for done.Load() < int64(b.N) {
@@ -119,7 +117,7 @@ func BenchmarkClaimFinish(b *testing.B) {
 							outs = busy
 						}
 					}
-				}()
+				})
 			}
 			wg.Wait()
 			b.ReportMetric(float64(b.N)/b.Elapsed().Seconds(), "jobs/s")

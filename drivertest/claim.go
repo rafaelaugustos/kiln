@@ -184,9 +184,7 @@ func testClaimConcurrent(t *testing.T, s driver.Store) {
 		wg    sync.WaitGroup
 	)
 	for range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			q := driver.ClaimQuery{Queues: []string{"q"}, Limit: 10, Server: server}
 			for total.Load() < n && time.Now().Before(deadline) {
 				js, err := s.Claim(ctx, q)
@@ -201,7 +199,7 @@ func testClaimConcurrent(t *testing.T, s driver.Store) {
 				mu.Unlock()
 				total.Add(int64(len(js)))
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if t.Failed() {

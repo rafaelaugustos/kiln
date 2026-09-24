@@ -43,7 +43,7 @@ func loadMigrations() []migration {
 			panic(err)
 		}
 		m := migration{version: v}
-		for _, stmt := range strings.Split(string(b), ";\n") {
+		for stmt := range strings.SplitSeq(string(b), ";\n") {
 			if stmt = strings.TrimSpace(stmt); stmt != "" {
 				m.stmts = append(m.stmts, stmt)
 			}

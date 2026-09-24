@@ -14,8 +14,7 @@ const (
 )
 
 func pgError(err error) *pgconn.PgError {
-	var pe *pgconn.PgError
-	if errors.As(err, &pe) {
+	if pe, ok := errors.AsType[*pgconn.PgError](err); ok {
 		return pe
 	}
 	return nil

@@ -65,8 +65,7 @@ func Snooze(d time.Duration) error {
 }
 
 func snoozed(err error) (time.Duration, bool) {
-	var s *snoozeError
-	if errors.As(err, &s) {
+	if s, ok := errors.AsType[*snoozeError](err); ok {
 		return s.d, true
 	}
 	return 0, false

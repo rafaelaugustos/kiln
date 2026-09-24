@@ -13,7 +13,7 @@ func TestJobsPagination(t *testing.T) {
 	s := open(t)
 	ctx := context.Background()
 	var ps []driver.InsertParams
-	for i := 0; i < 7; i++ {
+	for i := range 7 {
 		prio := int16(i % 3)
 		ps = append(ps, job("a", func(p *driver.InsertParams) { p.Priority = prio }))
 		ps = append(ps, job("a", func(p *driver.InsertParams) { p.Delay = time.Duration(10-i) * time.Hour }))
@@ -100,7 +100,7 @@ func TestPruneAndSweep(t *testing.T) {
 	if got := claim(t, s, 10); len(got) != 1 {
 		t.Fatalf("reconciled limit admitted %d", len(got))
 	}
-	n, err := s.Prune(ctx, driver.PruneParams{Retention: driver.Retention{Failed: -1}})
+	n, err := s.Prune(ctx, driver.PruneParams{Failed: -1})
 	if err != nil {
 		t.Fatal(err)
 	}

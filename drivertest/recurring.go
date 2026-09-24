@@ -306,9 +306,7 @@ func testRecurringFireConcurrent(t *testing.T, s driver.Store) {
 		wins int
 	)
 	for range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, err := s.Fire(t.Context(), f)
 			switch {
 			case err == nil:
@@ -318,7 +316,7 @@ func testRecurringFireConcurrent(t *testing.T, s driver.Store) {
 			case !errors.Is(err, driver.ErrConflict):
 				t.Errorf("fire: %v", err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if wins != 1 {

@@ -200,9 +200,7 @@ func testDepsFanIn(t *testing.T, s driver.Store) {
 	deadline := time.Now().Add(3 * time.Second)
 	var wg sync.WaitGroup
 	for _, j := range js {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for time.Now().Before(deadline) {
 				rs, err := s.Finish(ctx, server, []driver.Outcome{outcome(j, driver.Succeeded)})
 				if err != nil || len(rs) != 1 {
@@ -218,7 +216,7 @@ func testDepsFanIn(t *testing.T, s driver.Store) {
 				time.Sleep(time.Millisecond)
 			}
 			t.Errorf("parent %d still busy after 3s", j.ID)
-		}()
+		})
 	}
 	wg.Wait()
 	if t.Failed() {

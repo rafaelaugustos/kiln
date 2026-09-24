@@ -65,9 +65,7 @@ func TestLimitConcurrency(t *testing.T) {
 		wg      sync.WaitGroup
 	)
 	for range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for total.Load() < int32(len(ps)) {
 				js, err := s.Claim(ctx, driver.ClaimQuery{Queues: []string{"default"}, Limit: 2, Server: "s"})
 				if err != nil {
@@ -87,7 +85,7 @@ func TestLimitConcurrency(t *testing.T) {
 				}
 				total.Add(int32(len(js)))
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if c, _ := s.Counts(ctx); c.Succeeded != int64(len(ps)) {

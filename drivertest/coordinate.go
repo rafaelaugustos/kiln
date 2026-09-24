@@ -66,10 +66,10 @@ func prune(t *testing.T, s driver.Store, p driver.PruneParams) int {
 
 func keep() driver.PruneParams {
 	return driver.PruneParams{
-		Retention: driver.Retention{Succeeded: time.Hour, Deleted: time.Hour, Failed: -1},
-		Servers:   time.Hour,
-		Stats:     24 * time.Hour,
-		Limit:     1000,
+		Succeeded: time.Hour, Deleted: time.Hour, Failed: -1,
+		Servers: time.Hour,
+		Stats:   24 * time.Hour,
+		Limit:   1000,
 	}
 }
 
@@ -249,9 +249,7 @@ func testPromoteConcurrent(t *testing.T, s driver.Store) {
 		wg    sync.WaitGroup
 	)
 	for range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for total.Load() < n && time.Now().Before(deadline) {
 				p, err := s.Promote(ctx, 25)
 				if err != nil {
@@ -260,7 +258,7 @@ func testPromoteConcurrent(t *testing.T, s driver.Store) {
 				}
 				total.Add(int64(p.Count))
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if total.Load() != n {

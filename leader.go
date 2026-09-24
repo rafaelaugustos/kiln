@@ -76,11 +76,9 @@ func (s *Server) govern(ctx context.Context) func() {
 	ctx, cancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	for _, f := range []func(context.Context){s.recur, s.rescue, s.sweep, s.prune} {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			f(ctx)
-		}()
+		})
 	}
 	s.leader.Store(true)
 	s.log.Info("kiln: leadership acquired", "id", s.id)

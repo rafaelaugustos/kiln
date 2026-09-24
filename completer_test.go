@@ -183,7 +183,7 @@ func TestDrainIgnoresDisplacedTask(t *testing.T) {
 	}
 	s.base = context.Background()
 	p := s.prods[0]
-	job := driver.Job{Ref: driver.Ref{ID: 1, Claim: 1}, Kind: "stuck", Attempt: 1, MaxAttempts: 1, CreatedAt: time.Now()}
+	job := driver.Job{ID: 1, Claim: 1, Kind: "stuck", Attempt: 1, MaxAttempts: 1, CreatedAt: time.Now()}
 	p.running.Add(1)
 	s.start(p, []driver.Job{job})
 	s.mu.Lock()

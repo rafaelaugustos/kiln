@@ -1,6 +1,8 @@
 module github.com/rafaelaugustos/kiln/mysqlstore
 
-go 1.24.0
+go 1.27.0
+
+toolchain go1.27.1
 
 require (
 	github.com/go-sql-driver/mysql v1.10.1

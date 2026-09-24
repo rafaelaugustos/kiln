@@ -425,9 +425,7 @@ func TestConcurrentClaim(t *testing.T) {
 		wg   sync.WaitGroup
 	)
 	for range 16 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for {
 				js, err := s.Claim(ctx, driver.ClaimQuery{Queues: []string{"default"}, Limit: 7, Server: "s"})
 				if err != nil {
@@ -443,7 +441,7 @@ func TestConcurrentClaim(t *testing.T) {
 				}
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if len(seen) != len(batch) {

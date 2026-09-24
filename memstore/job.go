@@ -114,7 +114,7 @@ func (j *job) parents() []int64 {
 
 func (j *job) view() driver.Job {
 	return driver.Job{
-		Ref:         driver.Ref{ID: j.id, Claim: j.claim},
+		ID: j.id, Claim: j.claim,
 		Kind:        j.kind,
 		Queue:       j.queue,
 		Args:        slices.Clone(j.args),

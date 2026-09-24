@@ -123,8 +123,8 @@ func (m *Mux) freeze() []string {
 	m.frozen = true
 	for kind, r := range m.routes {
 		r.chain = r.h
-		for i := len(m.mw) - 1; i >= 0; i-- {
-			r.chain = m.mw[i](r.chain)
+		for _, v := range slices.Backward(m.mw) {
+			r.chain = v(r.chain)
 		}
 		m.kinds = append(m.kinds, kind)
 	}
@@ -139,7 +139,7 @@ func (m *Mux) dispatch(ctx context.Context, args Args, opts ...InsertOption) (dr
 	}
 	now := time.Now()
 	dj := driver.Job{
-		Ref:         driver.Ref{Claim: 1},
+		Claim:       1,
 		Kind:        p.Kind,
 		Queue:       p.Queue,
 		Args:        p.Args,

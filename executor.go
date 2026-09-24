@@ -111,13 +111,12 @@ func (s *Server) abandon() {
 	s.mu.Lock()
 	for _, t := range s.tasks {
 		if t.settled.CompareAndSwap(false, true) {
-			outs = append(outs, pending{Outcome: driver.Outcome{
+			outs = append(outs, pending{
 				Ref:    t.ref,
 				State:  driver.Enqueued,
 				Refund: true,
 				Reason: "shutdown",
-				Error:  "kiln: abandoned after shutdown timeout",
-			}, t: t})
+				Error:  "kiln: abandoned after shutdown timeout", t: t})
 		}
 	}
 	s.mu.Unlock()
@@ -222,8 +221,7 @@ func (r *route) classify(t *task, cfg *ServerConfig, err error) (driver.Outcome,
 		o.State, o.Reason = driver.Failed, "exhausted"
 	}
 	o.Error = clean(err.Error(), maxError)
-	var p *PanicError
-	if errors.As(err, &p) {
+	if p, ok := errors.AsType[*PanicError](err); ok {
 		o.Trace = clean(string(p.Stack), maxTrace)
 	}
 	return o, err

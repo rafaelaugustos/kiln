@@ -65,17 +65,15 @@ func TestUniqueWindow(t *testing.T) {
 func TestUniqueContention(t *testing.T) {
 	t.Parallel()
 	s := open(t, MaxConns(16))
-	for round := 0; round < 5; round++ {
+	for round := range 5 {
 		key := "c" + string(rune('a'+round))
 		var (
 			wg     sync.WaitGroup
 			winner atomic.Int64
 			ids    sync.Map
 		)
-		for g := 0; g < 16; g++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+		for range 16 {
+			wg.Go(func() {
 				res, err := s.Insert(context.Background(), []driver.InsertParams{job("a", unique(key, 0))})
 				if err != nil {
 					t.Error(err)
@@ -85,7 +83,7 @@ func TestUniqueContention(t *testing.T) {
 					winner.Add(1)
 				}
 				ids.Store(res[0].ID, true)
-			}()
+			})
 		}
 		wg.Wait()
 		n := 0

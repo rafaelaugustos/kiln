@@ -172,9 +172,7 @@ func TestFanInConcurrent(t *testing.T) {
 	jobs := claim(t, s, n)
 	var wg sync.WaitGroup
 	for _, j := range jobs {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for {
 				res, err := s.Finish(context.Background(), "srv", []driver.Outcome{{Ref: j.Ref, State: driver.Succeeded}})
 				if err != nil {
@@ -185,7 +183,7 @@ func TestFanInConcurrent(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	r := record(t, s, child)
@@ -198,7 +196,7 @@ func TestChildInsertRacesParentFinish(t *testing.T) {
 	t.Parallel()
 	s := open(t)
 	ctx := context.Background()
-	for i := 0; i < 40; i++ {
+	for i := range 40 {
 		p := insert(t, s, job("p"))[0].ID
 		j := claim(t, s, 1)[0]
 		var (
@@ -294,7 +292,7 @@ func TestStatsAttribution(t *testing.T) {
 	failed := insert(t, s, job("p"))[0].ID
 	insert(t, s, job("c", after(driver.OnSucceeded, failed)))
 	run(t, s, failed, driver.Failed)
-	if _, err := s.Prune(ctx, driver.PruneParams{Retention: driver.Retention{Succeeded: -1, Deleted: -1}}); err != nil {
+	if _, err := s.Prune(ctx, driver.PruneParams{Succeeded: -1, Deleted: -1}); err != nil {
 		t.Fatal(err)
 	}
 	rows, err := s.pool.Query(ctx, "SELECT server, sum(succeeded), sum(failed), sum(deleted) FROM "+s.schema+".stats GROUP BY server ORDER BY server")
@@ -395,7 +393,7 @@ func TestPruneLeftovers(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, "INSERT INTO "+s.schema+".uniques (key, job_id) VALUES ('gone', $1)", int64(1<<40)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Prune(ctx, driver.PruneParams{Retention: driver.Retention{Deleted: -1, Failed: -1}}); err != nil {
+	if _, err := s.Prune(ctx, driver.PruneParams{Deleted: -1, Failed: -1}); err != nil {
 		t.Fatal(err)
 	}
 	var deps, keys int

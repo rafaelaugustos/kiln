@@ -95,9 +95,7 @@ func TestFanIn(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for {
 				js, err := s.Claim(ctx, driver.ClaimQuery{Queues: []string{"default"}, Limit: 1})
 				if err != nil || len(js) == 0 {
@@ -107,7 +105,7 @@ func TestFanIn(t *testing.T) {
 					t.Error(err)
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	js := claim(t, s, 10, "join")

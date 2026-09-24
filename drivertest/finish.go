@@ -96,11 +96,11 @@ func testFinishStale(t *testing.T, s driver.Store) {
 	j := start(t, s, task("a"))
 	idle := add(t, s, task("idle"))
 	rs := finish(t, s,
-		driver.Outcome{Ref: driver.Ref{ID: j.ID, Claim: j.Claim + 1}, State: driver.Succeeded},
-		driver.Outcome{Ref: driver.Ref{ID: j.ID + 1000, Claim: 1}, State: driver.Succeeded},
+		driver.Outcome{ID: j.ID, Claim: j.Claim + 1, State: driver.Succeeded},
+		driver.Outcome{ID: j.ID + 1000, Claim: 1, State: driver.Succeeded},
 		outcome(j, driver.Succeeded),
-		driver.Outcome{Ref: driver.Ref{ID: idle, Claim: 1}, State: driver.Succeeded},
-		driver.Outcome{Ref: driver.Ref{ID: idle}, State: driver.Failed},
+		driver.Outcome{ID: idle, Claim: 1, State: driver.Succeeded},
+		driver.Outcome{ID: idle, State: driver.Failed},
 	)
 	want := []driver.Result{driver.Stale, driver.Stale, driver.Applied, driver.Stale, driver.Stale}
 	for i := range want {

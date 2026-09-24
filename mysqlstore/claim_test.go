@@ -56,9 +56,7 @@ func TestClaimWhileInserting(t *testing.T) {
 		done     atomic.Bool
 	)
 	for range 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			for range 60 {
 				ps := make([]driver.InsertParams, 20)
 				for i := range ps {
@@ -75,13 +73,11 @@ func TestClaimWhileInserting(t *testing.T) {
 				}
 				mu.Unlock()
 			}
-		}()
+		})
 	}
 	var claimers sync.WaitGroup
 	for range 8 {
-		claimers.Add(1)
-		go func() {
-			defer claimers.Done()
+		claimers.Go(func() {
 			for {
 				js, err := s.Claim(ctx, driver.ClaimQuery{Queues: []string{"default"}, Limit: 7, Server: "srv"})
 				if err != nil {
@@ -97,7 +93,7 @@ func TestClaimWhileInserting(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	done.Store(true)

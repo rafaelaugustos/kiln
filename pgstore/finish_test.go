@@ -90,7 +90,7 @@ func TestFinishOutcomes(t *testing.T) {
 		driver.Outcome{Ref: jobs[2].Ref, State: driver.Scheduled, Delay: time.Minute, Reason: "retry"},
 		driver.Outcome{Ref: jobs[3].Ref, State: driver.Enqueued, Refund: true, Reason: "shutdown"},
 		driver.Outcome{Ref: jobs[4].Ref, State: driver.Scheduled, Reason: "retry"},
-		driver.Outcome{Ref: driver.Ref{ID: jobs[5].ID, Claim: 99}, State: driver.Succeeded},
+		driver.Outcome{ID: jobs[5].ID, Claim: 99, State: driver.Succeeded},
 		driver.Outcome{Ref: jobs[5].Ref, State: driver.Awaiting},
 	)
 	want := []driver.Result{driver.Applied, driver.Applied, driver.Applied, driver.Applied, driver.Applied, driver.Stale, driver.Rejected}
@@ -182,7 +182,7 @@ func TestFinishMixedClaims(t *testing.T) {
 	insert(t, s, job("a"))
 	j := claim(t, s, 1)[0]
 	res := finish(t, s,
-		driver.Outcome{Ref: driver.Ref{ID: j.ID, Claim: j.Claim + 1}, State: driver.Succeeded},
+		driver.Outcome{ID: j.ID, Claim: j.Claim + 1, State: driver.Succeeded},
 		driver.Outcome{Ref: j.Ref, State: driver.Failed, Reason: "permanent"},
 		driver.Outcome{Ref: j.Ref, State: driver.Succeeded},
 	)
@@ -199,7 +199,7 @@ func TestHistoryCap(t *testing.T) {
 	s := open(t)
 	id := insert(t, s, job("a", func(p *driver.InsertParams) { p.MaxAttempts = 100 }))[0].ID
 	long := strings.Repeat("é", 10<<10)
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		j := claim(t, s, 1)[0]
 		finish(t, s, driver.Outcome{Ref: j.Ref, State: driver.Scheduled, Reason: "retry", Error: long, Trace: long})
 	}

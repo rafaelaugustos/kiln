@@ -28,7 +28,7 @@ func (s *Store) Heartbeat(_ context.Context, info driver.ServerInfo) (driver.Dir
 	var d driver.Directives
 	for _, j := range s.running[info.ID] {
 		d.Leases = append(d.Leases, driver.Lease{
-			Ref:    driver.Ref{ID: j.id, Claim: j.claim},
+			ID: j.id, Claim: j.claim,
 			Cancel: j.cancel,
 			Age:    s.now.Sub(j.attemptedAt),
 		})
@@ -75,7 +75,7 @@ func (s *Store) Orphans(_ context.Context, deadAfter time.Duration, limit int) (
 		}
 		for _, j := range m {
 			out = append(out, driver.Orphan{
-				Ref:         driver.Ref{ID: j.id, Claim: j.claim},
+				ID: j.id, Claim: j.claim,
 				Kind:        j.kind,
 				Queue:       j.queue,
 				Attempt:     j.attempt,

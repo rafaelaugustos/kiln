@@ -66,9 +66,7 @@ func TestChurn(t *testing.T) {
 		}
 	}
 	for w := range 4 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			rng := rand.New(rand.NewPCG(uint64(w), 1))
 			for running() {
 				ps := make([]driver.InsertParams, 1+rng.IntN(6))
@@ -106,12 +104,10 @@ func TestChurn(t *testing.T) {
 					}
 				}
 			}
-		}()
+		})
 	}
 	for w := range 4 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			rng := rand.New(rand.NewPCG(uint64(w), 2))
 			server := fmt.Sprint("w", w)
 			for running() {
@@ -155,11 +151,9 @@ func TestChurn(t *testing.T) {
 					outs = busy
 				}
 			}
-		}()
+		})
 	}
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		rng := rand.New(rand.NewPCG(9, 9))
 		for running() {
 			if id := recent.pick(rng); id != 0 {
@@ -178,10 +172,8 @@ func TestChurn(t *testing.T) {
 			}
 			time.Sleep(10 * time.Millisecond)
 		}
-	}()
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		q := "SELECT limit_key, COUNT(*) FROM kiln_jobs WHERE state IN ('enqueued', 'processing') AND limit_key IS NOT NULL GROUP BY limit_key"
 		for running() {
 			rows, err := s.db.QueryContext(ctx, q)
@@ -204,7 +196,7 @@ func TestChurn(t *testing.T) {
 			rows.Close()
 			time.Sleep(2 * time.Millisecond)
 		}
-	}()
+	})
 	time.Sleep(3 * time.Second)
 	close(stop)
 	wg.Wait()

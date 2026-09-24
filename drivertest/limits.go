@@ -303,9 +303,7 @@ func testLimitConcurrent(t *testing.T, s driver.Store) {
 		wg, watch     sync.WaitGroup
 	)
 	stop := make(chan struct{})
-	watch.Add(1)
-	go func() {
-		defer watch.Done()
+	watch.Go(func() {
 		for {
 			select {
 			case <-stop:
@@ -322,11 +320,9 @@ func testLimitConcurrent(t *testing.T, s driver.Store) {
 				return
 			}
 		}
-	}()
+	})
 	for range workers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			q := driver.ClaimQuery{Queues: []string{"c"}, Limit: 2, Server: server}
 			for done.Load() < n && time.Now().Before(deadline) {
 				js, err := s.Claim(ctx, q)
@@ -372,7 +368,7 @@ func testLimitConcurrent(t *testing.T, s driver.Store) {
 				}
 				done.Add(int64(final))
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	close(stop)

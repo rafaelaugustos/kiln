@@ -9,7 +9,7 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
-var keepAll = driver.PruneParams{Retention: driver.Retention{Succeeded: -1, Deleted: -1, Failed: -1}}
+var keepAll = driver.PruneParams{Succeeded: -1, Deleted: -1, Failed: -1}
 
 func repeatableRead(c *mysql.Config) {
 	if c.Params == nil {

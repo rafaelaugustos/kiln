@@ -39,7 +39,7 @@ func TestStatsAttribution(t *testing.T) {
 	run("s", driver.Succeeded)
 	add(job("c", driver.Parent{ID: add(job("f")), On: driver.OnSucceeded}))
 	run("f", driver.Failed)
-	if _, err := s.Prune(ctx, driver.PruneParams{Retention: driver.Retention{Succeeded: -1, Deleted: -1}}); err != nil {
+	if _, err := s.Prune(ctx, driver.PruneParams{Succeeded: -1, Deleted: -1}); err != nil {
 		t.Fatal(err)
 	}
 	got := make(map[string]counters)

@@ -3,6 +3,7 @@ package dashboard
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
@@ -349,9 +350,7 @@ func (h *handler) bulk(w http.ResponseWriter, r *http.Request) {
 			l.State = driver.Enqueued
 		}
 		target = "/jobs/" + string(l.State)
-		for k, v := range l.filter() {
-			q[k] = v
-		}
+		maps.Copy(q, l.filter())
 	}
 	h.redirect(w, r, target, q)
 }

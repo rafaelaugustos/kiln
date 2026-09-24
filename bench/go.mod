@@ -1,6 +1,8 @@
 module github.com/rafaelaugustos/kiln/bench
 
-go 1.26.0
+go 1.27.0
+
+toolchain go1.27.1
 
 replace (
 	github.com/rafaelaugustos/kiln => ../
@@ -8,7 +10,7 @@ replace (
 )
 
 require (
-	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jackc/pgx/v5 v5.11.0
 	github.com/rafaelaugustos/kiln v0.1.0
 	github.com/rafaelaugustos/kiln/pgstore v0.1.0
 	github.com/riverqueue/river v0.47.0
@@ -26,6 +28,6 @@ require (
 	github.com/tidwall/match v1.2.0 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
-	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 )

@@ -396,13 +396,11 @@ func TestOverviewCache(t *testing.T) {
 	h := New(kiln.NewClient(s), Options{Authorize: grant(ReadOnly)})
 	var wg sync.WaitGroup
 	for range 16 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if res := get(h, "/api/overview"); res.code != http.StatusOK {
 				t.Errorf("status %d", res.code)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	get(h, "/")
