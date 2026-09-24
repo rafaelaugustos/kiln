@@ -179,7 +179,7 @@ func (c *completer) flush(ctx context.Context) (int, error) {
 			s.stats.stale.Add(1)
 		case driver.Applied:
 			s.stats.count(&p.Outcome)
-			soon = soon || p.State == driver.Scheduled && p.Delay > 0 && p.Delay < s.cfg.PollInterval
+			soon = soon || p.State == driver.Scheduled && p.Delay > 0 && p.Delay < s.cfg.PollInterval || p.t != nil && p.t.limited
 		}
 		if p.t != nil && s.tasks[p.ID] == p.t {
 			delete(s.tasks, p.ID)

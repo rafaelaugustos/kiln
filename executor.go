@@ -30,6 +30,7 @@ type task struct {
 	client  *Client
 	job     *RawJob
 	ref     driver.Ref
+	limited bool
 	timeout time.Duration
 	prod    *producer
 	seq     uint64
@@ -50,7 +51,7 @@ func (s *Server) start(p *producer, jobs []driver.Job) {
 	seq := s.seq.Load()
 	ts := p.tasks[:0]
 	for i := range jobs {
-		t := &task{client: s.client, job: rawJob(&jobs[i], s.store), ref: jobs[i].Ref, timeout: jobs[i].Timeout, prod: p, seq: seq}
+		t := &task{client: s.client, job: rawJob(&jobs[i], s.store), ref: jobs[i].Ref, limited: jobs[i].LimitKey != "", timeout: jobs[i].Timeout, prod: p, seq: seq}
 		t.Context, t.cancel = context.WithCancelCause(s.base)
 		ts = append(ts, t)
 	}

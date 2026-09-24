@@ -227,6 +227,7 @@ func (s *Server) event(e driver.Event) {
 		if p := s.byQueue[e.Queue]; p != nil {
 			p.poke()
 		}
+		signal(s.promoteNow)
 	case driver.CancelRequested:
 		s.mu.Lock()
 		if t := s.tasks[e.ID]; t != nil && !t.settled.Load() {
