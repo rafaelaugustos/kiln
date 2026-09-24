@@ -18,8 +18,12 @@ func CheckInsert(jobs []InsertParams) error {
 			return fmt.Errorf("%w: job %d max attempts %d", ErrInvalid, i, p.MaxAttempts)
 		case !json.Valid(p.Args):
 			return fmt.Errorf("%w: job %d args are not valid JSON", ErrInvalid, i)
-		case p.LimitKey != "" && p.LimitMax < 1:
-			return fmt.Errorf("%w: job %d limit max %d", ErrInvalid, i, p.LimitMax)
+		case p.LimitMax < 0 || p.LimitRate < 0 || p.LimitPer < 0 || p.LimitBurst < 0:
+			return fmt.Errorf("%w: job %d limit %q has a negative field", ErrInvalid, i, p.LimitKey)
+		case p.LimitKey != "" && p.LimitMax < 1 && p.LimitRate < 1:
+			return fmt.Errorf("%w: job %d limit %q has neither max nor rate", ErrInvalid, i, p.LimitKey)
+		case p.LimitRate > 0 && (p.LimitPer <= 0 || p.LimitBurst < 1):
+			return fmt.Errorf("%w: job %d limit %q rate needs a period and a burst of at least 1", ErrInvalid, i, p.LimitKey)
 		case p.BatchID < 0 || p.AfterBatch < 0:
 			return fmt.Errorf("%w: job %d batch %d after batch %d", ErrInvalid, i, p.BatchID, p.AfterBatch)
 		case p.BatchID != 0 && p.BatchID == p.AfterBatch:

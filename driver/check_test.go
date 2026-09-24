@@ -3,6 +3,7 @@ package driver
 import (
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestCheckInsert(t *testing.T) {
@@ -29,6 +30,16 @@ func TestCheckInsert(t *testing.T) {
 		{"bad json", []InsertParams{with(func(p *InsertParams) { p.Args = []byte(`{`) })}, false},
 		{"limit without max", []InsertParams{with(func(p *InsertParams) { p.LimitKey = "x" })}, false},
 		{"limit", []InsertParams{with(func(p *InsertParams) { p.LimitKey, p.LimitMax = "x", 2 })}, true},
+		{"rate only", []InsertParams{with(func(p *InsertParams) { p.LimitKey, p.LimitRate, p.LimitPer, p.LimitBurst = "x", 5, time.Second, 5 })}, true},
+		{"rate and max", []InsertParams{with(func(p *InsertParams) {
+			p.LimitKey, p.LimitMax, p.LimitRate, p.LimitPer, p.LimitBurst = "x", 2, 5, time.Second, 1
+		})}, true},
+		{"rate without period", []InsertParams{with(func(p *InsertParams) { p.LimitKey, p.LimitRate, p.LimitBurst = "x", 5, 5 })}, false},
+		{"rate without burst", []InsertParams{with(func(p *InsertParams) { p.LimitKey, p.LimitRate, p.LimitPer = "x", 5, time.Second })}, false},
+		{"negative rate", []InsertParams{with(func(p *InsertParams) { p.LimitKey, p.LimitMax, p.LimitRate = "x", 1, -1 })}, false},
+		{"negative max", []InsertParams{with(func(p *InsertParams) {
+			p.LimitKey, p.LimitMax, p.LimitRate, p.LimitPer, p.LimitBurst = "x", -1, 5, time.Second, 1
+		})}, false},
 		{"negative batch", []InsertParams{with(func(p *InsertParams) { p.BatchID = -1 })}, false},
 		{"negative after batch", []InsertParams{with(func(p *InsertParams) { p.AfterBatch = -1 })}, false},
 		{"own batch", []InsertParams{with(func(p *InsertParams) { p.BatchID, p.AfterBatch = 7, 7 })}, false},

@@ -44,8 +44,11 @@ type Unique struct {
 }
 
 type Limit struct {
-	Key string
-	Max int
+	Key   string
+	Max   int
+	Rate  int
+	Per   time.Duration
+	Burst int
 }
 
 const (

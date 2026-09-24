@@ -235,7 +235,18 @@ func (b *builder) finish() (driver.InsertParams, error) {
 		if p.LimitKey == "" {
 			p.LimitKey = p.Kind
 		}
-		if p.LimitMax < 1 {
+		switch {
+		case l.Rate < 0 || l.Per < 0 || l.Burst < 0 || l.Max < 0:
+			return p, fmt.Errorf("%w: limit %q has a negative field", ErrInvalid, p.LimitKey)
+		case l.Rate > 0:
+			p.LimitRate, p.LimitPer, p.LimitBurst = l.Rate, l.Per, l.Burst
+			if p.LimitPer == 0 {
+				p.LimitPer = time.Second
+			}
+			if p.LimitBurst == 0 {
+				p.LimitBurst = l.Rate
+			}
+		case p.LimitMax == 0:
 			p.LimitMax = 1
 		}
 		if len(p.LimitKey) > 200 {

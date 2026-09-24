@@ -28,6 +28,9 @@ type InsertParams struct {
 	UniqueFor   time.Duration
 	LimitKey    string
 	LimitMax    int
+	LimitRate   int
+	LimitPer    time.Duration
+	LimitBurst  int
 	BatchID     int64
 	AfterBatch  int64
 	Parents     []Parent
