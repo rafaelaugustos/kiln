@@ -47,7 +47,7 @@ func (s *Store) cascade(ctx context.Context, c *pgxpool.Conn, b *pgx.Batch, pare
 			}
 			return rows.Err()
 		})
-		b.Queue(s.q.admitFinished, parents).Query(w.scanQueues)
+		b.Queue(s.q.admitFinished, parents).Query(w.scanAdmitted)
 		if err := c.SendBatch(ctx, b).Close(); err != nil {
 			return changed, err
 		}

@@ -191,21 +191,12 @@ func (s *Store) sweepThrottled(ctx context.Context, limit int, w *wake) (int, er
 	if err != nil || len(keys) == 0 {
 		return 0, err
 	}
-	n := 0
+	var a wake
 	b := &pgx.Batch{}
-	b.Queue(s.q.admitSkip, keys).Query(func(rows pgx.Rows) error {
-		var q string
-		for rows.Next() {
-			if err := rows.Scan(&q); err != nil {
-				return err
-			}
-			n++
-			w.queue(q)
-		}
-		return rows.Err()
-	})
+	b.Queue(s.q.admitSkip, keys).Query(a.scanAdmitted)
 	err = s.pool.SendBatch(ctx, b).Close()
-	return n, err
+	w.merge(a)
+	return a.moved, err
 }
 
 func (s *Store) reconcile(ctx context.Context, limit int, w *wake) (int, error) {
@@ -236,19 +227,23 @@ func (s *Store) reconcile(ctx context.Context, limit int, w *wake) (int, error) 
 	s.mu.Lock()
 	s.sweepKey = next
 	s.mu.Unlock()
-	n := 0
+	var (
+		n int
+		a wake
+	)
 	b = &pgx.Batch{}
 	if len(keys) > 0 {
 		b.Queue(s.q.reconcile, keys).Exec(func(tag pgconn.CommandTag) error {
 			n += int(tag.RowsAffected())
 			return nil
 		})
-		b.Queue(s.q.admit, keys, nil).Query(w.scanQueues)
+		b.Queue(s.q.admit, rules{keys: keys}.args()...).Query(a.scanAdmitted)
 	}
 	b.Queue("commit")
 	if err := c.SendBatch(ctx, b).Close(); err != nil {
 		c.Exec(context.WithoutCancel(ctx), "rollback")
 		return 0, err
 	}
-	return n, nil
+	w.merge(a)
+	return n + a.moved, nil
 }

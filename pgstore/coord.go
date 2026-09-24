@@ -23,7 +23,13 @@ RETURNING (extract(epoch FROM now() - acquired_at) * 1000000)::bigint`
 
 const sqlResign = `DELETE FROM {s}.leases WHERE name = $1 AND holder = $2`
 
-const sqlPromote = `WITH c AS (
+const sqlPromote = `WITH RECURSIVE g(key) AS (
+	(SELECT limit_key FROM {s}.jobs WHERE state = 'throttled' AND granted ORDER BY limit_key LIMIT 1)
+	UNION ALL
+	SELECT (SELECT j.limit_key FROM {s}.jobs j WHERE j.state = 'throttled' AND j.granted AND j.limit_key > g.key
+		ORDER BY j.limit_key LIMIT 1)
+	FROM g WHERE g.key IS NOT NULL
+), c AS (
 	SELECT id FROM {s}.jobs WHERE state = 'scheduled' AND run_at <= now()
 	ORDER BY run_at
 	LIMIT $1
@@ -34,7 +40,7 @@ const sqlPromote = `WITH c AS (
 	RETURNING j.queue, j.state, j.limit_key
 )
 SELECT count(*), coalesce(array_agg(DISTINCT queue) FILTER (WHERE state = 'enqueued'), '{}'),
-	coalesce(array_agg(DISTINCT limit_key) FILTER (WHERE limit_key IS NOT NULL), '{}')
+	ARRAY(SELECT limit_key FROM u WHERE limit_key IS NOT NULL UNION (SELECT key FROM g WHERE key IS NOT NULL LIMIT 100))
 FROM u`
 
 const sqlNextDue = `SELECT (extract(epoch FROM min(run_at) - now()) * 1000000)::bigint FROM {s}.jobs WHERE state = 'scheduled'`
@@ -76,47 +82,35 @@ func (s *Store) Resign(ctx context.Context, name, holder string) error {
 func (s *Store) Promote(ctx context.Context, limit int) (driver.Promoted, error) {
 	var (
 		p    driver.Promoted
+		w    wake
 		keys []string
 		next *int64
 	)
+	due := func(row pgx.Row) error { return row.Scan(&next) }
 	b := &pgx.Batch{}
 	b.Queue(s.q.promote, max(limit, 1)).QueryRow(func(row pgx.Row) error {
-		return row.Scan(&p.Count, &p.Queues, &keys)
+		return row.Scan(&p.Count, &w.queues, &keys)
 	})
-	b.Queue(s.q.nextDue).QueryRow(func(row pgx.Row) error {
-		return row.Scan(&next)
-	})
+	b.Queue(s.q.nextDue).QueryRow(due)
 	if err := s.pool.SendBatch(ctx, b).Close(); err != nil {
 		return driver.Promoted{}, fmt.Errorf("kiln: promote: %w", err)
+	}
+	var err error
+	if len(keys) > 0 {
+		b = &pgx.Batch{}
+		b.Queue(s.q.admit, rules{keys: keys}.args()...).Query(w.scanAdmitted)
+		b.Queue(s.q.nextDue).QueryRow(due)
+		err = s.pool.SendBatch(ctx, b).Close()
 	}
 	if next != nil {
 		p.Next = max(time.Duration(*next)*time.Microsecond, time.Microsecond)
 	}
-	if len(keys) > 0 {
-		queues, err := s.admit(ctx, keys, nil)
-		if err != nil {
-			return p, err
-		}
-		for _, q := range queues {
-			if !slices.Contains(p.Queues, q) {
-				p.Queues = append(p.Queues, q)
-			}
-		}
+	p.Queues = w.queues
+	s.nt.jobs(w.queues...)
+	if err != nil {
+		return p, fmt.Errorf("kiln: promote: %w", err)
 	}
-	s.nt.jobs(p.Queues...)
 	return p, nil
-}
-
-func (s *Store) admit(ctx context.Context, keys []string, maxes []int32) ([]string, error) {
-	rows, err := s.pool.Query(ctx, s.q.admit, keys, maxes)
-	if err != nil {
-		return nil, fmt.Errorf("kiln: admit: %w", err)
-	}
-	queues, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	if err != nil {
-		return nil, fmt.Errorf("kiln: admit: %w", err)
-	}
-	return queues, nil
 }
 
 func (s *Store) Orphans(ctx context.Context, deadAfter time.Duration, limit int) ([]driver.Orphan, error) {

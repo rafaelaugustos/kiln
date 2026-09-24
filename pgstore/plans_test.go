@@ -2,6 +2,7 @@ package pgstore
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -42,7 +43,7 @@ ANALYZE {s}.uniques;`
 		{"promote", "jobs_due", s.q.promote, []any{100}},
 		{"next due", "jobs_due", s.q.nextDue, nil},
 		{"leases", "jobs_running", s.q.leases, []any{"srv3"}},
-		{"admit", "jobs_throttled", s.q.admit, []any{[]string{"key48", "key98"}, nil}},
+		{"admit", "jobs_throttled", s.q.admit, rules{keys: []string{"key48", "key98"}}.args()},
 		{"throttled keys", "jobs_throttled", s.q.throttledKeys, []any{100}},
 		{"reconcile", "jobs_limit", s.q.reconcile, []any{[]string{"key48", "key98"}}},
 		{"unused limits", "archive_limit", s.q.unusedLimits, []any{100}},
@@ -53,24 +54,8 @@ ANALYZE {s}.uniques;`
 		{"prune holders", "uniques_pkey", s.q.pruneHolders, []any{[]byte(nil), 100}},
 		{"failed page", "jobs_failed", "SELECT id FROM " + s.schema + ".jobs WHERE state = 'failed' ORDER BY finalized_at DESC, id DESC LIMIT 20", nil},
 	}
-	explain := func(name, sql string, args ...any) string {
-		tx, err := s.pool.Begin(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer tx.Rollback(ctx)
-		rows, err := tx.Query(ctx, "EXPLAIN (ANALYZE, BUFFERS) "+sql, args...)
-		if err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		plan, err := pgx.CollectRows(rows, pgx.RowTo[string])
-		if err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		return strings.Join(plan, "\n")
-	}
 	for _, c := range cases {
-		text := explain(c.name, c.sql, c.args...)
+		text := explain(t, s, c.name, c.sql, c.args...)
 		if !strings.Contains(text, c.index) {
 			t.Errorf("%s does not use %s:\n%s", c.name, c.index, text)
 		}
@@ -78,7 +63,131 @@ ANALYZE {s}.uniques;`
 			t.Errorf("%s scans jobs sequentially:\n%s", c.name, text)
 		}
 	}
-	if text := explain("counts", s.q.counts); !strings.Contains(text, "jobs_retries") {
+	if text := explain(t, s, "counts", s.q.counts); !strings.Contains(text, "jobs_retries") {
 		t.Errorf("counts does not use jobs_retries:\n%s", text)
+	}
+}
+
+func explain(t *testing.T, s *Store, name, sql string, args ...any) string {
+	t.Helper()
+	ctx := context.Background()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	rows, err := tx.Query(ctx, "EXPLAIN (ANALYZE, BUFFERS) "+sql, args...)
+	if err != nil {
+		t.Fatalf("%s: %v", name, err)
+	}
+	plan, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatalf("%s: %v", name, err)
+	}
+	return strings.Join(plan, "\n")
+}
+
+func TestAdmissionPlans(t *testing.T) {
+	t.Parallel()
+	s := open(t)
+	gen := `
+INSERT INTO {s}.limits (key, max, active, rate, per_us, burst, tat)
+SELECT 'key' || g, CASE WHEN g % 3 = 0 THEN 0 ELSE 2 END, 0, CASE WHEN g % 3 = 2 THEN 0 ELSE 20 END,
+	CASE WHEN g % 3 = 2 THEN 0 ELSE 1000000 END, CASE WHEN g % 3 = 2 THEN 0 ELSE 1 END,
+	CASE WHEN g % 3 <> 2 THEN now() + interval '1 second' END
+FROM generate_series(0, 2999) g;
+INSERT INTO {s}.jobs (id, state, queue, kind, max_attempts, run_at, args, limit_key, granted, claim, attempt, server, attempted_at)
+SELECT g, (CASE WHEN g % 10 < 5 THEN 'throttled' WHEN g % 10 < 8 THEN 'scheduled' WHEN g % 10 = 8 THEN 'enqueued'
+		ELSE 'processing' END)::{s}.state,
+	'q' || (g % 5), 'k', 10, now(), '{}', 'key' || (g % 3000), g % 4 = 0, 1, 1, 'srv', now()
+FROM generate_series(1, 60000) g;
+ANALYZE {s}.jobs;
+ANALYZE {s}.limits;`
+	if _, err := s.pool.Exec(context.Background(), strings.ReplaceAll(gen, "{s}", s.schema)); err != nil {
+		t.Fatal(err)
+	}
+	override := rules{
+		keys: []string{"key0", "key1", "key2"},
+		max:  []int64{0, 3, 2}, rate: []int64{10, 20, 0}, per: []int64{1e6, 1e6, 0}, burst: []int64{2, 1, 0},
+	}
+	cases := []struct {
+		name, sql string
+		args      []any
+	}{
+		{"admit with rules", s.q.admit, override.args()},
+		{"admit", s.q.admit, rules{keys: []string{"key3", "key4", "key5"}}.args()},
+		{"admit skip", s.q.admitSkip, []any{[]string{"key6", "key7", "key8"}}},
+		{"admit finished", s.q.admitFinished, []any{[]int64{9, 19, 6029}}},
+	}
+	for _, c := range cases {
+		text := explain(t, s, c.name, c.sql, c.args...)
+		for _, index := range []string{"limits_pkey", "jobs_throttled"} {
+			if !strings.Contains(text, index) {
+				t.Errorf("%s does not use %s:\n%s", c.name, index, text)
+			}
+		}
+		for _, scan := range []string{"Seq Scan on jobs", "Seq Scan on limits"} {
+			if strings.Contains(text, scan) {
+				t.Errorf("%s has a %s:\n%s", c.name, scan, text)
+			}
+		}
+	}
+	if text := explain(t, s, "promote", s.q.promote, 100); !strings.Contains(text, "jobs_granted") || strings.Contains(text, "Seq Scan on jobs") {
+		t.Errorf("promote does not find throttled grants through jobs_granted:\n%s", text)
+	}
+}
+
+func TestAdmissionLocks(t *testing.T) {
+	t.Parallel()
+	s := open(t)
+	ctx := context.Background()
+	const waiting = 500
+	cases := []struct {
+		name    string
+		active  int
+		burst   int
+		granted bool
+		ahead   *int
+		moved   int
+	}{
+		{"granted jobs waiting for a slot", 1, 1, true, new(3600), 1},
+		{"rated jobs within the burst", 1, 3, false, nil, 1},
+		{"no slot left", 2, 1, true, new(3600), 0},
+		{"future slots reserved without a slot", 2, 1, false, new(3600), waiting},
+	}
+	for i, c := range cases {
+		key := fmt.Sprintf("k%d", i)
+		setup := `INSERT INTO {s}.limits (key, max, active, rate, per_us, burst, tat)
+VALUES ($1, 2, $2, 20, 1000000, $3, now() + $4::int * interval '1 second')`
+		if _, err := s.pool.Exec(ctx, strings.ReplaceAll(setup, "{s}", s.schema), key, c.active, c.burst, c.ahead); err != nil {
+			t.Fatal(err)
+		}
+		jobs := `INSERT INTO {s}.jobs (state, queue, kind, max_attempts, run_at, args, limit_key, granted)
+SELECT 'throttled', 'default', 'k', 3, now(), '{}', $1, $2 FROM generate_series(1, $3::int)`
+		if _, err := s.pool.Exec(ctx, strings.ReplaceAll(jobs, "{s}", s.schema), key, c.granted, waiting); err != nil {
+			t.Fatal(err)
+		}
+		tx, err := s.pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows, _ := tx.Query(ctx, s.q.admit, rules{keys: []string{key}}.args()...)
+		var (
+			queue    string
+			n, moved int
+		)
+		if _, err := pgx.ForEachRow(rows, []any{&queue, &n}, func() error { moved += n; return nil }); err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		var free int
+		q := "SELECT count(*) FROM (SELECT 1 FROM " + s.schema + ".jobs WHERE limit_key = $1 AND state = 'throttled' FOR UPDATE SKIP LOCKED) x"
+		if err := s.pool.QueryRow(ctx, q, key).Scan(&free); err != nil {
+			t.Fatal(err)
+		}
+		tx.Rollback(ctx)
+		if moved != c.moved || free != waiting-c.moved {
+			t.Errorf("%s: moved %d and left %d of %d waiting jobs unlocked, want %d moved and the rest unlocked",
+				c.name, moved, free, waiting, c.moved)
+		}
 	}
 }

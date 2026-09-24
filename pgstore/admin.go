@@ -83,7 +83,7 @@ const sqlRequeueLive = `WITH t AS MATERIALIZED (
 	FOR NO KEY UPDATE OF j
 )` + requeueClaim + `, u AS (
 	UPDATE {s}.jobs j SET state = {s}.ready(now(), j.limit_key), run_at = now(), finalized_at = NULL,
-		cancel_requested = false, max_attempts = greatest(j.max_attempts, j.attempt + 1),
+		cancel_requested = false, granted = false, max_attempts = greatest(j.max_attempts, j.attempt + 1),
 		history = {s}.push(j.history, {s}.entry({s}.ready(now(), j.limit_key), j.attempt, 'requeued', '', '', NULL))
 	WHERE j.id = ANY(ARRAY(SELECT id FROM t WHERE unique_key IS NULL UNION ALL SELECT job_id FROM c))
 	RETURNING j.queue, j.state, j.limit_key
@@ -258,12 +258,11 @@ func (s *Store) requeue(ctx context.Context, tmpl string, f driver.Filter) (int,
 			return total, wrap("requeue", err)
 		}
 		total += moved
+		w := wake{queues: queues}
 		if len(keys) > 0 {
-			if qs, err := s.admit(ctx, keys, nil); err == nil {
-				queues = append(queues, qs...)
-			}
+			s.admit(ctx, rules{keys: keys}, &w)
 		}
-		s.nt.jobs(queues...)
+		s.nt.jobs(w.queues...)
 		if seen < chunk || last == nil {
 			return total, nil
 		}

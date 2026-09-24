@@ -111,13 +111,6 @@ const sqlInsertDeps = `INSERT INTO {s}.deps (batch, parent_id, job_id, mask, res
 SELECT b, p, j, m, r FROM unnest($1::bool[], $2::bigint[], $3::bigint[], $4::smallint[], $5::bool[]) AS t(b, p, j, m, r)
 ON CONFLICT DO NOTHING`
 
-const sqlLimits = `WITH l AS MATERIALIZED (
-	SELECT key FROM {s}.limits WHERE key = ANY($1) ORDER BY key FOR KEY SHARE
-)
-INSERT INTO {s}.limits (key, max)
-SELECT t.k, t.m FROM unnest($1::text[], $2::int[]) AS t(k, m) WHERE t.k NOT IN (SELECT key FROM l) ORDER BY t.k
-ON CONFLICT (key) DO NOTHING`
-
 const sqlAttach = `WITH n AS (
 	SELECT id, n FROM unnest($1::bigint[], $2::bigint[]) AS t(id, n)
 ), b AS MATERIALIZED (
@@ -137,8 +130,8 @@ END`
 
 type wake struct {
 	queues []string
-	keys   []string
-	maxes  []int32
+	moved  int
+	rules
 }
 
 func (w *wake) queue(q string) {
@@ -151,18 +144,7 @@ func (w *wake) merge(o wake) {
 	for _, q := range o.queues {
 		w.queue(q)
 	}
-	for i, k := range o.keys {
-		w.limit(k, o.maxes[i])
-	}
-}
-
-func (w *wake) limit(key string, n int32) {
-	if i := slices.Index(w.keys, key); i >= 0 {
-		w.maxes[i] = n
-		return
-	}
-	w.keys = append(w.keys, key)
-	w.maxes = append(w.maxes, n)
+	w.rules.merge(o.rules)
 }
 
 type holder struct {
@@ -375,21 +357,21 @@ func (in *inserter) inserted() []int {
 }
 
 func (in *inserter) queueLimits(b *pgx.Batch, items []int) {
-	var w wake
+	var r rules
 	for _, i := range items {
 		if p := &in.jobs[i]; p.LimitKey != "" {
-			w.limit(p.LimitKey, int32(p.LimitMax))
+			r.add(p)
 		}
 	}
-	if len(w.keys) == 0 {
+	if len(r.keys) == 0 {
 		return
 	}
-	b.Queue(in.s.q.limits, w.keys, w.maxes)
+	b.Queue(in.s.q.limits, r.args()...)
 	if in.tx == nil {
-		b.Queue(in.s.q.admit, w.keys, w.maxes).Query(in.w.scanQueues)
+		b.Queue(in.s.q.admit, r.args()...).Query(in.w.scanAdmitted)
 		return
 	}
-	in.w.keys, in.w.maxes = w.keys, w.maxes
+	in.w.rules = r
 }
 
 func (in *inserter) queueAttach(b *pgx.Batch, items []int) {

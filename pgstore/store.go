@@ -61,7 +61,7 @@ func New(ctx context.Context, pool *pgxpool.Pool, opts ...Option) (*Store, error
 		return nil, fmt.Errorf("kiln: pool: %w", err)
 	}
 	if c.noMigrate {
-		err = checkVersion(ctx, own, c.schema, false)
+		err = checkSchema(ctx, own, c.schema)
 	} else {
 		err = migrate(ctx, own, c.schema)
 	}

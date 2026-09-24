@@ -106,11 +106,7 @@ func (s *Store) Fire(ctx context.Context, f driver.Fire) ([]driver.Inserted, err
 		return nil, err
 	}
 	if len(w.keys) > 0 {
-		if queues, err := s.admit(ctx, w.keys, w.maxes); err == nil {
-			for _, q := range queues {
-				w.queue(q)
-			}
-		}
+		s.admit(ctx, w.rules, &w)
 	}
 	s.nt.jobs(w.queues...)
 	return res, nil

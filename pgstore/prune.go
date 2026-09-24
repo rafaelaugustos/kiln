@@ -81,7 +81,8 @@ const sqlPruneHolders = `WITH w AS MATERIALIZED (
 )
 SELECT (SELECT key FROM w ORDER BY key DESC LIMIT 1), (SELECT count(*) FROM w), (SELECT count(*) FROM d)`
 
-const unusedLimit = `NOT EXISTS (SELECT 1 FROM {s}.jobs j WHERE j.limit_key = l.key)
+const unusedLimit = `(l.tat IS NULL OR l.tat <= now())
+	AND NOT EXISTS (SELECT 1 FROM {s}.jobs j WHERE j.limit_key = l.key)
 	AND NOT EXISTS (SELECT 1 FROM {s}.archive a WHERE a.limit_key = l.key)`
 
 const sqlUnusedLimits = `SELECT l.key FROM {s}.limits l WHERE l.active = 0 AND ` + unusedLimit + `

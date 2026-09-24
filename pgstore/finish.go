@@ -53,7 +53,7 @@ const sqlFinish = `WITH t AS MATERIALIZED (
 ), u AS (
 	UPDATE {s}.jobs j SET state = t.fin, attempt = t.attempt,
 		run_at = CASE WHEN t.fin = 'failed' THEN j.run_at ELSE now() + greatest(t.delay, 0) * interval '1 microsecond' END,
-		finalized_at = CASE WHEN t.fin = 'failed' THEN now() END,
+		finalized_at = CASE WHEN t.fin = 'failed' THEN now() END, granted = false,
 		history = {s}.push(j.history, {s}.entry(t.fin, t.attempt, t.reason, t.err, t.trace, j.server))
 	FROM t
 	WHERE j.id = t.id AND t.fin NOT IN ('succeeded', 'deleted')
@@ -149,45 +149,8 @@ const sqlFinishDeps = resolveDeps + `, st AS (
 )
 SELECT DISTINCT u.queue FROM u WHERE u.state = 'enqueued'`
 
-const admitTail = `, c AS MATERIALIZED (
-	SELECT w.id FROM k CROSS JOIN LATERAL (
-		SELECT j.id FROM {s}.jobs j
-		WHERE j.state = 'throttled' AND j.limit_key = k.key
-		ORDER BY j.priority DESC, j.id
-		LIMIT greatest(k.max - k.active, 0)
-		FOR NO KEY UPDATE SKIP LOCKED
-	) w
-), e AS (
-	UPDATE {s}.jobs j SET state = 'enqueued' WHERE j.id = ANY(ARRAY(SELECT id FROM c))
-	RETURNING j.queue, j.limit_key
-), n AS (
-	UPDATE {s}.limits l SET max = k.max, active = l.active + coalesce(x.n, 0)
-	FROM k LEFT JOIN (SELECT limit_key, count(*) AS n FROM e GROUP BY limit_key) x ON x.limit_key = k.key
-	WHERE l.key = k.key AND (x.n IS NOT NULL OR l.max <> k.max)
-)
-SELECT DISTINCT queue FROM e`
-
-const sqlAdmit = `WITH k AS MATERIALIZED (
-	SELECT key, coalesce(($2::int[])[array_position($1::text[], key)], max) AS max, active
-	FROM {s}.limits WHERE key = ANY($1) ORDER BY key FOR NO KEY UPDATE
-)` + admitTail
-
-const sqlAdmitSkip = `WITH k AS MATERIALIZED (
-	SELECT key, max, active FROM {s}.limits WHERE key = ANY($1) ORDER BY key FOR NO KEY UPDATE SKIP LOCKED
-)` + admitTail
-
 const children = `SELECT d.job_id FROM {s}.deps d WHERE NOT d.batch AND d.parent_id = ANY($1)
 	ORDER BY d.parent_id, d.job_id LIMIT 5000`
-
-const sqlAdmitFinished = `WITH k AS MATERIALIZED (
-	SELECT l.key, l.max, l.active FROM {s}.limits l
-	WHERE l.key = ANY(ARRAY(
-		SELECT j.limit_key FROM {s}.jobs j WHERE j.id = ANY($1) AND j.limit_key IS NOT NULL
-		UNION SELECT a.limit_key FROM {s}.archive a WHERE a.id = ANY($1) AND a.limit_key IS NOT NULL
-		UNION SELECT j.limit_key FROM {s}.jobs j WHERE j.id = ANY(ARRAY(` + children + `)) AND j.state = 'throttled'))
-	ORDER BY l.key
-	FOR NO KEY UPDATE SKIP LOCKED
-)` + admitTail
 
 const finishedBatches = `SELECT a.batch_id FROM {s}.archive a WHERE a.id = ANY($1)
 	UNION SELECT a.batch_id FROM {s}.archive a WHERE a.id = ANY(ARRAY(` + children + `))`
@@ -333,7 +296,7 @@ func (s *Store) finishOnce(ctx context.Context, server string, outs []driver.Out
 			return rows.Err()
 		})
 	b.Queue(s.q.finishDeps, ids, server).Query(local.scanQueues)
-	b.Queue(s.q.admitFinished, ids).Query(local.scanQueues)
+	b.Queue(s.q.admitFinished, ids).Query(local.scanAdmitted)
 	b.Queue(s.q.lockFinishedBatches, ids)
 	b.Queue(s.q.completeFinished, ids).Query(local.scanStates)
 	b.Queue(s.q.busy, ids, claims).Query(func(rows pgx.Rows) error {

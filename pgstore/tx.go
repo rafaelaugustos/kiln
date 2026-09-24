@@ -49,12 +49,8 @@ func (w *TxWriter) Notify(ctx context.Context) error {
 	wk := w.w
 	w.w = wake{}
 	if len(wk.keys) > 0 {
-		queues, err := w.s.admit(ctx, wk.keys, wk.maxes)
-		if err != nil {
+		if err := w.s.admit(ctx, wk.rules, &wk); err != nil {
 			return err
-		}
-		for _, q := range queues {
-			wk.queue(q)
 		}
 	}
 	if len(wk.queues) == 0 {
@@ -76,12 +72,7 @@ func (s *Store) InTx(ctx context.Context, fn func(w driver.Writer) error) error 
 		return err
 	}
 	if len(w.w.keys) > 0 {
-		queues, err := s.admit(ctx, w.w.keys, w.w.maxes)
-		if err == nil {
-			for _, q := range queues {
-				w.w.queue(q)
-			}
-		}
+		s.admit(ctx, w.w.rules, &w.w)
 	}
 	s.nt.jobs(w.w.queues...)
 	return nil
