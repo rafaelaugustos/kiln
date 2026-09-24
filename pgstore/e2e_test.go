@@ -587,10 +587,37 @@ func TestE2ETxEnqueue(t *testing.T) {
 	})
 	cfg := fast()
 	cfg.PollInterval = time.Minute
-	srv, _ := serve(t, st, m, cfg)
-	waitFor(t, 5*time.Second, "listen", func() bool { return srv.Stats().Listening })
+	serve(t, st, m, cfg)
 	cl := kiln.NewClient(st)
 	ctx := context.Background()
+
+	events := make(chan driver.Event, 64)
+	sub, stop := context.WithCancel(ctx)
+	t.Cleanup(stop)
+	go st.Subscribe(sub, func(e driver.Event) {
+		select {
+		case events <- e:
+		default:
+		}
+	})
+	await := func(d time.Duration) (driver.Event, bool) {
+		deadline := time.After(d)
+		for {
+			select {
+			case e := <-events:
+				if e.Kind == driver.JobsReady {
+					return e, true
+				}
+			case <-deadline:
+				return driver.Event{}, false
+			}
+		}
+	}
+	for e := range events {
+		if e.Kind == driver.Resync {
+			break
+		}
+	}
 
 	tx, err := c.pool.Begin(ctx)
 	if err != nil {
@@ -622,12 +649,14 @@ func TestE2ETxEnqueue(t *testing.T) {
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(300 * time.Millisecond)
-	if r := get(t, cl, id); r.State != kiln.Enqueued {
-		t.Fatalf("before notify: %s", r.State)
+	if e, ok := await(300 * time.Millisecond); ok {
+		t.Fatalf("notified from inside the caller's transaction: %+v", e)
 	}
 	if err := w.Notify(ctx); err != nil {
 		t.Fatal(err)
+	}
+	if _, ok := await(3 * time.Second); !ok {
+		t.Fatal("no notification after Notify")
 	}
 	if got := recv(t, ran, 3*time.Second); got != id {
 		t.Fatalf("ran %d, want %d", got, id)
