@@ -1,0 +1,219 @@
+[
+  {
+    "scenario": "1",
+    "title": "bulk insert, 100000 jobs in calls of 10000",
+    "library": "kiln EnqueueMany",
+    "jobs_per_sec": [
+      254141.9,
+      231786.98,
+      251527.43,
+      258516.11,
+      250933.11
+    ]
+  },
+  {
+    "scenario": "1",
+    "title": "bulk insert, 100000 jobs in calls of 10000",
+    "library": "River InsertMany",
+    "jobs_per_sec": [
+      131462.08,
+      134559.08,
+      135466.49,
+      129727.13,
+      134124.31
+    ]
+  },
+  {
+    "scenario": "1",
+    "title": "bulk insert, 100000 jobs in calls of 10000",
+    "library": "River InsertManyFast",
+    "jobs_per_sec": [
+      231567.05,
+      222387.24,
+      209693.43,
+      220738.84,
+      229596.21
+    ]
+  },
+  {
+    "scenario": "2",
+    "title": "concurrent single inserts, 8 goroutines x 2000",
+    "library": "kiln",
+    "jobs_per_sec": [
+      5507.09,
+      1897.9,
+      2359.81,
+      5580.34,
+      5124.94
+    ],
+    "p50_ms": [
+      1.38,
+      3.04,
+      2.68,
+      1.37,
+      1.49
+    ],
+    "p99_ms": [
+      2.24,
+      11.12,
+      7.39,
+      2.19,
+      2.51
+    ]
+  },
+  {
+    "scenario": "2",
+    "title": "concurrent single inserts, 8 goroutines x 2000",
+    "library": "River",
+    "jobs_per_sec": [
+      4712.17,
+      2979.41,
+      2357.53,
+      4658.04,
+      4432.96
+    ],
+    "p50_ms": [
+      1.56,
+      2.02,
+      2.59,
+      1.58,
+      1.65
+    ],
+    "p99_ms": [
+      2.79,
+      9.26,
+      9.55,
+      4.67,
+      3.21
+    ]
+  },
+  {
+    "scenario": "3",
+    "title": "drain 50000 no-op jobs, 100 workers",
+    "library": "kiln",
+    "jobs_per_sec": [
+      21235.44,
+      22679.25,
+      16370.48,
+      17518.85,
+      22180.26
+    ]
+  },
+  {
+    "scenario": "3",
+    "title": "drain 50000 no-op jobs, 100 workers",
+    "library": "River",
+    "jobs_per_sec": [
+      996.75,
+      996.64,
+      996.52,
+      996.74,
+      996.83
+    ]
+  },
+  {
+    "scenario": "3",
+    "title": "drain 50000 no-op jobs, 100 workers",
+    "library": "River, FetchCooldown 1ms",
+    "jobs_per_sec": [
+      21139.49,
+      19122.5,
+      22083.41,
+      20287.84,
+      20283.71
+    ]
+  },
+  {
+    "scenario": "4",
+    "title": "enqueue to handler start, 500 enqueues 10ms apart",
+    "library": "kiln",
+    "p50_ms": [
+      3.42,
+      3.34,
+      2.91,
+      2.97,
+      3.37
+    ],
+    "p99_ms": [
+      15.51,
+      21.56,
+      5.96,
+      6.56,
+      5.94
+    ]
+  },
+  {
+    "scenario": "4",
+    "title": "enqueue to handler start, 500 enqueues 10ms apart",
+    "library": "River",
+    "p50_ms": [
+      56.01,
+      54.41,
+      55.38,
+      55.91,
+      55.48
+    ],
+    "p99_ms": [
+      166.51,
+      105.22,
+      105.34,
+      106.04,
+      123.88
+    ]
+  },
+  {
+    "scenario": "4",
+    "title": "enqueue to handler start, 500 enqueues 10ms apart",
+    "library": "River, FetchCooldown 1ms",
+    "p50_ms": [
+      4.66,
+      4.7,
+      4.67,
+      4.9,
+      4.22
+    ],
+    "p99_ms": [
+      15.2,
+      9.16,
+      10.73,
+      11.53,
+      7.84
+    ]
+  },
+  {
+    "scenario": "5",
+    "title": "drain 20000 jobs with a 1ms handler, 100 workers",
+    "library": "kiln",
+    "jobs_per_sec": [
+      15355.6,
+      19942.22,
+      17352.98,
+      19960.46,
+      19940.93
+    ]
+  },
+  {
+    "scenario": "5",
+    "title": "drain 20000 jobs with a 1ms handler, 100 workers",
+    "library": "River",
+    "jobs_per_sec": [
+      996.71,
+      999.55,
+      999.29,
+      994.56,
+      996.82
+    ]
+  },
+  {
+    "scenario": "5",
+    "title": "drain 20000 jobs with a 1ms handler, 100 workers",
+    "library": "River, FetchCooldown 1ms",
+    "jobs_per_sec": [
+      12816.54,
+      13699.67,
+      12830.82,
+      14716.99,
+      14184.5
+    ]
+  }
+]
