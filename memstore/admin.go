@@ -56,7 +56,7 @@ func (s *Store) Requeue(_ context.Context, f driver.Filter) (int, error) {
 			to = driver.Throttled
 		}
 		j.maxAttempts = max(j.maxAttempts, j.attempt+1)
-		j.cancel = false
+		j.cancel, j.granted = false, false
 		j.runAt = s.now
 		s.log(j, driver.Entry{State: to, Reason: "requeued"})
 		s.enqueue(j)

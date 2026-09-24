@@ -95,7 +95,7 @@ func (s *Store) Prune(_ context.Context, p driver.PruneParams) (int, error) {
 		return u.tx == nil && !u.expires.IsZero() && !u.expires.After(s.now)
 	})
 	n += evict(s.limits, limit, func(_ string, l *throttle) bool {
-		return l.refs == 0
+		return l.refs == 0 && !l.tat.After(s.now)
 	})
 	n += evict(s.batches, limit, func(_ int64, b *batch) bool {
 		return !b.finished.IsZero() && b.members() == 0

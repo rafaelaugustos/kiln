@@ -31,6 +31,7 @@ func Run(t *testing.T, open func(t *testing.T) driver.Store) {
 		{"Batch", batchTests},
 		{"Unique", uniqueTests},
 		{"Limits", limitsTests},
+		{"Rate", rateTests},
 		{"Recurring", recurringTests},
 		{"Coordinate", coordinateTests},
 		{"Admin", adminTests},

@@ -260,7 +260,6 @@ func (s *Store) apply(p *plan, admit bool) {
 			unique:      string(ps.UniqueKey),
 			uniqueFor:   ps.UniqueFor,
 			limit:       ps.LimitKey,
-			limitMax:    max(ps.LimitMax, 1),
 			deps:        it.deps,
 			pending:     it.pending,
 		}
@@ -279,10 +278,10 @@ func (s *Store) apply(p *plan, admit bool) {
 			s.hold(j)
 		}
 		if j.limit != "" {
-			l := s.limitFor(j)
+			l := s.limitFor(j.limit)
 			l.refs++
-			if l.max != j.limitMax {
-				l.max = j.limitMax
+			if r := ruleOf(ps); l.rule != r {
+				l.rule = r
 				if admit {
 					s.admitting(j.limit)
 				}

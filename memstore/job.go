@@ -42,7 +42,7 @@ type job struct {
 	unique      string
 	uniqueFor   time.Duration
 	limit       string
-	limitMax    int
+	granted     bool
 	deps        []dep
 	pending     int
 	children    []int64
@@ -178,6 +178,9 @@ func (s *Store) index(j *job) {
 		}
 	case driver.Scheduled:
 		heap.Push(&s.due, j)
+		if j.granted && !slices.Contains(s.ready, j.queue) {
+			s.ready = append(s.ready, j.queue)
+		}
 	case driver.Throttled:
 		heap.Push(&s.limits[j.limit].waiting, j)
 	case driver.Processing:
