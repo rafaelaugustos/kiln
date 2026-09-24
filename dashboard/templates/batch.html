@@ -1,0 +1,43 @@
+{{define "content"}}{{$b := .Data}}
+<div class="head">
+<div>
+<div class="crumbs"><a href="{{link "/batches"}}">Batches</a><span aria-hidden="true">/</span><span class="mono">{{$b.ID}}</span></div>
+<h1 class="title">{{if $b.Description}}{{$b.Description}}{{else}}Batch {{$b.ID}}{{end}}{{if $b.Finished}}<span class="badge s-succeeded"><i></i>Finished</span>{{else if $b.Sealed}}<span class="badge s-processing"><i></i>Running</span>{{else}}<span class="badge s-awaiting"><i></i>Open</span>{{end}}</h1>
+<p class="sub">{{num $b.Done}} of {{num $b.Total}} jobs done · {{$b.Percent}}%</p>
+</div>
+</div>
+
+<section class="panel pad">
+{{template "progress" $b}}
+<div class="breakdown">
+{{- range $b.Rows}}
+<a href="{{link "/jobs/" .State "?batch=" $b.ID}}"{{if not .N}} class="zero"{{end}}><span class="card-label"><i class="dot s-{{.State}}"></i>{{label .State}}</span><span class="num">{{num .N}}</span></a>
+{{- end}}
+</div>
+</section>
+
+<div class="detail">
+<div class="stack">
+{{- with $b.Meta}}
+<section class="panel">
+<div class="panel-head"><h2>Metadata</h2></div>
+<pre class="code">{{pretty .}}</pre>
+</section>
+{{- else}}
+<section class="panel">
+<div class="panel-head"><h2>Metadata</h2></div>
+{{template "empty" "No metadata."}}
+</section>
+{{- end}}
+</div>
+<aside class="panel side">
+<dl class="props">
+<dt>ID</dt><dd class="mono">{{$b.ID}}</dd>
+<dt>Total</dt><dd class="num">{{num $b.Total}}</dd>
+<dt>Sealed</dt><dd>{{if $b.Sealed}}Yes{{else}}No{{end}}</dd>
+<dt>Created</dt><dd>{{template "when" $b.CreatedAt}}</dd>
+<dt>Finished</dt><dd>{{template "when" $b.FinishedAt}}</dd>
+</dl>
+</aside>
+</div>
+{{end}}

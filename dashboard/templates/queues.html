@@ -1,0 +1,40 @@
+{{define "content"}}{{$l := .Data}}
+<div class="head">
+<div>
+<h1>Queues</h1>
+<p class="sub">{{num (len $l.Queues)}} queues</p>
+</div>
+</div>
+
+<section class="panel">
+{{- if $l.Queues}}
+<div class="tbl">
+<table class="grid">
+<thead><tr><th>Queue</th><th>Status</th><th class="r">Enqueued</th><th class="r">Processing</th><th class="r">Scheduled</th><th class="r">Throttled</th><th class="r">Latency</th>{{if $.Write}}<th class="r">Actions</th>{{end}}</tr></thead>
+<tbody>
+{{- range $l.Queues}}
+<tr>
+<td><a class="strong" href="{{link "/jobs/enqueued?queue=" .Name}}">{{.Name}}</a></td>
+<td>{{if .Paused}}<span class="badge s-paused"><i></i>Paused</span>{{else}}<span class="badge s-active"><i></i>Active</span>{{end}}</td>
+<td class="r num">{{if .Enqueued}}<a href="{{link "/jobs/enqueued?queue=" .Name}}">{{num .Enqueued}}</a>{{else}}<span class="none">0</span>{{end}}</td>
+<td class="r num">{{if .Processing}}<a href="{{link "/jobs/processing?queue=" .Name}}">{{num .Processing}}</a>{{else}}<span class="none">0</span>{{end}}</td>
+<td class="r num">{{if .Scheduled}}<a href="{{link "/jobs/scheduled?queue=" .Name}}">{{num .Scheduled}}</a>{{else}}<span class="none">0</span>{{end}}</td>
+<td class="r num">{{if .Throttled}}<a href="{{link "/jobs/throttled?queue=" .Name}}">{{num .Throttled}}</a>{{else}}<span class="none">0</span>{{end}}</td>
+<td class="r num">{{if .Latency}}{{dur .Latency}}{{else}}<span class="none">—</span>{{end}}</td>
+{{- if $.Write}}
+<td class="r">
+{{- if .Paused}}
+<form method="post" action="{{link "/queues/" .Name "/resume"}}"><button class="btn sm" type="submit">Resume</button></form>
+{{- else}}
+<form method="post" action="{{link "/queues/" .Name "/pause"}}"><button class="btn sm" type="submit" data-confirm="Pause the queue {{.Name}}? Workers stop taking its jobs.">Pause</button></form>
+{{- end}}
+</td>
+{{- end}}
+</tr>
+{{- end}}
+</tbody>
+</table>
+</div>
+{{- else}}{{template "empty" "No queues yet."}}{{end}}
+</section>
+{{end}}

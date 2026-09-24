@@ -1,0 +1,64 @@
+{{define "content"}}{{$l := .Data}}
+<div class="head">
+<div>
+{{- if $l.Retries}}
+<h1>Retries</h1>
+<p class="sub">Jobs that failed and are scheduled to run again.</p>
+{{- else}}
+<h1>Jobs</h1>
+{{- end}}
+</div>
+</div>
+
+{{- if not $l.Retries}}
+<nav class="tabs" aria-label="States">
+{{- range $l.Tabs}}
+<a href="{{.URL}}"{{if .On}} class="on" aria-current="page"{{end}}><i class="dot s-{{.State}}"></i>{{label .State}}{{with .Count}}<span class="n">{{.}}</span>{{end}}</a>
+{{- end}}
+</nav>
+{{- end}}
+
+<section class="panel">
+<div class="toolbar">
+{{- if $l.CanFilter}}
+<form class="filters" method="get" action="{{$l.Self}}">
+<select name="queue" data-autosubmit aria-label="Queue">
+<option value="">All queues</option>
+{{- range $l.Queues}}
+<option value="{{.}}"{{if eq . $l.Queue}} selected{{end}}>{{.}}</option>
+{{- end}}
+</select>
+<input type="search" name="kind" value="{{$l.Kind}}" placeholder="Kind" list="kinds" aria-label="Kind" autocomplete="off" spellcheck="false">
+<datalist id="kinds">{{range $l.Kinds}}<option value="{{.}}"></option>{{end}}</datalist>
+{{- if $l.Batch}}
+<input type="hidden" name="batch" value="{{$l.Batch}}">
+<a class="chip removable" href="{{$l.Unbatch}}" title="Remove batch filter">Batch {{$l.Batch}}<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7m0-7l-7 7"/></svg></a>
+{{- end}}
+<button class="btn" type="submit">Filter</button>
+{{- if $l.Filtered}}<a class="btn ghost" href="{{$l.Self}}">Clear</a>{{end}}
+</form>
+{{- else}}
+<div class="summary">{{num (len $l.Jobs)}} on this page</div>
+{{- end}}
+{{- if and $.Write (or $l.CanRequeue $l.CanDelete)}}
+<form id="bulk" class="bulk" method="post" action="{{link "/jobs/requeue"}}">
+<input type="hidden" name="state" value="{{$l.State}}">
+{{- with $l.Queue}}<input type="hidden" name="queue" value="{{.}}">{{end}}
+{{- with $l.Kind}}<input type="hidden" name="kind" value="{{.}}">{{end}}
+{{- with $l.Batch}}<input type="hidden" name="batch" value="{{.}}">{{end}}
+{{- if $l.Retries}}<input type="hidden" name="back" value="retries">{{end}}
+<span class="selected" data-selected hidden></span>
+{{- if $l.CanRequeue}}<button class="btn" type="submit" formaction="{{link "/jobs/requeue"}}" data-needs-selection>Requeue</button>{{end}}
+{{- if $l.CanDelete}}<button class="btn danger" type="submit" formaction="{{link "/jobs/delete"}}" data-needs-selection data-confirm="{{$l.DeleteLabel}} the selected jobs?">{{$l.DeleteLabel}}</button>{{end}}
+{{- if and $l.CanFilter $l.Jobs}}
+<span class="sep" aria-hidden="true"></span>
+{{- if $l.CanRequeue}}<button class="btn" type="submit" name="all" value="1" formaction="{{link "/jobs/requeue"}}" data-confirm="Requeue every {{$l.State}} job matching the current filters?">Requeue all matching</button>{{end}}
+{{- if $l.CanDelete}}<button class="btn danger" type="submit" name="all" value="1" formaction="{{link "/jobs/delete"}}" data-confirm="{{$l.DeleteLabel}} every {{$l.State}} job matching the current filters?">{{$l.DeleteLabel}} all matching</button>{{end}}
+{{- end}}
+</form>
+{{- end}}
+</div>
+{{template "jobtable" .}}
+{{template "pager" $l}}
+</section>
+{{end}}

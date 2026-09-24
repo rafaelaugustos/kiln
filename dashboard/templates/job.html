@@ -1,0 +1,84 @@
+{{define "content"}}{{$j := .Data}}
+<div class="head">
+<div>
+<div class="crumbs"><a href="{{link "/jobs/" $j.State}}">{{label $j.State}} jobs</a><span aria-hidden="true">/</span><span class="mono">{{$j.ID}}</span></div>
+<h1 class="title"><span class="mono">{{$j.Kind}}</span>{{template "badge" $j.State}}</h1>
+<p class="sub">Job <span class="mono">{{$j.ID}}</span> in <a href="{{link "/jobs/" $j.State "?queue=" $j.Queue}}">{{$j.Queue}}</a> · attempt {{$j.Attempt}} of {{$j.MaxAttempts}}{{with $j.Server}} · <span class="mono">{{.}}</span>{{end}}</p>
+</div>
+{{- if $.Write}}
+<div class="actions">
+{{- if $j.CanRequeue}}
+<form method="post" action="{{link "/jobs/" $j.ID "/requeue"}}"><button class="btn primary" type="submit">Requeue</button></form>
+{{- end}}
+{{- if $j.CanDelete}}
+<form method="post" action="{{link "/jobs/" $j.ID "/delete"}}"><button class="btn danger" type="submit" data-confirm="{{if eq $j.State "processing"}}Cancel{{else}}Delete{{end}} job {{$j.ID}}?">{{if eq $j.State "processing"}}Cancel{{else}}Delete{{end}}</button></form>
+{{- end}}
+</div>
+{{- end}}
+</div>
+
+{{- if $j.CancelRequested}}
+<div class="note">Cancellation requested. The worker stops the job at its next check.</div>
+{{- end}}
+
+<div class="detail">
+<div class="stack">
+<section class="panel">
+<div class="panel-head"><h2>Arguments</h2></div>
+<pre class="code">{{pretty $j.Args}}</pre>
+</section>
+{{- with $j.Output}}
+<section class="panel">
+<div class="panel-head"><h2>Output</h2></div>
+<pre class="code">{{pretty .}}</pre>
+</section>
+{{- end}}
+{{- with $j.Meta}}
+<section class="panel">
+<div class="panel-head"><h2>Metadata</h2></div>
+<pre class="code">{{pretty .}}</pre>
+</section>
+{{- end}}
+<section class="panel">
+<div class="panel-head"><h2>History</h2></div>
+<ol class="timeline">
+{{- range $j.Timeline}}
+<li class="s-{{with .State}}{{.}}{{else}}created{{end}}">
+<div class="ev">
+<span class="ev-state">{{.Label}}</span>
+{{- with .Reason}}<span class="reason">{{.}}</span>{{end}}
+{{- if .Attempt}}<span class="ev-meta">attempt {{.Attempt}}{{with .Server}} · <span class="mono">{{.}}</span>{{end}}</span>{{end}}
+<span class="ev-at">{{template "when" .At}}</span>
+</div>
+{{- with .Error}}<pre class="err">{{.}}</pre>{{end}}
+{{- with .Trace}}<details class="trace"><summary>Stack trace</summary><pre>{{.}}</pre></details>{{end}}
+</li>
+{{- end}}
+</ol>
+</section>
+</div>
+
+<aside class="panel side">
+<dl class="props">
+<dt>State</dt><dd>{{template "badge" $j.State}}</dd>
+<dt>Queue</dt><dd><a class="chip" href="{{link "/jobs/" $j.State "?queue=" $j.Queue}}">{{$j.Queue}}</a></dd>
+<dt>Priority</dt><dd class="num">{{$j.Priority}}</dd>
+<dt>Attempts</dt><dd class="num">{{$j.Attempt}} of {{$j.MaxAttempts}}</dd>
+{{- with $j.Server}}<dt>Server</dt><dd class="mono">{{.}}</dd>{{end}}
+<dt>Created</dt><dd>{{template "stamp" $j.CreatedAt}}</dd>
+<dt>{{if eq $j.State "scheduled"}}Runs{{else}}Run at{{end}}</dt><dd>{{template "stamp" $j.RunAt}}</dd>
+{{- if not $j.AttemptedAt.IsZero}}<dt>Last attempt</dt><dd>{{template "stamp" $j.AttemptedAt}}</dd>{{end}}
+{{- if not $j.FinalizedAt.IsZero}}<dt>Finished</dt><dd>{{template "stamp" $j.FinalizedAt}}</dd>{{end}}
+{{- if lt $j.TimeoutMS 0}}<dt>Timeout</dt><dd>None</dd>{{else if $j.TimeoutMS}}<dt>Timeout</dt><dd>{{dur $j.Timeout}}</dd>{{end}}
+{{- with $j.BatchID}}<dt>Batch</dt><dd><a class="mono" href="{{link "/batches/" .}}">{{.}}</a></dd>{{end}}
+{{- with $j.AfterBatch}}<dt>After batch</dt><dd><a class="mono" href="{{link "/batches/" .}}">{{.}}</a></dd>{{end}}
+{{- with $j.RecurringID}}<dt>Recurring</dt><dd><a class="mono" href="{{link "/recurring"}}">{{.}}</a></dd>{{end}}
+{{- with $j.LimitKey}}<dt>Limit</dt><dd class="mono">{{.}}</dd>{{end}}
+{{- with $j.Tags}}<dt>Tags</dt><dd class="chips">{{range .}}<span class="chip">{{.}}</span>{{end}}</dd>{{end}}
+{{- with $j.Parents}}<dt>Parents</dt><dd class="ids">{{range .}}<a class="mono" href="{{link "/jobs/" .}}">{{.}}</a>{{end}}</dd>{{end}}
+{{- with $j.PendingDeps}}<dt>Waiting on</dt><dd>{{.}} unresolved</dd>{{end}}
+{{- with $j.Children}}<dt>Children</dt><dd class="ids">{{range .}}<a class="mono" href="{{link "/jobs/" .}}">{{.}}</a>{{end}}</dd>{{end}}
+</dl>
+</aside>
+</div>
+{{end}}

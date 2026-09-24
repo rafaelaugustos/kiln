@@ -1,0 +1,42 @@
+{{define "content"}}{{$l := .Data}}
+<div class="head">
+<div>
+<h1>Recurring</h1>
+<p class="sub">{{num (len $l.Recurring)}} schedules</p>
+</div>
+</div>
+
+<section class="panel">
+{{- if $l.Recurring}}
+<div class="tbl">
+<table class="grid">
+<thead><tr><th>ID</th><th>Job</th><th>Schedule</th><th>Next run</th><th>Last run</th>{{if $.Write}}<th class="r">Actions</th>{{end}}</tr></thead>
+<tbody>
+{{- range $l.Recurring}}
+<tr{{if .Paused}} class="paused"{{end}}>
+<td class="nowrap"><span class="mono strong">{{.ID}}</span>{{if .Paused}} <span class="badge s-paused"><i></i>Paused</span>{{end}}</td>
+<td class="nowrap"><span class="kind">{{.Kind}}</span> <a class="chip" href="{{link "/jobs/enqueued?queue=" .Queue}}">{{.Queue}}</a></td>
+<td class="nowrap"><code class="cron">{{.Spec}}</code> <span class="dim">{{.Location}}</span></td>
+<td class="nowrap">{{if .Paused}}<span class="none">Paused</span>{{else}}{{template "stamp" .NextRunAt}}{{end}}</td>
+<td class="nowrap">{{template "stamp" .LastRunAt}}{{with .LastJobID}}<a class="mono sub-link" href="{{link "/jobs/" .}}">job {{.}}</a>{{end}}</td>
+{{- if $.Write}}
+<td class="r">
+<div class="row-actions">
+<form method="post" action="{{link "/recurring/" .ID "/trigger"}}"><button class="btn sm" type="submit">Trigger</button></form>
+{{- if .Paused}}
+<form method="post" action="{{link "/recurring/" .ID "/resume"}}"><button class="btn sm" type="submit">Resume</button></form>
+{{- else}}
+<form method="post" action="{{link "/recurring/" .ID "/pause"}}"><button class="btn sm" type="submit">Pause</button></form>
+{{- end}}
+<form method="post" action="{{link "/recurring/" .ID "/remove"}}"><button class="btn sm danger" type="submit" data-confirm="Remove the recurring job {{.ID}}?">Remove</button></form>
+</div>
+</td>
+{{- end}}
+</tr>
+{{- end}}
+</tbody>
+</table>
+</div>
+{{- else}}{{template "empty" "No recurring jobs."}}{{end}}
+</section>
+{{end}}

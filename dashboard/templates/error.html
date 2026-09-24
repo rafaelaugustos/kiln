@@ -1,0 +1,8 @@
+{{define "content"}}{{$e := .Data}}
+<div class="error-page">
+<p class="code-num">{{$e.Code}}</p>
+<h1>{{.Title}}</h1>
+<p class="sub">{{$e.Message}}</p>
+<a class="btn" href="{{link "/"}}">Back to overview</a>
+</div>
+{{end}}

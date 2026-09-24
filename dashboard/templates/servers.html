@@ -1,0 +1,30 @@
+{{define "content"}}{{$l := .Data}}
+<div class="head">
+<div>
+<h1>Servers</h1>
+<p class="sub">{{num (len $l.Servers)}} registered</p>
+</div>
+</div>
+
+<section class="panel">
+{{- if $l.Servers}}
+<div class="tbl">
+<table class="grid">
+<thead><tr><th>Server</th><th>Queues</th><th>Kinds</th><th>Workers</th><th class="r">Started</th><th class="r">Heartbeat</th></tr></thead>
+<tbody>
+{{- range $l.Servers}}
+<tr>
+<td><div class="strong">{{.Host}}{{with .Version}} <span class="dim">{{.}}</span>{{end}}</div><div class="mono dim small">{{.ID}}</div></td>
+<td class="chips">{{range .Queues}}<a class="chip" href="{{link "/jobs/enqueued?queue=" .}}">{{.}}</a>{{end}}</td>
+<td class="chips">{{range .Kinds}}<span class="chip plain">{{.}}</span>{{else}}<span class="dim">All kinds</span>{{end}}</td>
+<td class="nowrap"><span class="load"><svg class="meter" aria-hidden="true"><rect width="{{printf "%.1f" .Load}}%" height="100%"></rect></svg><span class="num">{{.Running}}<span class="of">/{{.Workers}}</span></span></span></td>
+<td class="r nowrap">{{template "when" .StartedAt}}</td>
+<td class="r nowrap{{if .Stale}} warn{{end}}">{{template "when" .HeartbeatAt}}</td>
+</tr>
+{{- end}}
+</tbody>
+</table>
+</div>
+{{- else}}{{template "empty" "No servers running."}}{{end}}
+</section>
+{{end}}

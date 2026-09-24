@@ -1,0 +1,77 @@
+{{define "content"}}{{$o := .Data}}
+<div class="head">
+<div>
+<h1>Overview</h1>
+<p class="sub"><span data-count="servers">{{num $o.Servers}}</span> servers · <span data-count="running">{{num $o.Running}}</span> of <span data-count="workers">{{num $o.Workers}}</span> workers busy{{if $o.Paused}} · {{num $o.Paused}} paused queues{{end}}</p>
+</div>
+<div class="live"><i></i>Live</div>
+</div>
+
+<div class="cards">
+{{- range $o.Cards}}
+<a class="card" href="{{.URL}}">
+<span class="card-label">{{if .State}}<i class="dot s-{{.State}}"></i>{{end}}{{.Label}}{{with .Hint}}<small>{{.}}</small>{{end}}</span>
+<span class="card-value" data-count="{{.Key}}">{{.Value}}</span>
+</a>
+{{- end}}
+</div>
+
+<section class="panel chart-panel">
+<div class="panel-head">
+<h2>Throughput <small>last hour, per minute</small></h2>
+<div class="legend"><span><i class="key f-succeeded"></i>Succeeded <b data-total="succeeded">—</b></span><span><i class="key f-failed"></i>Failed <b data-total="failed">—</b></span></div>
+</div>
+<div class="chart" data-chart data-src="{{link "/api/series?range=1h"}}" data-every="5000"></div>
+</section>
+
+<section class="panel chart-panel">
+<div class="panel-head">
+<h2>History <small>last 24 hours, per 30 minutes</small></h2>
+<div class="legend"><span><i class="key f-succeeded"></i>Succeeded <b data-total="succeeded">—</b></span><span><i class="key f-failed"></i>Failed <b data-total="failed">—</b></span></div>
+</div>
+<div class="chart" data-chart data-src="{{link "/api/series?range=24h"}}" data-every="60000"></div>
+</section>
+
+<div class="split">
+<section class="panel">
+<div class="panel-head"><h2>Queues</h2><a class="more" href="{{link "/queues"}}">All queues</a></div>
+{{- if $o.QueueRows}}
+<div class="tbl">
+<table class="grid">
+<thead><tr><th>Queue</th><th class="r">Enqueued</th><th class="r">Processing</th><th class="r">Latency</th></tr></thead>
+<tbody>
+{{- range $o.QueueRows}}
+<tr>
+<td><a class="strong" href="{{link "/jobs/enqueued?queue=" .Name}}">{{.Name}}</a>{{if .Paused}} <span class="badge s-paused"><i></i>Paused</span>{{end}}</td>
+<td class="r num">{{template "n" .Enqueued}}</td>
+<td class="r num">{{template "n" .Processing}}</td>
+<td class="r num">{{if .Latency}}{{dur .Latency}}{{else}}<span class="none">—</span>{{end}}</td>
+</tr>
+{{- end}}
+</tbody>
+</table>
+</div>
+{{- else}}{{template "empty" "No queues yet."}}{{end}}
+</section>
+
+<section class="panel">
+<div class="panel-head"><h2>Servers</h2><a class="more" href="{{link "/servers"}}">All servers</a></div>
+{{- if $o.ServerRows}}
+<div class="tbl">
+<table class="grid">
+<thead><tr><th>Server</th><th class="r">Busy</th><th class="r">Heartbeat</th></tr></thead>
+<tbody>
+{{- range $o.ServerRows}}
+<tr>
+<td><span class="strong">{{.Host}}</span> <span class="mono dim">{{.PID}}</span></td>
+<td class="r num">{{.Running}}<span class="of">/{{.Workers}}</span></td>
+<td class="r nowrap{{if .Stale}} warn{{end}}">{{template "when" .HeartbeatAt}}</td>
+</tr>
+{{- end}}
+</tbody>
+</table>
+</div>
+{{- else}}{{template "empty" "No servers running."}}{{end}}
+</section>
+</div>
+{{end}}

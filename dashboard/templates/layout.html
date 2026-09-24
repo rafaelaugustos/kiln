@@ -1,0 +1,83 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{{.Title}} · {{.App}}</title>
+<link rel="icon" href="{{.Icon}}" type="image/svg+xml">
+<link rel="stylesheet" href="{{.CSS}}">
+<script type="module" src="{{.JS}}"></script>
+</head>
+<body data-api="{{link "/api"}}">
+<header class="top">
+<div class="wrap bar">
+<a class="brand" href="{{link "/"}}">{{template "logo"}}<span>{{.App}}</span></a>
+<nav class="nav" aria-label="Main">
+{{- range .Nav}}
+<a href="{{.URL}}"{{if .On}} class="on" aria-current="page"{{end}}>{{.Label}}{{if .Key}}<span class="pill{{if .Alert}} alert{{end}}" data-count="{{.Key}}"{{if not .Count}} hidden{{end}}>{{num .Count}}</span>{{end}}</a>
+{{- end}}
+</nav>
+<div class="who">
+{{- if not .Write}}<span class="tag">Read-only</span>{{end}}
+{{- with .Actor}}<span class="actor" title="Signed in as {{.}}"><span class="avatar">{{initial .}}</span><span class="name">{{.}}</span></span>{{end -}}
+</div>
+</div>
+</header>
+<main class="wrap">
+{{- with .Flash}}
+<div class="flash" role="status"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span>{{.Text}}</span>{{with .URL}}<a href="{{.}}">View job</a>{{end}}</div>
+{{- end}}
+{{template "content" .}}
+</main>
+</body>
+</html>
+{{end}}
+
+{{define "logo"}}<svg class="logo" viewBox="0 0 20 20" aria-hidden="true"><path class="arch" d="M4 17V10a6 6 0 0 1 12 0v7"/><path class="base" d="M2 17h16"/><path class="flame" d="M10 7.2c1.5 1.5 2.4 2.7 2.4 4.2a2.4 2.4 0 0 1-4.8 0c0-.9.4-1.6 1-2.2.2.7.5 1.1 1 1.2C9.4 9.3 9.5 8.2 10 7.2Z"/></svg>{{end}}
+
+{{define "when"}}{{if .IsZero}}<span class="none">—</span>{{else}}<time datetime="{{iso .}}" title="{{abs .}}">{{ago .}}</time>{{end}}{{end}}
+
+{{define "stamp"}}{{if .IsZero}}<span class="none">—</span>{{else}}<time class="stamp" datetime="{{iso .}}" title="{{abs .}}"><span>{{ago .}}</span><small>{{stamp .}}</small></time>{{end}}{{end}}
+
+{{define "badge"}}<span class="badge s-{{.}}"><i></i>{{label .}}</span>{{end}}
+
+{{define "empty"}}<p class="empty">{{.}}</p>{{end}}
+
+{{define "progress"}}<svg class="progress" role="img" aria-label="{{.Percent}}% done">{{range .Segments}}<rect class="f-{{.State}}" x="{{printf "%.3f" .X}}%" width="{{printf "%.3f" .W}}%" height="100%"><title>{{label .State}} {{num .N}}</title></rect>{{if .X}}<line class="gap" x1="{{printf "%.3f" .X}}%" x2="{{printf "%.3f" .X}}%" y1="0" y2="100%"></line>{{end}}{{end}}</svg>{{end}}
+
+{{define "n"}}{{if .}}{{num .}}{{else}}<span class="none">0</span>{{end}}{{end}}
+
+{{define "pager"}}{{if or .NextURL .FirstURL}}<div class="pager">{{with .FirstURL}}<a class="btn ghost" href="{{.}}">First page</a>{{end}}{{with .NextURL}}<a class="btn" href="{{.}}" rel="next">Next<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></a>{{end}}</div>{{end}}{{end}}
+
+{{define "jobtable"}}{{$l := .Data}}{{$sel := and .Write (or $l.CanRequeue $l.CanDelete)}}
+{{- if $l.Jobs}}
+<div class="tbl">
+<table class="grid">
+<thead><tr>
+{{- if $sel}}<th class="cb"><input type="checkbox" data-all aria-label="Select all"></th>{{end}}
+<th class="id">ID</th><th>Job</th><th>Queue</th><th class="r">Attempt</th>
+{{- if eq $l.State "processing"}}<th>Server</th>{{end}}
+{{- if eq $l.State "throttled"}}<th>Limit</th>{{end}}
+{{- if eq $l.State "awaiting"}}<th class="r">Waiting on</th>{{end}}
+<th class="r">{{$l.Column}}</th>
+</tr></thead>
+<tbody>
+{{- range $l.Jobs}}
+<tr>
+{{- if $sel}}<td class="cb"><input type="checkbox" name="id" value="{{.ID}}" form="bulk" aria-label="Select job {{.ID}}"></td>{{end}}
+<td class="id"><a href="{{link "/jobs/" .ID}}">{{.ID}}</a></td>
+<td class="job"><a href="{{link "/jobs/" .ID}}"><span class="kind">{{.Kind}}</span>{{with preview .Args}}<span class="args">{{.}}</span>{{end}}</a></td>
+<td><a class="chip" href="{{link "/jobs/" $l.State "?queue=" .Queue}}">{{.Queue}}</a></td>
+<td class="r num">{{.Attempt}}<span class="of">/{{.MaxAttempts}}</span></td>
+{{- if eq $l.State "processing"}}<td class="mono dim">{{.Server}}</td>{{end}}
+{{- if eq $l.State "throttled"}}<td class="mono dim">{{.LimitKey}}</td>{{end}}
+{{- if eq $l.State "awaiting"}}<td class="r num">{{.PendingDeps}}</td>{{end}}
+<td class="r nowrap">{{template "when" ($l.When .)}}</td>
+</tr>
+{{- end}}
+</tbody>
+</table>
+</div>
+{{- else}}{{template "empty" $l.Empty}}{{end}}
+{{end}}
