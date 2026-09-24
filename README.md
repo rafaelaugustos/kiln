@@ -1,4 +1,9 @@
-# kiln
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/logo-dark.png">
+    <img src=".github/logo.png" alt="kiln" width="200">
+  </picture>
+</p>
 
 kiln is a background job library for Go, modelled on Hangfire for .NET. Jobs are rows in a
 database rather than an in-memory queue, so they survive restarts and crashes.
@@ -8,6 +13,7 @@ database rather than an in-memory queue, so they survive restarts and crashes.
 ```
 go get github.com/rafaelaugustos/kiln
 go get github.com/rafaelaugustos/kiln/pgstore
+go get github.com/rafaelaugustos/kiln/mysqlstore
 ```
 
 `kiln` itself has no external dependencies; `pgstore` pulls in `pgx/v5`.
@@ -192,21 +198,54 @@ implementation must pass.
 
 ## Storage backends
 
-PostgreSQL is the supported backend today, via `pgstore`: a single schema, versioned migrations
-run automatically on `New`, `LISTEN`/`NOTIFY` for low-latency wakeups. Any other store is a matter
-of implementing `driver.Store` (and optionally `driver.Notifier`, `driver.Transactor`) from the
-`driver` package and passing it `drivertest.Run`, the same conformance suite pgstore and the
-in-memory `memstore` reference implementation both pass.
+| Backend | Package | Notes |
+|---|---|---|
+| PostgreSQL (CI runs 17) | `pgstore` | `LISTEN`/`NOTIFY` wakeups, pgx v5, schema option |
+| MySQL 8.0.19+ (CI runs 8.4) | `mysqlstore` | any `*sql.DB`, table prefix option, servers poll instead of being notified |
+| in memory | `memstore` | tests and single-process tools |
+
+Every backend passes the same conformance suite, `drivertest.Run`, so the semantics (retries,
+continuations, batches, uniqueness, limits, fencing) do not change when the database does. Writing a
+new backend means implementing `driver.Store` (and optionally `driver.Notifier` and
+`driver.Transactor`) and making that suite pass.
+
+With `mysqlstore`, begin your own transactions with `sql.LevelReadCommitted` before handing them to
+`store.Tx`. At `REPEATABLE READ` InnoDB takes gap locks that can make concurrent enqueues wait for
+your commit.
+
+```go
+db, _ := sql.Open("mysql", "user:pass@tcp(localhost:3306)/app")
+store, err := mysqlstore.New(ctx, db)
+```
 
 ## Performance
 
-Measured on an Apple M4 Max, PostgreSQL 17, running locally:
+Apple M4 Max, databases in Docker on the same machine. Medians; see the benchmark code for ranges.
 
-- Bulk insert: ~260k jobs/s (10k jobs per `EnqueueMany` call)
-- Claim + finish: ~45k jobs/s (batches of 50)
-- End-to-end, memstore: ~630k jobs/s
-- End-to-end, Postgres: ~23.5k jobs/s (one server, 100 workers, no-op handler)
-- Enqueue to handler start, Postgres with `LISTEN`/`NOTIFY`: p50 4.6ms, p99 8.3ms
+| | PostgreSQL | MySQL 8.4 |
+|---|---|---|
+| Bulk insert, 10k jobs per call | ~250k jobs/s | ~77k jobs/s |
+| Claim + finish, 50 per fetch | ~45k jobs/s | ~15k jobs/s |
+| One server, 100 workers, no-op handler | ~21k jobs/s | ~6k jobs/s |
+| Enqueue to handler start | p50 3.3ms, p99 6.6ms | bounded by `PollInterval` |
+
+The MySQL numbers are dominated by commit latency on this setup (binlog with `sync_binlog=1`,
+4-6ms per commit); a server with a faster disk will do noticeably better.
+
+Compared with [River](https://github.com/riverqueue/river) v0.47 on the same PostgreSQL, alternating
+rounds between the two libraries ([bench/](bench/README.md)):
+
+| Scenario | kiln | River (defaults) | River (1ms fetch cooldown) |
+|---|---|---|---|
+| Bulk insert | 251k jobs/s | 134k (`InsertMany`), 222k (`InsertManyFast`) | |
+| 8 goroutines inserting one job at a time | 5.1k jobs/s | 4.4k jobs/s | |
+| Drain 50k no-op jobs, 100 workers | 21.2k jobs/s | 1.0k jobs/s | 20.3k jobs/s |
+| Drain 20k jobs with a 1ms handler | 19.9k jobs/s | 1.0k jobs/s | 13.7k jobs/s |
+| Enqueue to handler start, p50 | 3.3ms | 55ms | 4.7ms |
+
+River's defaults fetch at most once every 100ms, which is what caps it around 1k jobs/s; with that
+cooldown lowered the no-op drain is a tie, and the p99 latency of the two was too noisy on this
+machine to call either way.
 
 ## Dashboard
 
