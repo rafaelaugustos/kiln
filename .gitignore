@@ -3,3 +3,4 @@ go.work.sum
 *.test
 *.out
 .DS_Store
+/bench/bench
