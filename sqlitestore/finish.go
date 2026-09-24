@@ -18,7 +18,7 @@ LEFT JOIN {p}uniques u ON u.unique_key = j.unique_key AND u.job_id = j.id
 WHERE j.id IN (SELECT value FROM json_each(?)) AND j.state = 'processing'`
 
 const sqlUpdate = `UPDATE {p}jobs AS j SET state = ?, attempt = ?, run_at = COALESCE(?, j.run_at), finalized_at = ?,
-	history = ` + pushHistory + `
+	granted = 0, history = ` + pushHistory + `
 WHERE j.id = ?`
 
 type running struct {

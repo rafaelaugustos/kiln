@@ -23,6 +23,11 @@ const sqlResign = `DELETE FROM {p}leases WHERE name = ? AND holder = ?`
 
 const sqlNextDue = `SELECT MIN(run_at) - {now} FROM {p}jobs WHERE state = 'scheduled'`
 
+const sqlPending = `SELECT MIN(run_at) - {now}, NULL FROM {p}jobs WHERE state = 'scheduled'
+UNION ALL
+SELECT NULL, limit_key FROM (
+	SELECT DISTINCT limit_key FROM {p}jobs WHERE state = 'throttled' AND granted = 1 ORDER BY limit_key LIMIT 100)`
+
 const sqlPromote = `UPDATE {p}jobs SET state = CASE WHEN limit_key IS NULL THEN 'enqueued' ELSE 'throttled' END
 WHERE id IN (SELECT id FROM {p}jobs WHERE state = 'scheduled' AND run_at <= {now} ORDER BY run_at LIMIT ?)
 RETURNING {now}, queue, COALESCE(limit_key, '')`
@@ -80,13 +85,33 @@ func (s *Store) nextDue(ctx context.Context, q querier) (time.Duration, bool, er
 	return time.Duration(next.Int64) * time.Microsecond, next.Valid, nil
 }
 
+func (s *Store) pending(ctx context.Context) (next time.Duration, found bool, granted []string, err error) {
+	rows, err := s.db.QueryContext(ctx, s.q.pending)
+	err = each(rows, err, func() error {
+		var (
+			us  sql.NullInt64
+			key sql.NullString
+		)
+		if err := rows.Scan(&us, &key); err != nil {
+			return err
+		}
+		if key.Valid {
+			granted = append(granted, key.String)
+		} else if us.Valid {
+			next, found = time.Duration(us.Int64)*time.Microsecond, true
+		}
+		return nil
+	})
+	return next, found, granted, err
+}
+
 func (s *Store) Promote(ctx context.Context, limit int) (driver.Promoted, error) {
 	var p driver.Promoted
-	next, found, err := s.nextDue(ctx, s.db)
+	next, found, granted, err := s.pending(ctx)
 	if err != nil {
 		return p, fmt.Errorf("kiln: promote: %w", err)
 	}
-	if !found || next > 0 {
+	if len(granted) == 0 && (!found || next > 0) {
 		p.Next = next
 		return p, nil
 	}
@@ -111,7 +136,15 @@ func (s *Store) Promote(ctx context.Context, limit int) (driver.Promoted, error)
 		if err != nil {
 			return err
 		}
-		if p.Count > 0 {
+		if p.Count == 0 && len(granted) > 0 {
+			if err := q.QueryRowContext(ctx, s.q.now).Scan(&f.now); err != nil {
+				return err
+			}
+		}
+		for _, key := range granted {
+			f.throttled(key)
+		}
+		if p.Count > 0 || len(granted) > 0 {
 			if err := s.settle(ctx, q, f); err != nil {
 				return err
 			}

@@ -14,18 +14,26 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
-//go:embed migrations/*.sql
-var migrationFS embed.FS
+//go:embed migrations/*.sql changes/*.sql
+var schemaFS embed.FS
 
 type migration struct {
 	version int
 	stmts   []string
 }
 
-var migrations = loadMigrations()
+type change struct {
+	name  string
+	stmts []string
+}
+
+var (
+	migrations = loadMigrations()
+	changes    = loadChanges()
+)
 
 func loadMigrations() []migration {
-	names, err := fs.Glob(migrationFS, "migrations/*.sql")
+	names, err := fs.Glob(schemaFS, "migrations/*.sql")
 	if err != nil {
 		panic(err)
 	}
@@ -36,20 +44,36 @@ func loadMigrations() []migration {
 		if err != nil {
 			panic(fmt.Sprintf("sqlitestore: bad migration name %s", name))
 		}
-		b, err := migrationFS.ReadFile(name)
-		if err != nil {
-			panic(err)
-		}
-		m := migration{version: v}
-		for stmt := range strings.SplitSeq(string(b), ";\n") {
-			if stmt = strings.TrimSpace(stmt); stmt != "" {
-				m.stmts = append(m.stmts, stmt)
-			}
-		}
-		ms = append(ms, m)
+		ms = append(ms, migration{version: v, stmts: script(name)})
 	}
 	slices.SortFunc(ms, func(a, b migration) int { return a.version - b.version })
 	return ms
+}
+
+func loadChanges() []change {
+	names, err := fs.Glob(schemaFS, "changes/*.sql")
+	if err != nil {
+		panic(err)
+	}
+	cs := make([]change, len(names))
+	for i, name := range names {
+		cs[i] = change{name: strings.TrimSuffix(path.Base(name), ".sql"), stmts: script(name)}
+	}
+	return cs
+}
+
+func script(name string) []string {
+	b, err := schemaFS.ReadFile(name)
+	if err != nil {
+		panic(err)
+	}
+	var stmts []string
+	for stmt := range strings.SplitSeq(string(b), ";\n") {
+		if stmt = strings.TrimSpace(stmt); stmt != "" {
+			stmts = append(stmts, stmt)
+		}
+	}
+	return stmts
 }
 
 func latest() int {
@@ -85,6 +109,14 @@ func migrate(ctx context.Context, db *sql.DB, prefix string) error {
 }
 
 func upgrade(ctx context.Context, c *sql.Conn, prefix string) error {
+	r := strings.NewReplacer("{p}", prefix, "{now}", clock)
+	if err := migrateVersions(ctx, c, prefix, r); err != nil {
+		return err
+	}
+	return applyChanges(ctx, c, prefix, r)
+}
+
+func migrateVersions(ctx context.Context, c *sql.Conn, prefix string, r *strings.Replacer) error {
 	create := "CREATE TABLE IF NOT EXISTS " + prefix + "migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)"
 	if _, err := c.ExecContext(ctx, create); err != nil {
 		return fmt.Errorf("kiln: migrate: %w", err)
@@ -93,7 +125,6 @@ func upgrade(ctx context.Context, c *sql.Conn, prefix string) error {
 	if err != nil {
 		return err
 	}
-	r := strings.NewReplacer("{p}", prefix, "{now}", clock)
 	for _, m := range migrations {
 		if m.version <= v {
 			continue
@@ -111,13 +142,44 @@ func upgrade(ctx context.Context, c *sql.Conn, prefix string) error {
 	return checkVersion(ctx, c, prefix, true)
 }
 
-func version(ctx context.Context, q querier, prefix string) (int, error) {
+func applyChanges(ctx context.Context, c *sql.Conn, prefix string, r *strings.Replacer) error {
+	create := "CREATE TABLE IF NOT EXISTS " + prefix + "schema_changes (name TEXT PRIMARY KEY, applied_at INTEGER)"
+	if _, err := c.ExecContext(ctx, create); err != nil {
+		return fmt.Errorf("kiln: migrate: %w", err)
+	}
+	applied, err := appliedChanges(ctx, c, prefix)
+	if err != nil {
+		return err
+	}
+	for _, ch := range changes {
+		if applied[ch.name] {
+			continue
+		}
+		for _, stmt := range ch.stmts {
+			if _, err := c.ExecContext(ctx, r.Replace(stmt)); err != nil {
+				return fmt.Errorf("kiln: schema change %s: %w", ch.name, err)
+			}
+		}
+		done := "INSERT INTO " + prefix + "schema_changes (name, applied_at) VALUES (?, " + clock + ")"
+		if _, err := c.ExecContext(ctx, done, ch.name); err != nil {
+			return fmt.Errorf("kiln: schema change %s: %w", ch.name, err)
+		}
+	}
+	return nil
+}
+
+func exists(ctx context.Context, q querier, table string) (bool, error) {
 	var n int
-	err := q.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", prefix+"migrations").Scan(&n)
+	err := q.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&n)
+	return n > 0, err
+}
+
+func version(ctx context.Context, q querier, prefix string) (int, error) {
+	found, err := exists(ctx, q, prefix+"migrations")
 	if err != nil {
 		return 0, fmt.Errorf("kiln: schema version: %w", err)
 	}
-	if n == 0 {
+	if !found {
 		return 0, nil
 	}
 	var v int
@@ -125,6 +187,46 @@ func version(ctx context.Context, q querier, prefix string) (int, error) {
 		return 0, fmt.Errorf("kiln: schema version: %w", err)
 	}
 	return v, nil
+}
+
+func appliedChanges(ctx context.Context, q querier, prefix string) (map[string]bool, error) {
+	found, err := exists(ctx, q, prefix+"schema_changes")
+	if err != nil {
+		return nil, fmt.Errorf("kiln: schema changes: %w", err)
+	}
+	if !found {
+		return nil, nil
+	}
+	applied := make(map[string]bool, len(changes))
+	rows, err := q.QueryContext(ctx, "SELECT name FROM "+prefix+"schema_changes")
+	err = each(rows, err, func() error {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return err
+		}
+		applied[name] = true
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("kiln: schema changes: %w", err)
+	}
+	return applied, nil
+}
+
+func checkSchema(ctx context.Context, q querier, prefix string) error {
+	if err := checkVersion(ctx, q, prefix, false); err != nil {
+		return err
+	}
+	applied, err := appliedChanges(ctx, q, prefix)
+	if err != nil {
+		return err
+	}
+	for _, ch := range changes {
+		if !applied[ch.name] {
+			return fmt.Errorf("kiln: tables %s* lack schema change %s: run sqlitestore.Migrate", prefix, ch.name)
+		}
+	}
+	return nil
 }
 
 func checkVersion(ctx context.Context, q querier, prefix string, migrated bool) error {

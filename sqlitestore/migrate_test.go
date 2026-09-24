@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/rafaelaugustos/kiln/driver"
 )
@@ -94,6 +95,76 @@ func TestMigrate(t *testing.T) {
 		if _, err := New(ctx, db, Prefix(bad)); !errors.Is(err, driver.ErrInvalid) {
 			t.Fatalf("prefix %q: %v", bad, err)
 		}
+	}
+}
+
+func v020(t *testing.T, db *sql.DB) {
+	t.Helper()
+	r := strings.NewReplacer("{p}", "kiln_", "{now}", clock)
+	stmts := []string{"CREATE TABLE kiln_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL)"}
+	for _, m := range migrations {
+		if m.version <= 1 {
+			for _, stmt := range m.stmts {
+				stmts = append(stmts, r.Replace(stmt))
+			}
+		}
+	}
+	stmts = append(stmts,
+		"INSERT INTO kiln_migrations (version, applied_at) VALUES (1, 0)",
+		"INSERT INTO kiln_limits (limit_key, max, active) VALUES ('mutex', 1, 1)",
+		`INSERT INTO kiln_jobs (id, state, queue, kind, max_attempts, run_at, created_at, limit_key, args)
+		VALUES (1, 'enqueued', 'default', 'old', 3, 0, 0, 'mutex', '{}'), (2, 'throttled', 'default', 'old', 3, 0, 0, 'mutex', '{}')`,
+		"UPDATE kiln_sequences SET last_id = 2 WHERE name = 'jobs'",
+	)
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+}
+
+func TestUpgradeFromV020(t *testing.T) {
+	t.Parallel()
+	db := database(t)
+	ctx := context.Background()
+	v020(t, db)
+	if _, err := New(ctx, db, NoMigrate()); err == nil || !strings.Contains(err.Error(), "001_rate_limits: run sqlitestore.Migrate") {
+		t.Fatalf("no-migrate on a v0.2.0 file: %v", err)
+	}
+	s, err := New(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	if err := Migrate(ctx, db); err != nil {
+		t.Fatalf("second migrate: %v", err)
+	}
+	if _, err := New(ctx, db, NoMigrate()); err != nil {
+		t.Fatalf("no-migrate after the upgrade: %v", err)
+	}
+	if v := count(t, s, "SELECT max(version) FROM kiln_migrations"); v != 1 {
+		t.Fatalf("migrations at version %d, v0.2.0 refuses to start above 1", v)
+	}
+	if n := count(t, s, "SELECT count(*) FROM kiln_schema_changes WHERE name = '001_rate_limits'"); n != 1 {
+		t.Fatalf("change recorded %d times", n)
+	}
+	if n := count(t, s, "SELECT count(*) FROM kiln_limits WHERE max = 1 AND rate = 0 AND tat IS NULL"); n != 1 {
+		t.Fatal("v0.2.0 limit row did not keep its rule")
+	}
+
+	js := claim(t, s, 10)
+	if len(js) != 1 || js[0].ID != 1 {
+		t.Fatalf("claimed %v, want the enqueued v0.2.0 job only", js)
+	}
+	finish(t, s, driver.Outcome{Ref: js[0].Ref, State: driver.Succeeded})
+	if st := record(t, s, 2).State; st != driver.Enqueued {
+		t.Fatalf("v0.2.0 throttled job is %s after the holder finished, want enqueued", st)
+	}
+
+	paced := job("new", rated("paced", 1, time.Minute, 1))
+	res := insert(t, s, paced, paced)
+	if res[0].ID != 3 || res[0].State != driver.Enqueued || res[1].State != driver.Scheduled {
+		t.Fatalf("inserted %+v, want ids after the v0.2.0 jobs and one reserved slot", res)
 	}
 }
 

@@ -1,0 +1,11 @@
+ALTER TABLE {p}limits ADD COLUMN rate INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE {p}limits ADD COLUMN per_us INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE {p}limits ADD COLUMN burst INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE {p}limits ADD COLUMN tat INTEGER;
+
+ALTER TABLE {p}jobs ADD COLUMN granted INTEGER NOT NULL DEFAULT 0;
+
+CREATE INDEX IF NOT EXISTS {p}jobs_granted ON {p}jobs (limit_key) WHERE state = 'throttled' AND granted = 1;

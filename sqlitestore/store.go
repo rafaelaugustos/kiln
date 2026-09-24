@@ -46,7 +46,7 @@ func New(ctx context.Context, db *sql.DB, opts ...Option) (*Store, error) {
 	}
 	var err error
 	if c.noMigrate {
-		err = checkVersion(ctx, db, c.prefix, false)
+		err = checkSchema(ctx, db, c.prefix)
 	} else {
 		err = migrate(ctx, db, c.prefix)
 	}

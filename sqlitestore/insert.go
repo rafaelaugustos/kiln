@@ -326,38 +326,46 @@ func (in *inserter) store(ctx context.Context, q querier) error {
 }
 
 func (in *inserter) limit(ctx context.Context, q querier) error {
-	var maxes map[string]int
+	var rules map[string]rule
 	for r, i := range in.live {
 		if p := &in.jobs[i]; in.won[r] && p.LimitKey != "" {
-			if maxes == nil {
-				maxes = make(map[string]int)
+			if rules == nil {
+				rules = make(map[string]rule)
 			}
-			maxes[p.LimitKey] = p.LimitMax
+			rules[p.LimitKey] = ruleOf(p)
 		}
 	}
-	if maxes == nil {
+	if rules == nil {
 		return nil
 	}
-	if _, err := q.ExecContext(ctx, in.s.q.declare, object(maxes)); err != nil {
+	keys := slices.Sorted(maps.Keys(rules))
+	if _, err := q.ExecContext(ctx, in.s.q.declare, declaration(rules, keys)); err != nil {
 		return err
 	}
-	slots, err := in.s.slots(ctx, q, slices.Sorted(maps.Keys(maxes)))
+	slots, err := in.s.slots(ctx, q, keys)
 	if err != nil {
 		return err
 	}
 	if err := in.s.fill(ctx, q, slots, in.f); err != nil {
 		return err
 	}
-	for _, id := range in.f.admitted {
+	for _, sl := range slots {
+		in.moved(sl.admitted, driver.Enqueued)
+		in.moved(sl.reserved, driver.Scheduled)
+	}
+	return nil
+}
+
+func (in *inserter) moved(ids []int64, st driver.State) {
+	for _, id := range ids {
 		r, ok := slices.BinarySearch(in.ids, id)
 		if !ok {
 			continue
 		}
 		if i := in.live[r]; in.res[i].State == driver.Throttled {
-			in.res[i].State = driver.Enqueued
+			in.res[i].State = st
 		}
 	}
-	return nil
 }
 
 func (in *inserter) settle() {

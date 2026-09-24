@@ -39,7 +39,7 @@ LIMIT ?`
 
 const sqlThrottledKeys = `SELECT DISTINCT limit_key FROM {p}jobs WHERE state = 'throttled' ORDER BY limit_key LIMIT ?`
 
-const sqlLimitPage = `SELECT limit_key, max, active FROM {p}limits WHERE limit_key > ? ORDER BY limit_key LIMIT ?`
+const sqlLimitPage = `SELECT ` + slotColumns + ` FROM {p}limits WHERE limit_key > ? ORDER BY limit_key LIMIT ?`
 
 const sqlActive = `SELECT limit_key, count(*) FROM {p}jobs
 WHERE limit_key IN (SELECT value FROM json_each(?)) AND state IN ('enqueued', 'processing')
@@ -253,15 +253,11 @@ func (s *Store) reconcile(ctx context.Context, limit int) (int, error) {
 		slots := make(map[string]*slot)
 		rows, err := q.QueryContext(ctx, s.q.limitPage, after, limit)
 		err = each(rows, err, func() error {
-			var (
-				key string
-				sl  slot
-			)
-			if err := rows.Scan(&key, &sl.max, &sl.active); err != nil {
-				return err
+			key, sl, err := scanSlot(rows)
+			if err == nil {
+				slots[key] = sl
 			}
-			slots[key] = &sl
-			return nil
+			return err
 		})
 		if err != nil {
 			return err

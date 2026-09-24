@@ -36,6 +36,7 @@ type statements struct {
 	dropDeps          string
 	dropHolder        string
 	dueRecurring      string
+	enqueue           string
 	expiredStats      string
 	failed            string
 	finishedBatchDeps string
@@ -61,6 +62,7 @@ type statements struct {
 	orphans           string
 	parents           string
 	pause             string
+	pending           string
 	promote           string
 	pruneArchive      string
 	pruneBatches      string
@@ -77,6 +79,7 @@ type statements struct {
 	removeRecurring   string
 	requeueArchived   string
 	requeueLive       string
+	reserve           string
 	resign            string
 	resolve           string
 	restore           string
@@ -93,6 +96,7 @@ type statements struct {
 	unregister        string
 	update            string
 	updateRecurring   string
+	waiting           string
 }
 
 func render(prefix string) statements {
@@ -125,6 +129,7 @@ func render(prefix string) statements {
 		dropDeps:          r(sqlDropDeps),
 		dropHolder:        r(sqlDropHolder),
 		dueRecurring:      r(sqlDueRecurring),
+		enqueue:           r(sqlEnqueue),
 		expiredStats:      r(sqlExpiredStats),
 		failed:            r(sqlFailed),
 		finishedBatchDeps: r(sqlFinishedBatchDeps),
@@ -150,6 +155,7 @@ func render(prefix string) statements {
 		orphans:           r(sqlOrphans),
 		parents:           r(sqlParents),
 		pause:             r(sqlPause),
+		pending:           r(sqlPending),
 		promote:           r(sqlPromote),
 		pruneArchive:      r(sqlPruneArchive),
 		pruneBatches:      r(sqlPruneBatches),
@@ -166,6 +172,7 @@ func render(prefix string) statements {
 		removeRecurring:   r(sqlRemoveRecurring),
 		requeueArchived:   r(sqlRequeueArchived),
 		requeueLive:       r(sqlRequeueLive),
+		reserve:           r(sqlReserve),
 		resign:            r(sqlResign),
 		resolve:           r(sqlResolve),
 		restore:           r(sqlRestore),
@@ -182,6 +189,7 @@ func render(prefix string) statements {
 		unregister:        r(sqlUnregister),
 		update:            r(sqlUpdate),
 		updateRecurring:   r(sqlUpdateRecurring),
+		waiting:           r(sqlWaiting),
 	}
 }
 

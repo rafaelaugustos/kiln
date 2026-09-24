@@ -44,7 +44,7 @@ const sqlDropHolder = `DELETE FROM {p}uniques WHERE unique_key = ? AND ` + holde
 
 const sqlPruneLimits = `DELETE FROM {p}limits WHERE limit_key IN (
 	SELECT l.limit_key FROM {p}limits l
-	WHERE l.active = 0
+	WHERE l.active = 0 AND (l.tat IS NULL OR l.tat <= {now})
 		AND NOT EXISTS (SELECT 1 FROM {p}jobs j WHERE j.limit_key = l.limit_key)
 		AND NOT EXISTS (SELECT 1 FROM {p}archive a WHERE a.limit_key = l.limit_key)
 	LIMIT ?)`

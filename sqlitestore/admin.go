@@ -30,7 +30,7 @@ FROM {p}archive j
 WHERE (j.finalized_at < ? OR j.finalized_at = ? AND j.id < ?)`
 
 const sqlRequeueLive = `UPDATE {p}jobs AS j SET state = ?, run_at = ?, finalized_at = NULL, cancel_requested = 0,
-	max_attempts = max(j.max_attempts, j.attempt + 1), history = ` + pushHistory + `
+	granted = 0, max_attempts = max(j.max_attempts, j.attempt + 1), history = ` + pushHistory + `
 WHERE j.id = ?`
 
 const sqlRequeueArchived = `INSERT INTO {p}jobs (id, state, queue, kind, priority, attempt, max_attempts, claim,

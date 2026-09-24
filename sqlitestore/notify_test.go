@@ -99,6 +99,19 @@ func TestNotify(t *testing.T) {
 	e.wait(t, driver.Event{Kind: driver.JobsReady, Queue: "then"})
 }
 
+func TestNotifyReserved(t *testing.T) {
+	t.Parallel()
+	s := open(t)
+	e := listen(t, s)
+	paced := rated("k", 1, time.Minute, 1)
+	insert(t, s, job("a", queue("now"), paced))
+	e.wait(t, driver.Event{Kind: driver.JobsReady, Queue: "now"})
+	if st := insert(t, s, job("a", queue("later"), paced))[0].State; st != driver.Scheduled {
+		t.Fatalf("second job inserted as %s, want scheduled in a reserved slot", st)
+	}
+	e.wait(t, driver.Event{Kind: driver.JobsReady, Queue: "later"})
+}
+
 func TestNotifySlowSubscriber(t *testing.T) {
 	t.Parallel()
 	s := open(t)

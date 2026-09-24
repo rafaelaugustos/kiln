@@ -91,7 +91,6 @@ type fallout struct {
 	batches  []int64
 	throttle []string
 	queues   []string
-	admitted []int64
 	stats    tally
 	changed  int
 	links    int

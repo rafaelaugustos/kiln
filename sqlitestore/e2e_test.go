@@ -553,3 +553,83 @@ func TestE2ETxEnqueue(t *testing.T) {
 	}
 	waitState(t, cl, id, kiln.Succeeded)
 }
+
+type ping struct{ N int }
+
+func (ping) Kind() string { return "ping" }
+
+func TestE2ERateLimit(t *testing.T) {
+	for attempt := 1; ; attempt++ {
+		bad, late := rateLimitRun(t)
+		if bad == "" {
+			return
+		}
+		if late < 50*time.Millisecond || attempt == 3 {
+			t.Fatalf("%s (latest start %v after its slot)", bad, late)
+		}
+		t.Logf("attempt %d: %s after a %v stall, retrying", attempt, bad, late)
+	}
+}
+
+func rateLimitRun(t *testing.T) (string, time.Duration) {
+	st := newCluster(t).store()
+	type start struct {
+		id int64
+		at time.Time
+	}
+	const n = 30
+	var (
+		mu     sync.Mutex
+		starts []start
+		all    = make(chan struct{})
+	)
+	m := kiln.NewMux()
+	kiln.Handle(m, func(_ context.Context, j *kiln.Job[ping]) error {
+		mu.Lock()
+		defer mu.Unlock()
+		if starts = append(starts, start{j.ID, time.Now()}); len(starts) == n {
+			close(all)
+		}
+		return nil
+	})
+	cfg := fast()
+	cfg.PollInterval = time.Second
+	cfg.DisableMaintenance = true
+	srv, _ := serve(t, st, m, cfg)
+	waitFor(t, 5*time.Second, "listen", func() bool { return srv.Stats().Listening })
+	cl := kiln.NewClient(st)
+	limit := kiln.Limit{Key: "api", Rate: 20, Per: time.Second, Burst: 1}
+	specs := make([]kiln.Spec, n)
+	for i := range specs {
+		specs[i] = kiln.Spec{Args: ping{N: i}, Options: []kiln.InsertOption{limit}}
+	}
+	res, err := cl.EnqueueMany(context.Background(), specs...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recv(t, all, 10*time.Second)
+	slots := make(map[int64]time.Time, len(res))
+	for _, r := range res {
+		slots[r.ID] = waitState(t, cl, r.ID, kiln.Succeeded).RunAt
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(starts) != n {
+		t.Fatalf("%d handler starts for %d jobs", len(starts), n)
+	}
+	var late time.Duration
+	for _, s := range starts {
+		slot := slots[s.id]
+		if s.at.Before(slot.Add(-2 * time.Millisecond)) {
+			t.Fatalf("job %d started at %v, before its slot at %v", s.id, s.at, slot)
+		}
+		late = max(late, s.at.Sub(slot))
+	}
+	slices.SortFunc(starts, func(a, b start) int { return a.at.Compare(b.at) })
+	for i := 5; i < len(starts); i++ {
+		if d := starts[i].at.Sub(starts[i-5].at); d < 200*time.Millisecond {
+			return fmt.Sprintf("starts %d to %d within %v, want at most 5 in any 200ms window", i-5, i, d), late
+		}
+	}
+	return "", late
+}
