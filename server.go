@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -16,10 +17,23 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
-const (
-	version  = "kiln/v0.1.0"
-	logEvery = 10 * time.Second
-)
+const logEvery = 10 * time.Second
+
+var version = buildVersion()
+
+func buildVersion() string {
+	const module = "github.com/rafaelaugustos/kiln"
+	bi, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "kiln/devel"
+	}
+	for _, d := range bi.Deps {
+		if d.Path == module && d.Replace == nil {
+			return "kiln/" + d.Version
+		}
+	}
+	return "kiln/devel"
+}
 
 type Server struct {
 	client   *Client
@@ -120,39 +134,29 @@ func (s *Server) Run(ctx context.Context) error {
 
 	life, stop := context.WithCancel(s.base)
 	var bg sync.WaitGroup
-	bg.Add(1)
-	go func() {
-		defer bg.Done()
+	bg.Go(func() {
 		s.heartbeat(life)
-	}()
+	})
 	if n, ok := s.store.(driver.Notifier); ok {
-		bg.Add(1)
-		go func() {
-			defer bg.Done()
+		bg.Go(func() {
 			s.listen(life, n)
-		}()
+		})
 	}
 	go s.comp.run()
 
 	var work, lead sync.WaitGroup
 	for _, p := range s.prods {
-		work.Add(1)
-		go func() {
-			defer work.Done()
+		work.Go(func() {
 			p.run(ctx)
-		}()
+		})
 	}
-	work.Add(1)
-	go func() {
-		defer work.Done()
+	work.Go(func() {
 		s.promote(ctx)
-	}()
+	})
 	if !s.cfg.DisableMaintenance {
-		lead.Add(1)
-		go func() {
-			defer lead.Done()
+		lead.Go(func() {
 			s.lead(ctx)
-		}()
+		})
 	}
 	s.log.Info("kiln: server started", "id", s.id, "queues", s.queues, "workers", s.capacity)
 
