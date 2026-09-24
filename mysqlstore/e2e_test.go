@@ -33,6 +33,10 @@ type hold struct{}
 
 func (hold) Kind() string { return "hold" }
 
+type call struct{ N int }
+
+func (call) Kind() string { return "call" }
+
 type cluster struct {
 	tb testing.TB
 	db *sql.DB
@@ -432,6 +436,71 @@ func TestE2ELimitAcrossServers(t *testing.T) {
 	if p := peak.Load(); p < 1 || p > 2 {
 		t.Fatalf("peak concurrency %d, limit 2", p)
 	}
+}
+
+func TestE2ERateLimit(t *testing.T) {
+	t.Parallel()
+	for attempt := 1; ; attempt++ {
+		starts, lag := paced(t)
+		i, bunched := crowded(starts)
+		if !bunched {
+			return
+		}
+		if lag < 50*time.Millisecond || attempt == 5 {
+			t.Fatalf("starts %d to %d happened within %v, want at most 5 in any 200ms; slowest claim %v after its slot",
+				i, i+5, starts[i+5].Sub(starts[i]), lag)
+		}
+		t.Logf("attempt %d: a job was claimed %v after its slot and the next slots were released behind it", attempt, lag)
+	}
+}
+
+func crowded(starts []time.Time) (int, bool) {
+	for i := range starts[5:] {
+		if starts[i+5].Sub(starts[i]) < 200*time.Millisecond {
+			return i, true
+		}
+	}
+	return 0, false
+}
+
+func paced(t *testing.T) ([]time.Time, time.Duration) {
+	st := newCluster(t).store()
+	var (
+		mu     sync.Mutex
+		starts []time.Time
+	)
+	m := kiln.NewMux()
+	kiln.Handle(m, func(context.Context, *kiln.Job[call]) error {
+		mu.Lock()
+		starts = append(starts, time.Now())
+		mu.Unlock()
+		return nil
+	})
+	cfg := fast()
+	cfg.PollInterval = 20 * time.Millisecond
+	_, stop := serve(t, st, m, cfg)
+	cl := kiln.NewClient(st)
+	limit := kiln.Limit{Key: "api", Rate: 20, Per: time.Second, Burst: 1}
+	specs := make([]kiln.Spec, 30)
+	for i := range specs {
+		specs[i] = kiln.Spec{Args: call{N: i}, Options: []kiln.InsertOption{limit}}
+	}
+	res, err := cl.EnqueueMany(context.Background(), specs...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lag time.Duration
+	for _, r := range res {
+		rec := waitState(t, cl, r.ID, kiln.Succeeded)
+		lag = max(lag, rec.AttemptedAt.Sub(rec.RunAt))
+	}
+	stop()
+	mu.Lock()
+	defer mu.Unlock()
+	if len(starts) != len(specs) {
+		t.Fatalf("%d handler starts for %d jobs", len(starts), len(specs))
+	}
+	return slices.SortedFunc(slices.Values(starts), time.Time.Compare), lag
 }
 
 func TestE2EUnique(t *testing.T) {

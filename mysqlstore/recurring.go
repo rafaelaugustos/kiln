@@ -60,7 +60,7 @@ func (s *Store) Due(ctx context.Context, limit int) ([]driver.Recurring, time.Ti
 func (s *Store) Fire(ctx context.Context, f driver.Fire) ([]driver.Inserted, error) {
 	var (
 		res    []driver.Inserted
-		limits map[string]int
+		limits map[string]rule
 	)
 	err := s.txn(ctx, func(tx *sql.Tx) error {
 		res, limits = nil, nil

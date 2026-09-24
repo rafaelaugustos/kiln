@@ -9,6 +9,8 @@ import (
 )
 
 const (
+	errDupColumn   = 1060
+	errDupIndex    = 1061
 	errDuplicate   = 1062
 	errNoTable     = 1146
 	errLockTimeout = 1205
@@ -23,6 +25,11 @@ func mysqlError(err error) *mysql.MySQLError {
 		return me
 	}
 	return nil
+}
+
+func redundant(err error) bool {
+	me := mysqlError(err)
+	return me != nil && (me.Number == errDupColumn || me.Number == errDupIndex)
 }
 
 func retryable(err error) bool {

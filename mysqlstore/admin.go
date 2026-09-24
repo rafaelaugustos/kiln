@@ -54,7 +54,7 @@ const sqlKeyHolders = `SELECT unique_key, job_id FROM {p}uniques WHERE unique_ke
 const sqlRequeueLive = `UPDATE (VALUES `
 
 const sqlRequeueLiveTail = `) AS v (id, state, entry) STRAIGHT_JOIN {p}jobs j FORCE INDEX (PRIMARY) ON j.id = v.id
-SET j.state = v.state, j.run_at = ?, j.finalized_at = NULL, j.cancel_requested = FALSE,
+SET j.state = v.state, j.run_at = ?, j.finalized_at = NULL, j.cancel_requested = FALSE, j.granted = FALSE,
 	j.max_attempts = GREATEST(j.max_attempts, j.attempt + 1), j.history = ` + pushHistory
 
 const sqlRequeueArchived = `INSERT INTO {p}jobs (id, state, queue, kind, priority, attempt, max_attempts, claim, timeout_ms,

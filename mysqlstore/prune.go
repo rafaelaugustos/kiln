@@ -53,6 +53,7 @@ FROM {p}uniques WHERE unique_key > ? ORDER BY unique_key LIMIT ?`
 
 const sqlUnusedLimits = `SELECT l.limit_key FROM {p}limits l
 WHERE l.active = 0 AND (l.declared_at IS NULL OR l.declared_at < UTC_TIMESTAMP(6) - INTERVAL 1 HOUR)
+	AND (l.tat IS NULL OR l.tat <= UTC_TIMESTAMP(6))
 	AND NOT EXISTS (SELECT 1 FROM {p}jobs j WHERE j.limit_key = l.limit_key)
 	AND NOT EXISTS (SELECT 1 FROM {p}archive a WHERE a.limit_key = l.limit_key)
 LIMIT ?

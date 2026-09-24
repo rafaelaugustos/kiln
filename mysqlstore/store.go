@@ -43,7 +43,7 @@ func New(ctx context.Context, db *sql.DB, opts ...Option) (*Store, error) {
 	}
 	var err error
 	if c.noMigrate {
-		err = checkVersion(ctx, db, c.prefix, false)
+		err = checkSchema(ctx, db, c.prefix)
 	} else {
 		err = migrate(ctx, db, c.prefix)
 	}
@@ -152,6 +152,7 @@ type statements struct {
 	openDeps            string
 	orphans             string
 	pause               string
+	pending             string
 	promote             string
 	pruneBatches        string
 	pruneLimits         string
@@ -168,6 +169,7 @@ type statements struct {
 	requeueArchivedTail string
 	requeueLive         string
 	requeueLiveTail     string
+	reserveTail         string
 	resolved            string
 	resign              string
 	seal                string
@@ -261,6 +263,7 @@ func newStatements(prefix string) statements {
 		openDeps:            r.Replace(sqlOpenDeps),
 		orphans:             r.Replace(sqlOrphans),
 		pause:               r.Replace(sqlPause),
+		pending:             r.Replace(sqlPending),
 		promote:             r.Replace(sqlPromote),
 		pruneBatches:        r.Replace(sqlPruneBatches),
 		pruneLimits:         r.Replace(sqlPruneLimits),
@@ -277,6 +280,7 @@ func newStatements(prefix string) statements {
 		requeueArchivedTail: r.Replace(sqlRequeueArchivedTail),
 		requeueLive:         r.Replace(sqlRequeueLive),
 		requeueLiveTail:     r.Replace(sqlRequeueLiveTail),
+		reserveTail:         r.Replace(sqlReserveTail),
 		resolved:            r.Replace(sqlResolved),
 		resign:              r.Replace(sqlResign),
 		seal:                r.Replace(sqlSeal),

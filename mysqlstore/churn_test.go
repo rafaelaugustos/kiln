@@ -49,7 +49,7 @@ func TestChurn(t *testing.T) {
 	s := open(t)
 	ctx := context.Background()
 	deadlocks, timeouts := metric(t, s, "lock_deadlocks"), metric(t, s, "lock_timeouts")
-	maxes := map[string]int{"a": 2, "b": 3}
+	maxes := map[string]int{"a": 2, "b": 3, "r": 3}
 	masks := []driver.Mask{driver.OnSucceeded, driver.OnFinished, driver.OnFailed | driver.OnSucceeded, driver.OnDeleted}
 	var (
 		recent             pool
@@ -89,6 +89,9 @@ func TestChurn(t *testing.T) {
 					case 4:
 						unique(fmt.Sprint("key", rng.IntN(6)), 0)(&p)
 						limited("a", maxes["a"])(&p)
+					case 5:
+						limited("r", maxes["r"])(&p)
+						rated("r", 2000, time.Second, 4)(&p)
 					}
 					ps[i] = p
 				}

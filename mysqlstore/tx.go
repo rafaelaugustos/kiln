@@ -54,14 +54,14 @@ func (s *Store) once(ctx context.Context, fn func(tx *sql.Tx) error) error {
 type TxWriter struct {
 	s      *Store
 	tx     *sql.Tx
-	limits map[string]int
+	limits map[string]rule
 	lost   error
 }
 
 func (w *TxWriter) Insert(ctx context.Context, jobs []driver.InsertParams) ([]driver.Inserted, error) {
 	var (
 		res    []driver.Inserted
-		limits map[string]int
+		limits map[string]rule
 	)
 	err := w.atomic(ctx, func() (err error) {
 		res, limits, err = w.s.insert(ctx, w.tx, jobs)
@@ -123,12 +123,12 @@ func (s *Store) InTx(ctx context.Context, fn func(w driver.Writer) error) error 
 	return nil
 }
 
-func (w *TxWriter) remember(limits map[string]int) {
+func (w *TxWriter) remember(limits map[string]rule) {
 	if len(limits) == 0 {
 		return
 	}
 	if w.limits == nil {
-		w.limits = make(map[string]int, len(limits))
+		w.limits = make(map[string]rule, len(limits))
 	}
 	maps.Copy(w.limits, limits)
 }

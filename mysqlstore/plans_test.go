@@ -3,8 +3,10 @@ package mysqlstore
 import (
 	"context"
 	"database/sql"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 type step struct {
@@ -75,7 +77,10 @@ SELECT UTC_TIMESTAMP() - INTERVAL n MINUTE, CONCAT('srv', n % 7), n FROM g`,
 		`INSERT INTO kiln_batches (description, created_at, sealed, finished_at)
 WITH RECURSIVE g(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM g WHERE n < 2000)
 SELECT '', UTC_TIMESTAMP(6), TRUE, IF(n % 10 = 0, NULL, UTC_TIMESTAMP(6)) FROM g`,
-		`ANALYZE TABLE kiln_jobs, kiln_deps, kiln_uniques, kiln_stats, kiln_batches`,
+		`INSERT INTO kiln_limits (limit_key, max, active, rate, per_us, burst, tat)
+WITH RECURSIVE g(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM g WHERE n < 2000)
+SELECT CONCAT('key', n), n % 3, 0, n % 2 * 10, 1000000, 1, IF(n % 4 = 0, UTC_TIMESTAMP(6), NULL) FROM g`,
+		`ANALYZE TABLE kiln_jobs, kiln_deps, kiln_uniques, kiln_stats, kiln_batches, kiln_limits`,
 	}
 	for _, q := range gen {
 		if _, err := s.db.ExecContext(ctx, q); err != nil {
@@ -89,7 +94,14 @@ SELECT '', UTC_TIMESTAMP(6), TRUE, IF(n % 10 = 0, NULL, UTC_TIMESTAMP(6)) FROM g
 		{"claim kinds", "jobs_fetch", render(s.q.claimKinds, "q1", "q1", []string{"k1", "k2"}, 10)},
 		{"promote", "jobs_due", render(s.q.due, 100)},
 		{"leases", "jobs_running", render(s.q.directives, "srv3")},
-		{"admit", "jobs_throttled", render(s.q.waiting, "key48", 5)},
+		{"admit", "jobs_throttled", render(s.q.waiting, "key48", raw(""), 5)},
+		{"admit after", "jobs_throttled", render(s.q.waiting, "key48", raw(render(sqlAfter, 1, 1, 1000)), 5)},
+		{"lock limits", "PRIMARY", render(s.q.lockLimits, []string{"key48", "key7"})},
+		{"declared limits", "PRIMARY", render(s.q.declared, []string{"key48", "key7"})},
+		{"limit page", "PRIMARY", render(s.q.limitPage, "key10", 100)},
+		{"enqueue", "PRIMARY", render(s.q.enqueue, []int64{1048, 2048})},
+		{"account", "PRIMARY", render("UPDATE kiln_limits SET active = CASE limit_key WHEN ? THEN 1 END, "+
+			"tat = CASE limit_key WHEN ? THEN ? ELSE tat END WHERE limit_key IN (?)", "key48", "key48", time.Now(), []string{"key48"})},
 		{"throttled keys", "jobs_throttled", render(s.q.throttledKeys, 100)},
 		{"stuck", "jobs_state", render(s.q.awaiting, 0, 100)},
 		{"delete by state", "jobs_state", render(s.q.lockTargets, raw("jobs_state"), raw("j.state = 'enqueued'"), 0)},
@@ -118,7 +130,17 @@ SELECT '', UTC_TIMESTAMP(6), TRUE, IF(n % 10 = 0, NULL, UTC_TIMESTAMP(6)) FROM g
 			}
 		}
 	}
-	for _, q := range []string{s.q.counts, s.q.nextDue, render(s.q.orphans, 1000000, 100)} {
+	reserve := "UPDATE (VALUES " + render("ROW(?, ?), ROW(?, ?)", 1048, nil, 2048, time.Now()) + s.q.reserveTail
+	if plan := explain(t, s, reserve); !slices.Contains(plan, step{table: "j", key: "PRIMARY"}) {
+		t.Errorf("reserve does not join jobs by PRIMARY: %+v", plan)
+	}
+	granted := func(st step) bool {
+		return st.table == "kiln_jobs" && st.key == "jobs_granted" && !strings.Contains(st.extra, "filesort") && !strings.Contains(st.extra, "temporary")
+	}
+	if plan := explain(t, s, s.q.pending); !slices.ContainsFunc(plan, granted) {
+		t.Errorf("pending does not read throttled grants in key order through jobs_granted: %+v", plan)
+	}
+	for _, q := range []string{s.q.counts, s.q.nextDue, s.q.pending, render(s.q.orphans, 1000000, 100)} {
 		for _, st := range explain(t, s, q) {
 			if st.table == "kiln_jobs" && st.key == "" {
 				t.Errorf("full scan of jobs: %+v\n%s", st, q)

@@ -69,7 +69,7 @@ type inserter struct {
 	keys    [][]byte
 	holders map[string]holder
 	limits  []string
-	maxes   map[string]int
+	rules   map[string]rule
 	late    []string
 	linked  bool
 	batched bool
@@ -83,7 +83,7 @@ func (s *Store) Insert(ctx context.Context, jobs []driver.InsertParams) ([]drive
 	return res, err
 }
 
-func (s *Store) insert(ctx context.Context, tx *sql.Tx, jobs []driver.InsertParams) ([]driver.Inserted, map[string]int, error) {
+func (s *Store) insert(ctx context.Context, tx *sql.Tx, jobs []driver.InsertParams) ([]driver.Inserted, map[string]rule, error) {
 	if len(jobs) == 0 {
 		return nil, nil, nil
 	}
@@ -96,7 +96,7 @@ func (s *Store) insert(ctx context.Context, tx *sql.Tx, jobs []driver.InsertPara
 		return nil, nil, err
 	}
 	if len(in.limits) > 0 {
-		if err := s.declare(ctx, in.limits, in.maxes, tx != nil); err != nil {
+		if err := s.declare(ctx, in.limits, in.rules, tx != nil); err != nil {
 			return nil, nil, wrap("insert", err)
 		}
 	}
@@ -104,7 +104,7 @@ func (s *Store) insert(ctx context.Context, tx *sql.Tx, jobs []driver.InsertPara
 		if err := in.write(ctx, tx); err != nil {
 			return nil, nil, err
 		}
-		return in.res, in.maxes, nil
+		return in.res, in.rules, nil
 	}
 	var err error
 	if in.linked || in.batched || len(in.keys) > 0 || len(in.limits) > 0 {
@@ -116,9 +116,9 @@ func (s *Store) insert(ctx context.Context, tx *sql.Tx, jobs []driver.InsertPara
 		return nil, nil, err
 	}
 	if len(in.late) > 0 {
-		late := make(map[string]int, len(in.late))
+		late := make(map[string]rule, len(in.late))
 		for _, key := range in.late {
-			late[key] = in.maxes[key]
+			late[key] = in.rules[key]
 		}
 		s.admitKeys(ctx, late)
 	}
@@ -154,13 +154,13 @@ func (in *inserter) plan() {
 			in.keys = append(in.keys, p.UniqueKey)
 		}
 		if p.LimitKey != "" {
-			if in.maxes == nil {
-				in.maxes = make(map[string]int)
+			if in.rules == nil {
+				in.rules = make(map[string]rule)
 			}
-			if _, ok := in.maxes[p.LimitKey]; !ok {
+			if _, ok := in.rules[p.LimitKey]; !ok {
 				in.limits = append(in.limits, p.LimitKey)
 			}
-			in.maxes[p.LimitKey] = p.LimitMax
+			in.rules[p.LimitKey] = ruleOf(p)
 		}
 		in.pos[i] = len(in.live)
 		in.live = append(in.live, i)
@@ -429,7 +429,7 @@ func (in *inserter) admit(ctx context.Context, q querier) error {
 	if err != nil {
 		return wrap("insert", err)
 	}
-	if err := in.s.restore(ctx, q, in.limits, in.maxes, slots); err != nil {
+	if err := in.s.restore(ctx, q, in.limits, in.rules, slots); err != nil {
 		return wrap("insert", err)
 	}
 	in.late = in.late[:0]
@@ -438,20 +438,27 @@ func (in *inserter) admit(ctx context.Context, q querier) error {
 			in.late = append(in.late, key)
 		}
 	}
-	admitted, err := in.s.fill(ctx, q, slots)
+	a, err := in.s.fill(ctx, q, slots)
 	if err != nil {
 		return wrap("insert", err)
 	}
-	for _, id := range admitted.ids {
-		r, ok := slices.BinarySearch(in.ids, id)
-		if !ok {
-			continue
-		}
-		if i := in.live[r]; in.res[i].State == driver.Throttled {
-			in.res[i].State = driver.Enqueued
-		}
+	for _, id := range a.ids {
+		in.mark(id, driver.Enqueued)
+	}
+	for _, m := range a.reserved {
+		in.mark(m.id, driver.Scheduled)
 	}
 	return nil
+}
+
+func (in *inserter) mark(id int64, st driver.State) {
+	r, ok := slices.BinarySearch(in.ids, id)
+	if !ok {
+		return
+	}
+	if i := in.live[r]; in.res[i].State == driver.Throttled {
+		in.res[i].State = st
+	}
 }
 
 func (in *inserter) settle() {

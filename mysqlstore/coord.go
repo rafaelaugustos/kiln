@@ -25,6 +25,11 @@ const sqlResign = `DELETE FROM {p}leases WHERE name = ? AND holder = ?`
 
 const sqlNextDue = `SELECT TIMESTAMPDIFF(MICROSECOND, UTC_TIMESTAMP(6), MIN(run_at)) FROM {p}jobs WHERE state = 'scheduled'`
 
+const sqlPending = `SELECT TIMESTAMPDIFF(MICROSECOND, UTC_TIMESTAMP(6), MIN(run_at)), NULL FROM {p}jobs WHERE state = 'scheduled'
+UNION ALL
+(SELECT DISTINCT NULL, limit_key FROM {p}jobs FORCE INDEX (jobs_granted)
+WHERE state = 'throttled' AND granted = TRUE ORDER BY limit_key LIMIT 100)`
+
 const sqlDue = `SELECT UTC_TIMESTAMP(6), id, queue, COALESCE(limit_key, '') FROM {p}jobs FORCE INDEX (jobs_due)
 WHERE state = 'scheduled' AND run_at <= UTC_TIMESTAMP(6)
 ORDER BY run_at LIMIT ? FOR UPDATE SKIP LOCKED`
@@ -84,13 +89,36 @@ func (s *Store) nextDue(ctx context.Context, q querier) (time.Duration, bool, er
 	return time.Duration(next.Int64) * time.Microsecond, true, nil
 }
 
+func (s *Store) pending(ctx context.Context) (next time.Duration, found bool, granted []string, err error) {
+	rows, err := s.db.QueryContext(ctx, s.q.pending)
+	if err != nil {
+		return 0, false, nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			us  sql.NullInt64
+			key sql.NullString
+		)
+		if err := rows.Scan(&us, &key); err != nil {
+			return 0, false, nil, err
+		}
+		if key.Valid {
+			granted = append(granted, key.String)
+		} else if us.Valid {
+			next, found = time.Duration(us.Int64)*time.Microsecond, true
+		}
+	}
+	return next, found, granted, rows.Err()
+}
+
 func (s *Store) Promote(ctx context.Context, limit int) (driver.Promoted, error) {
 	var p driver.Promoted
-	next, found, err := s.nextDue(ctx, s.db)
+	next, found, granted, err := s.pending(ctx)
 	if err != nil {
 		return p, fmt.Errorf("kiln: promote: %w", err)
 	}
-	if !found || next > 0 {
+	if len(granted) == 0 && (!found || next > 0) {
 		p.Next = next
 		return p, nil
 	}
@@ -132,6 +160,7 @@ func (s *Store) Promote(ctx context.Context, limit int) (driver.Promoted, error)
 			}
 			p.Count = len(ids)
 		}
+		keys = merge(keys, granted)
 		if len(keys) > 0 {
 			slices.Sort(keys)
 			slots, err := s.lockLimits(ctx, tx, keys, false)

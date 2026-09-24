@@ -152,7 +152,7 @@ func (s *Store) settle(ctx context.Context, q querier, f *fallout) error {
 		if err != nil {
 			return err
 		}
-		f.changed += len(a.ids)
+		f.changed += a.changed()
 	}
 	if t := f.stats; t != (tally{}) {
 		bucket := f.now.Truncate(time.Minute)

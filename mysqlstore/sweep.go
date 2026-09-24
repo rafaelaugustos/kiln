@@ -34,7 +34,8 @@ LIMIT ?`
 
 const sqlThrottledKeys = `SELECT DISTINCT limit_key FROM {p}jobs WHERE state = 'throttled' ORDER BY limit_key LIMIT ?`
 
-const sqlLimitPage = `SELECT limit_key, max, active FROM {p}limits WHERE limit_key > ? ORDER BY limit_key LIMIT ?
+const sqlLimitPage = `SELECT limit_key, max, active, rate, per_us, burst, tat FROM {p}limits
+WHERE limit_key > ? ORDER BY limit_key LIMIT ?
 FOR UPDATE SKIP LOCKED`
 
 const sqlActive = `SELECT limit_key, COUNT(*) FROM {p}jobs WHERE state IN ('enqueued', 'processing') AND limit_key IN (?)
@@ -272,9 +273,9 @@ func (s *Store) sweepThrottled(ctx context.Context, limit int) (int, error) {
 	if err := rows.Err(); err != nil || len(keys) == 0 {
 		return 0, err
 	}
-	floor := make(map[string]int, len(keys))
+	floor := make(map[string]rule, len(keys))
 	for _, key := range keys {
-		floor[key] = 1
+		floor[key] = rule{max: 1}
 	}
 	n := 0
 	err = s.txn(ctx, func(tx *sql.Tx) error {
@@ -286,7 +287,7 @@ func (s *Store) sweepThrottled(ctx context.Context, limit int) (int, error) {
 			return err
 		}
 		a, err := s.fill(ctx, tx, slots)
-		n = len(a.ids)
+		n = a.changed()
 		return err
 	})
 	return n, err
@@ -306,15 +307,13 @@ func (s *Store) reconcile(ctx context.Context, limit int) (int, error) {
 		slots := make(map[string]*slot)
 		var keys []string
 		for rows.Next() {
-			var (
-				key string
-				sl  slot
-			)
-			if err := rows.Scan(&key, &sl.max, &sl.active); err != nil {
+			var key string
+			sl := &slot{}
+			if err := sl.scan(rows, &key); err != nil {
 				rows.Close()
 				return err
 			}
-			slots[key] = &sl
+			slots[key] = sl
 			keys = append(keys, key)
 		}
 		rows.Close()
@@ -358,7 +357,7 @@ func (s *Store) reconcile(ctx context.Context, limit int) (int, error) {
 			}
 		}
 		a, err := s.fill(ctx, tx, slots)
-		n += len(a.ids)
+		n += a.changed()
 		return err
 	})
 	return n, err

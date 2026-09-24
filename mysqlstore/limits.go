@@ -5,29 +5,35 @@ import (
 	"database/sql"
 	"maps"
 	"slices"
+
+	"github.com/rafaelaugustos/kiln/driver"
 )
 
-const sqlLockLimits = `SELECT limit_key, max, active FROM {p}limits FORCE INDEX (PRIMARY)
+const sqlLockLimits = `SELECT limit_key, max, active, rate, per_us, burst, tat FROM {p}limits FORCE INDEX (PRIMARY)
 WHERE limit_key IN (?) ORDER BY limit_key FOR UPDATE`
 
-const sqlWaiting = `(SELECT id, queue, limit_key FROM {p}jobs FORCE INDEX (jobs_throttled)
-	WHERE state = 'throttled' AND limit_key = ?
-	ORDER BY priority DESC, id LIMIT ? FOR UPDATE SKIP LOCKED)`
+const sqlDeclared = `SELECT limit_key, max, rate, per_us, burst FROM {p}limits WHERE limit_key IN (?)`
 
-const sqlEnqueue = `UPDATE {p}jobs SET state = 'enqueued' WHERE id IN (?)`
+const sqlDeclare = `INSERT INTO {p}limits (limit_key, max, rate, per_us, burst, declared_at) VALUES `
 
-const sqlDeclared = `SELECT limit_key, max FROM {p}limits WHERE limit_key IN (?)`
-
-const sqlDeclare = `INSERT INTO {p}limits (limit_key, max, declared_at) VALUES `
-
-const sqlDeclareTail = ` AS n ON DUPLICATE KEY UPDATE max = n.max, declared_at = COALESCE(n.declared_at, {p}limits.declared_at)`
+const sqlDeclareTail = ` AS n ON DUPLICATE KEY UPDATE max = n.max, rate = n.rate, per_us = n.per_us, burst = n.burst,
+	declared_at = COALESCE(n.declared_at, {p}limits.declared_at)`
 
 const sqlEnsureTail = ` AS n ON DUPLICATE KEY UPDATE limit_key = {p}limits.limit_key`
 
-type slot struct {
-	max    int
-	active int
-	dirty  bool
+type rule struct {
+	max   int
+	rate  int
+	per   int64
+	burst int
+}
+
+func ruleOf(p *driver.InsertParams) rule {
+	r := rule{max: p.LimitMax}
+	if p.LimitRate > 0 {
+		r.rate, r.per, r.burst = p.LimitRate, max(micros(p.LimitPer), 1), p.LimitBurst
+	}
+	return r
 }
 
 func (s *Store) lockLimits(ctx context.Context, q querier, keys []string, skip bool) (map[string]*slot, error) {
@@ -42,135 +48,70 @@ func (s *Store) lockLimits(ctx context.Context, q querier, keys []string, skip b
 	defer rows.Close()
 	slots := make(map[string]*slot, len(keys))
 	for rows.Next() {
-		var (
-			key string
-			sl  slot
-		)
-		if err := rows.Scan(&key, &sl.max, &sl.active); err != nil {
+		var key string
+		sl := &slot{}
+		if err := sl.scan(rows, &key); err != nil {
 			return nil, err
 		}
-		slots[key] = &sl
+		slots[key] = sl
 	}
 	return slots, rows.Err()
 }
 
-type admitted struct {
-	ids    []int64
-	queues []string
+func (s *Store) declared(ctx context.Context, q querier, keys []string) (map[string]rule, error) {
+	rows, err := q.QueryContext(ctx, render(s.q.declared, keys))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	rules := make(map[string]rule, len(keys))
+	for rows.Next() {
+		var (
+			key string
+			r   rule
+		)
+		if err := rows.Scan(&key, &r.max, &r.rate, &r.per, &r.burst); err != nil {
+			return nil, err
+		}
+		rules[key] = r
+	}
+	return rules, rows.Err()
 }
 
-func (s *Store) fill(ctx context.Context, q querier, slots map[string]*slot) (admitted, error) {
-	var a admitted
-	keys := slices.Sorted(maps.Keys(slots))
-	var b []byte
-	for _, key := range keys {
-		sl := slots[key]
-		if free := sl.max - sl.active; free > 0 {
-			if b != nil {
-				b = append(b, " UNION ALL "...)
-			}
-			b = appendSQL(b, s.q.waiting, key, free)
-		}
-	}
-	if b != nil {
-		rows, err := q.QueryContext(ctx, string(b))
-		if err != nil {
-			return a, err
-		}
-		for rows.Next() {
-			var id int64
-			var queue, key string
-			if err := rows.Scan(&id, &queue, &key); err != nil {
-				rows.Close()
-				return a, err
-			}
-			a.ids = append(a.ids, id)
-			if !slices.Contains(a.queues, queue) {
-				a.queues = append(a.queues, queue)
-			}
-			sl := slots[key]
-			sl.active++
-			sl.dirty = true
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return a, err
-		}
-	}
-	if len(a.ids) > 0 {
-		slices.Sort(a.ids)
-		if _, err := q.ExecContext(ctx, render(s.q.enqueue, a.ids)); err != nil {
-			return a, err
-		}
-	}
-	var dirty []string
-	for _, key := range keys {
-		if slots[key].dirty {
-			dirty = append(dirty, key)
-		}
-	}
-	if len(dirty) == 0 {
-		return a, nil
-	}
-	b = append(b[:0], "UPDATE "...)
-	b = append(b, s.prefix...)
-	b = append(b, "limits SET active = CASE limit_key"...)
-	for _, key := range dirty {
-		b = appendSQL(b, " WHEN ? THEN ?", key, max(slots[key].active, 0))
-	}
-	b = appendSQL(b, " END WHERE limit_key IN (?)", dirty)
-	_, err := q.ExecContext(ctx, string(b))
-	return a, err
-}
-
-func (s *Store) declare(ctx context.Context, keys []string, maxes map[string]int, external bool) error {
-	if !external {
-		rows, err := s.db.QueryContext(ctx, render(s.q.declared, keys))
-		if err != nil {
-			return err
-		}
-		same := make(map[string]bool, len(keys))
-		for rows.Next() {
-			var (
-				key string
-				n   int
-			)
-			if err := rows.Scan(&key, &n); err != nil {
-				rows.Close()
-				return err
-			}
-			same[key] = n == maxes[key]
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return err
-		}
-		keys = slices.DeleteFunc(slices.Clone(keys), func(k string) bool { return same[k] })
-		if len(keys) == 0 {
-			return nil
-		}
-	}
+func (s *Store) declare(ctx context.Context, keys []string, rules map[string]rule, external bool) error {
 	if external {
-		_, err := s.side.exec(ctx, s.limitRows(s.q.declareTail, keys, maxes, "UTC_TIMESTAMP(6)"))
+		_, err := s.side.exec(ctx, s.limitRows(s.q.declareTail, keys, rules, "UTC_TIMESTAMP(6)"))
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, s.limitRows(s.q.declareTail, keys, maxes, "NULL"))
+	stored, err := s.declared(ctx, s.db, keys)
+	if err != nil {
+		return err
+	}
+	keys = slices.DeleteFunc(slices.Clone(keys), func(k string) bool {
+		r, ok := stored[k]
+		return ok && r == rules[k]
+	})
+	if len(keys) == 0 {
+		return nil
+	}
+	_, err = s.db.ExecContext(ctx, s.limitRows(s.q.declareTail, keys, rules, "NULL"))
 	return err
 }
 
-func (s *Store) limitRows(tail string, keys []string, maxes map[string]int, at raw) string {
-	b := make([]byte, 0, 48*len(keys)+160)
+func (s *Store) limitRows(tail string, keys []string, rules map[string]rule, at raw) string {
+	b := make([]byte, 0, 64*len(keys)+192)
 	b = append(b, s.q.declare...)
 	for i, key := range keys {
 		if i > 0 {
 			b = append(b, ',')
 		}
-		b = appendSQL(b, "(?, ?, ?)", key, maxes[key], at)
+		r := rules[key]
+		b = appendSQL(b, "(?, ?, ?, ?, ?, ?)", key, r.max, r.rate, r.per, r.burst, at)
 	}
 	return string(append(b, tail...))
 }
 
-func (s *Store) restore(ctx context.Context, q querier, keys []string, maxes map[string]int, slots map[string]*slot) error {
+func (s *Store) restore(ctx context.Context, q querier, keys []string, rules map[string]rule, slots map[string]*slot) error {
 	var gone []string
 	for _, key := range keys {
 		if slots[key] == nil {
@@ -180,30 +121,18 @@ func (s *Store) restore(ctx context.Context, q querier, keys []string, maxes map
 	if len(gone) == 0 {
 		return nil
 	}
-	rows, err := q.QueryContext(ctx, render(s.q.declared, gone))
+	held, err := s.declared(ctx, q, gone)
 	if err != nil {
 		return err
 	}
-	held := make(map[string]bool, len(gone))
-	for rows.Next() {
-		var (
-			key string
-			n   int
-		)
-		if err := rows.Scan(&key, &n); err != nil {
-			rows.Close()
-			return err
-		}
-		held[key] = true
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	if gone = slices.DeleteFunc(gone, func(k string) bool { return held[k] }); len(gone) == 0 {
+	gone = slices.DeleteFunc(gone, func(k string) bool {
+		_, ok := held[k]
+		return ok
+	})
+	if len(gone) == 0 {
 		return nil
 	}
-	if _, err := q.ExecContext(ctx, s.limitRows(s.q.ensureTail, gone, maxes, "NULL")); err != nil {
+	if _, err := q.ExecContext(ctx, s.limitRows(s.q.ensureTail, gone, rules, "NULL")); err != nil {
 		return err
 	}
 	more, err := s.lockLimits(ctx, q, gone, false)
@@ -214,11 +143,11 @@ func (s *Store) restore(ctx context.Context, q querier, keys []string, maxes map
 	return nil
 }
 
-func (s *Store) admitKeys(ctx context.Context, maxes map[string]int) (admitted, error) {
-	keys := slices.Sorted(maps.Keys(maxes))
+func (s *Store) admitKeys(ctx context.Context, rules map[string]rule) (admitted, error) {
+	keys := slices.Sorted(maps.Keys(rules))
 	var a admitted
 	err := s.txn(ctx, func(tx *sql.Tx) error {
-		if _, err := tx.ExecContext(ctx, s.limitRows(s.q.ensureTail, keys, maxes, "NULL")); err != nil {
+		if _, err := tx.ExecContext(ctx, s.limitRows(s.q.ensureTail, keys, rules, "NULL")); err != nil {
 			return err
 		}
 		slots, err := s.lockLimits(ctx, tx, keys, false)

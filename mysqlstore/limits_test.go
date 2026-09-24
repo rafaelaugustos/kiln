@@ -42,7 +42,7 @@ func TestInsertRestoresVanishedLimit(t *testing.T) {
 	if err := in.allocate(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.declare(ctx, in.limits, in.maxes, false); err != nil {
+	if err := s.declare(ctx, in.limits, in.rules, false); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Prune(ctx, keepAll); err != nil {

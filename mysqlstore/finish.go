@@ -25,7 +25,7 @@ const sqlUpdateLive = `UPDATE (VALUES `
 const sqlUpdateLiveTail = `) AS v (id, state, attempt, delay, entry) STRAIGHT_JOIN {p}jobs j FORCE INDEX (PRIMARY) ON j.id = v.id
 SET j.state = v.state, j.attempt = v.attempt,
 	j.run_at = IF(v.state = 'failed', j.run_at, ? + INTERVAL v.delay MICROSECOND),
-	j.finalized_at = IF(v.state = 'failed', ?, NULL),
+	j.finalized_at = IF(v.state = 'failed', ?, NULL), j.granted = FALSE,
 	j.history = ` + pushHistory
 
 const sqlBusy = `SELECT id, claim FROM {p}jobs WHERE id IN (?) AND state = 'processing'`
