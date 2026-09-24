@@ -25,10 +25,11 @@ jobs:
     env:
       KILN_DATABASE_URL: postgres://kiln:kiln@localhost:5432/kiln?sslmode=disable
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: "1.24"
+          cache-dependency-path: "**/go.sum"
       - run: test -z "$(gofmt -l .)"
       - run: go vet ./...
       - run: go test -race ./...
