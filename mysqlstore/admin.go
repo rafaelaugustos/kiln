@@ -72,16 +72,6 @@ const sqlDropArchived = `DELETE FROM {p}archive WHERE id IN (?)`
 const sqlPause = `INSERT INTO {p}queues (name, paused, updated_at) VALUES (?, ?, UTC_TIMESTAMP(6)) AS n
 ON DUPLICATE KEY UPDATE paused = n.paused, updated_at = n.updated_at`
 
-func checkFilter(f driver.Filter) error {
-	if len(f.IDs) == 0 && f.State == "" {
-		return fmt.Errorf("%w: filter needs ids or a state", driver.ErrInvalid)
-	}
-	if f.State != "" && !f.State.Valid() {
-		return fmt.Errorf("%w: state %q", driver.ErrInvalid, f.State)
-	}
-	return nil
-}
-
 func filterSQL(f driver.Filter) (index, cond raw) {
 	var b []byte
 	and := func(q string, v any) {
@@ -114,7 +104,7 @@ func filterSQL(f driver.Filter) (index, cond raw) {
 }
 
 func (s *Store) Delete(ctx context.Context, f driver.Filter) (int, error) {
-	if err := checkFilter(f); err != nil {
+	if err := driver.CheckFilter(f); err != nil {
 		return 0, err
 	}
 	if f.State.Archived() {
@@ -226,7 +216,7 @@ type requeued struct {
 }
 
 func (s *Store) Requeue(ctx context.Context, f driver.Filter) (int, error) {
-	if err := checkFilter(f); err != nil {
+	if err := driver.CheckFilter(f); err != nil {
 		return 0, err
 	}
 	total := 0

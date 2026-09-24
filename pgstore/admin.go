@@ -146,18 +146,8 @@ func filterSQL(f driver.Filter, args []any) (string, []any) {
 	return strings.Join(conds, " AND "), args
 }
 
-func checkFilter(f driver.Filter) error {
-	if len(f.IDs) == 0 && f.State == "" {
-		return fmt.Errorf("%w: filter needs ids or a state", driver.ErrInvalid)
-	}
-	if f.State != "" && !f.State.Valid() {
-		return fmt.Errorf("%w: state %q", driver.ErrInvalid, f.State)
-	}
-	return nil
-}
-
 func (s *Store) Delete(ctx context.Context, f driver.Filter) (int, error) {
-	if err := checkFilter(f); err != nil {
+	if err := driver.CheckFilter(f); err != nil {
 		return 0, err
 	}
 	if f.State.Archived() {
@@ -231,7 +221,7 @@ func (s *Store) deleteChunk(ctx context.Context, q string, args []any) (int, int
 }
 
 func (s *Store) Requeue(ctx context.Context, f driver.Filter) (int, error) {
-	if err := checkFilter(f); err != nil {
+	if err := driver.CheckFilter(f); err != nil {
 		return 0, err
 	}
 	total := 0

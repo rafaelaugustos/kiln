@@ -3,6 +3,7 @@ package kiln
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/rafaelaugustos/kiln/driver"
 )
@@ -18,8 +19,8 @@ type Client struct {
 
 func NewClient(s driver.Store, mw ...EnqueueMiddleware) *Client {
 	f := EnqueueFunc(insert)
-	for i := len(mw) - 1; i >= 0; i-- {
-		f = mw[i](f)
+	for _, m := range slices.Backward(mw) {
+		f = m(f)
 	}
 	return &Client{store: s, enqueue: f}
 }
@@ -105,57 +106,10 @@ func buildAll(specs []Spec) ([]driver.InsertParams, error) {
 		}
 		ps[i] = p
 	}
-	if err := checkRefs(ps); err != nil {
+	if err := driver.CheckInsert(ps); err != nil {
 		return nil, err
 	}
 	return ps, nil
-}
-
-func checkRefs(ps []driver.InsertParams) error {
-	refs := false
-	for i, p := range ps {
-		for _, parent := range p.Parents {
-			if parent.ID != 0 {
-				continue
-			}
-			if parent.Index < 0 || parent.Index >= len(ps) || parent.Index == i {
-				return fmt.Errorf("%w: job %d needs %d", ErrInvalid, i, parent.Index)
-			}
-			refs = true
-		}
-	}
-	if !refs {
-		return nil
-	}
-	const (
-		unseen = iota
-		visiting
-		done
-	)
-	marks := make([]uint8, len(ps))
-	var visit func(int) bool
-	visit = func(i int) bool {
-		switch marks[i] {
-		case visiting:
-			return false
-		case done:
-			return true
-		}
-		marks[i] = visiting
-		for _, parent := range ps[i].Parents {
-			if parent.ID == 0 && !visit(parent.Index) {
-				return false
-			}
-		}
-		marks[i] = done
-		return true
-	}
-	for i := range ps {
-		if !visit(i) {
-			return fmt.Errorf("%w: dependency cycle through job %d", ErrInvalid, i)
-		}
-	}
-	return nil
 }
 
 type Flow []Spec

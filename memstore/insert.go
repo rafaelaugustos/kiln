@@ -2,7 +2,6 @@ package memstore
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
@@ -55,11 +54,11 @@ func (s *Store) insert(jobs []driver.InsertParams) ([]driver.Inserted, error) {
 
 func (s *Store) prepare(jobs []driver.InsertParams, ov *overlay) (*plan, error) {
 	p := &plan{items: make([]item, len(jobs)), res: make([]driver.Inserted, len(jobs))}
+	if err := driver.CheckInsert(jobs); err != nil {
+		return nil, err
+	}
 	var seen map[string]int
 	for i := range jobs {
-		if err := validate(jobs, i); err != nil {
-			return nil, err
-		}
 		p.items[i] = item{p: &jobs[i], alias: -1}
 		if len(jobs[i].UniqueKey) == 0 {
 			continue
@@ -92,33 +91,6 @@ func (s *Store) prepare(jobs []driver.InsertParams, ov *overlay) (*plan, error) 
 		}
 	}
 	return p, nil
-}
-
-func validate(jobs []driver.InsertParams, i int) error {
-	p := &jobs[i]
-	switch {
-	case p.Kind == "":
-		return fmt.Errorf("%w: empty kind", driver.ErrInvalid)
-	case p.Queue == "":
-		return fmt.Errorf("%w: %s: empty queue", driver.ErrInvalid, p.Kind)
-	case p.MaxAttempts < 1:
-		return fmt.Errorf("%w: %s: max attempts %d", driver.ErrInvalid, p.Kind, p.MaxAttempts)
-	case !json.Valid(p.Args):
-		return fmt.Errorf("%w: %s: args are not valid JSON", driver.ErrInvalid, p.Kind)
-	case p.LimitKey != "" && p.LimitMax < 1:
-		return fmt.Errorf("%w: %s: limit max %d", driver.ErrInvalid, p.Kind, p.LimitMax)
-	case p.BatchID < 0 || p.AfterBatch < 0 || p.BatchID != 0 && p.BatchID == p.AfterBatch:
-		return fmt.Errorf("%w: %s: batch %d after batch %d", driver.ErrInvalid, p.Kind, p.BatchID, p.AfterBatch)
-	}
-	for _, pr := range p.Parents {
-		switch {
-		case pr.ID < 0 || pr.On&driver.OnFinished == 0:
-			return fmt.Errorf("%w: parent %+v", driver.ErrInvalid, pr)
-		case pr.ID == 0 && (pr.Index < 0 || pr.Index >= len(jobs) || pr.Index == i):
-			return fmt.Errorf("%w: job %d needs index %d", driver.ErrInvalid, i, pr.Index)
-		}
-	}
-	return nil
 }
 
 func (p *plan) sort() error {

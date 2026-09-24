@@ -22,14 +22,14 @@ func (c *Client) Requeue(ctx context.Context, ids ...int64) (int, error) {
 }
 
 func (c *Client) DeleteWhere(ctx context.Context, f Filter) (int, error) {
-	if err := checkFilter(f); err != nil {
+	if err := driver.CheckFilter(f); err != nil {
 		return 0, err
 	}
 	return c.store.Delete(ctx, f)
 }
 
 func (c *Client) RequeueWhere(ctx context.Context, f Filter) (int, error) {
-	if err := checkFilter(f); err != nil {
+	if err := driver.CheckFilter(f); err != nil {
 		return 0, err
 	}
 	return c.store.Requeue(ctx, f)
@@ -59,14 +59,4 @@ func (c *Client) List(ctx context.Context, q JobQuery) (Page, error) {
 		return Page{}, fmt.Errorf("%w: state %q", ErrInvalid, q.State)
 	}
 	return c.store.Jobs(ctx, q)
-}
-
-func checkFilter(f Filter) error {
-	if len(f.IDs) == 0 && f.State == "" {
-		return fmt.Errorf("%w: filter needs ids or a state", ErrInvalid)
-	}
-	if f.State != "" && !f.State.Valid() {
-		return fmt.Errorf("%w: state %q", ErrInvalid, f.State)
-	}
-	return nil
 }

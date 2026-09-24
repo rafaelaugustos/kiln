@@ -196,6 +196,8 @@ func testInsertInvalid(t *testing.T, s driver.Store) {
 		{"garbage args", func(p *driver.InsertParams) { p.Args = []byte(`not json`) }},
 		{"zero limit max", func(p *driver.InsertParams) { p.LimitKey, p.LimitMax = "k", 0 }},
 		{"parent without mask", func(p *driver.InsertParams) { p.Parents = []driver.Parent{{Index: 0}} }},
+		{"after its own batch", func(p *driver.InsertParams) { p.BatchID, p.AfterBatch = 1, 1 }},
+		{"args not json", func(p *driver.InsertParams) { p.Args = []byte("{") }},
 	}
 	for _, c := range cases {
 		bad := task("q")

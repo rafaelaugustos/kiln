@@ -198,7 +198,7 @@ func (s *Store) insert(ctx context.Context, tx pgx.Tx, jobs []driver.InsertParam
 	if len(jobs) == 0 {
 		return nil, wake{}, nil
 	}
-	if err := validate(jobs); err != nil {
+	if err := driver.CheckInsert(jobs); err != nil {
 		return nil, wake{}, err
 	}
 	in := &inserter{s: s, tx: tx, jobs: jobs, res: make([]driver.Inserted, len(jobs))}
@@ -219,69 +219,6 @@ func (s *Store) insert(ctx context.Context, tx pgx.Tx, jobs []driver.InsertParam
 		return nil, wake{}, err
 	}
 	return in.res, in.w, nil
-}
-
-func validate(jobs []driver.InsertParams) error {
-	for i := range jobs {
-		p := &jobs[i]
-		switch {
-		case p.Kind == "":
-			return fmt.Errorf("%w: job %d has no kind", driver.ErrInvalid, i)
-		case p.Queue == "":
-			return fmt.Errorf("%w: job %d has no queue", driver.ErrInvalid, i)
-		case p.MaxAttempts < 1:
-			return fmt.Errorf("%w: job %d max attempts %d", driver.ErrInvalid, i, p.MaxAttempts)
-		case len(p.Args) == 0:
-			return fmt.Errorf("%w: job %d has no args", driver.ErrInvalid, i)
-		case p.LimitKey != "" && p.LimitMax < 1:
-			return fmt.Errorf("%w: job %d limit max %d", driver.ErrInvalid, i, p.LimitMax)
-		case p.BatchID < 0 || p.AfterBatch < 0:
-			return fmt.Errorf("%w: job %d batch", driver.ErrInvalid, i)
-		}
-		for _, par := range p.Parents {
-			switch {
-			case par.On&driver.OnFinished == 0 || par.ID < 0:
-				return fmt.Errorf("%w: job %d parent %+v", driver.ErrInvalid, i, par)
-			case par.ID == 0 && (par.Index < 0 || par.Index >= len(jobs) || par.Index == i):
-				return fmt.Errorf("%w: job %d parent index %d", driver.ErrInvalid, i, par.Index)
-			}
-		}
-	}
-	return acyclic(jobs)
-}
-
-func acyclic(jobs []driver.InsertParams) error {
-	const (
-		unseen = iota
-		open
-		closed
-	)
-	color := make([]uint8, len(jobs))
-	var visit func(i int) bool
-	visit = func(i int) bool {
-		color[i] = open
-		for _, par := range jobs[i].Parents {
-			if par.ID != 0 {
-				continue
-			}
-			switch color[par.Index] {
-			case open:
-				return false
-			case unseen:
-				if !visit(par.Index) {
-					return false
-				}
-			}
-		}
-		color[i] = closed
-		return true
-	}
-	for i := range jobs {
-		if color[i] == unseen && !visit(i) {
-			return fmt.Errorf("%w: dependency cycle through job %d", driver.ErrInvalid, i)
-		}
-	}
-	return nil
 }
 
 func (in *inserter) plan() {

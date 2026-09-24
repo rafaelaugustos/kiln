@@ -9,7 +9,7 @@ import (
 )
 
 func (s *Store) Delete(_ context.Context, f driver.Filter) (int, error) {
-	if err := checkFilter(&f); err != nil {
+	if err := driver.CheckFilter(f); err != nil {
 		return 0, err
 	}
 	s.begin()
@@ -33,7 +33,7 @@ func (s *Store) Delete(_ context.Context, f driver.Filter) (int, error) {
 }
 
 func (s *Store) Requeue(_ context.Context, f driver.Filter) (int, error) {
-	if err := checkFilter(&f); err != nil {
+	if err := driver.CheckFilter(f); err != nil {
 		return 0, err
 	}
 	s.begin()
@@ -75,16 +75,6 @@ func (s *Store) PauseQueue(_ context.Context, name string, paused bool) error {
 	q := s.queue(name)
 	q.paused, q.row = paused, true
 	s.events = append(s.events, driver.Event{Kind: driver.QueueChanged, Queue: name})
-	return nil
-}
-
-func checkFilter(f *driver.Filter) error {
-	if len(f.IDs) == 0 && f.State == "" {
-		return fmt.Errorf("%w: filter needs ids or a state", driver.ErrInvalid)
-	}
-	if f.State != "" && !f.State.Valid() {
-		return fmt.Errorf("%w: state %q", driver.ErrInvalid, f.State)
-	}
 	return nil
 }
 
