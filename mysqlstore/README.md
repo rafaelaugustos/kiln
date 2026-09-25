@@ -19,13 +19,8 @@ fails when the tables are behind, naming the missing version or change; run `mys
 
 ## Polling and rate limits
 
-MySQL has no `LISTEN`/`NOTIFY`, so servers find new work by polling every `PollInterval`. When a `Limit`
-with a `Rate` makes a job wait, its start is reserved: the job is stored as `scheduled` with the reserved
-time as `run_at`, and a server's promoter releases it at that time. A promoter sleeps until the earliest
-`run_at` it knows about and learns about new reservations when it polls and right after its own server
-finishes a job with a `Limit`. A slot reserved by another process, such as an API that only enqueues, is
-therefore promoted at the next poll of a promoter, up to `PollInterval` late, and jobs whose slots passed
-in the meantime start together (at most `Max` at once when the key has one). Once a server is working
-through a rate limited key, every finished job wakes its promoter and the following slots are released on
-time. Lower `PollInterval` towards the rate's interval (50ms for 20 jobs a second) when the spacing of the
-first starts matters.
+MySQL has no `LISTEN`/`NOTIFY`, so servers find new work by polling every `PollInterval`. Scheduled jobs,
+retries and the start times reserved by a `Limit` with a `Rate` are checked more often: a server that
+receives no notifications looks for due jobs every 100ms, so a reserved start is released on time even
+when another process, such as an API that only enqueues, reserved it. Lower `PollInterval` if newly
+enqueued jobs need to start sooner than that.

@@ -218,7 +218,7 @@ implementation must pass.
 | Backend | Package | Notes |
 |---|---|---|
 | PostgreSQL (CI runs 17) | `pgstore` | `LISTEN`/`NOTIFY` wakeups, pgx v5, schema option |
-| MySQL 8.0.19+ (CI runs 8.4) | `mysqlstore` | any `*sql.DB`, table prefix option, servers poll instead of being notified |
+| MySQL 8.0.19+ (CI runs 8.4) | `mysqlstore` | any `*sql.DB`, table prefix option, servers poll for new work; due and reserved jobs are checked every 100ms |
 | SQLite 3.35+ | `sqlitestore` | any `database/sql` driver, WAL, servers in the same process are notified, others poll |
 | in memory | `memstore` | tests and single-process tools |
 
