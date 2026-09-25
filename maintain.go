@@ -9,6 +9,7 @@ import (
 
 const (
 	promoteLimit = 1000
+	blindPromote = 100 * time.Millisecond
 	sweepLimit   = 1000
 	pruneLimit   = 5000
 	sweepEvery   = time.Second
@@ -49,6 +50,9 @@ func (s *Server) promoteDue(ctx context.Context) time.Duration {
 		return 0
 	}
 	d := jitter(s.cfg.PollInterval)
+	if !s.listening.Load() {
+		d = min(d, blindPromote)
+	}
 	if p.Next > 0 {
 		d = min(d, p.Next)
 	}
