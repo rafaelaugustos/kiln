@@ -1,35 +1,109 @@
 {{define "content"}}{{$o := .Data}}
-<div class="head">
-<div>
-<h1>Overview</h1>
-<p class="sub"><span data-count="servers">{{num $o.Servers}}</span> servers · <span data-count="running">{{num $o.Running}}</span> of <span data-count="workers">{{num $o.Workers}}</span> workers busy{{if $o.Paused}} · {{num $o.Paused}} paused queues{{end}}</p>
+{{template "art"}}
+<section class="hero" data-hero data-mood="{{$o.Mood}}" data-heat="{{$o.Heat}}">
+<button class="mascot" type="button" data-poke aria-label="Poke the kiln">{{template "kiln"}}</button>
+<div class="hero-text">
+<p class="hello" data-hello{{with $.Actor}} data-name="{{.}}"{{end}}>Hello{{with $.Actor}}, {{.}}{{end}}</p>
+<div class="mood" data-mood-is="fresh"{{if ne $o.Mood "fresh"}} hidden{{end}}>
+<h1>The kiln is ready</h1>
+<p>Start a <code>kiln.Server</code> and enqueue your first job. Everything shows up here as it happens.</p>
 </div>
-<div class="live"><i></i>Live</div>
+<div class="mood" data-mood-is="cold"{{if ne $o.Mood "cold"}} hidden{{end}}>
+<h1>No servers running</h1>
+<p>The kiln is asleep. Enqueued jobs wait in their queues until a server checks in.</p>
 </div>
-
-<div class="cards">
-{{- range $o.Cards}}
-<a class="card" href="{{.URL}}">
-<span class="card-label">{{if .State}}<i class="dot s-{{.State}}"></i>{{end}}{{.Label}}{{with .Hint}}<small>{{.}}</small>{{end}}</span>
-<span class="card-value" data-count="{{.Key}}">{{.Value}}</span>
-</a>
+<div class="mood" data-mood-is="failed"{{if ne $o.Mood "failed"}} hidden{{end}}>
+{{- with $o.Stat "failed"}}
+<h1><span class="hot" data-count="failed">{{.Value}}</span> <span data-plural="failed" data-one="failed job needs a look" data-other="failed jobs need a look">{{plural .N "failed job needs a look" "failed jobs need a look"}}</span></h1>
 {{- end}}
+<p>Failed isn't final. Fix the cause and requeue them, or delete the ones that no longer matter.</p>
+<a class="btn primary big" href="{{link "/jobs/failed"}}">Review failed jobs<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></a>
 </div>
-
-<section class="panel chart-panel">
-<div class="panel-head">
-<h2>Throughput <small>last hour, per minute</small></h2>
-<div class="legend"><span><i class="key f-succeeded"></i>Succeeded <b data-total="succeeded">—</b></span><span><i class="key f-failed"></i>Failed <b data-total="failed">—</b></span></div>
+<div class="mood" data-mood-is="busy"{{if ne $o.Mood "busy"}} hidden{{end}}>
+{{- with $o.Stat "processing"}}
+<h1><span data-count="processing">{{.Value}}</span> <span data-plural="processing" data-one="job in the kiln" data-other="jobs in the kiln">{{plural .N "job in the kiln" "jobs in the kiln"}}</span></h1>
+{{- end}}
+<p>No failed jobs are waiting on you. Work is moving through the queues.</p>
+<a class="btn big" href="{{link "/jobs/processing"}}">See what's running<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></a>
 </div>
-<div class="chart" data-chart data-src="{{link "/api/series?range=1h"}}" data-every="5000"></div>
+<div class="mood" data-mood-is="waiting"{{if ne $o.Mood "waiting"}} hidden{{end}}>
+{{- with $o.Stat "enqueued"}}
+<h1><span data-count="enqueued">{{.Value}}</span> <span data-plural="enqueued" data-one="job waiting" data-other="jobs waiting">{{plural .N "job waiting" "jobs waiting"}}</span></h1>
+{{- end}}
+<p>Enqueued, but no worker has picked them up. Check that a server listens on their queue and that it isn't paused.</p>
+<a class="btn big" href="{{link "/queues"}}">Check queues<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></a>
+</div>
+<div class="mood" data-mood-is="idle"{{if ne $o.Mood "idle"}} hidden{{end}}>
+<h1>All quiet</h1>
+<p>Nothing queued, nothing failing. Good moment for a coffee.</p>
+</div>
+</div>
+<div class="hero-side">
+<div class="live" data-live><i></i><span data-live-text>Live</span></div>
+<div class="vitals">
+<a class="vital" href="{{link "/servers"}}">
+<span class="vital-value" data-count="servers">{{num $o.Servers}}</span>
+<span class="vital-label" data-plural="servers" data-one="server" data-other="servers">{{plural $o.Servers "server" "servers"}}</span>
+</a>
+<a class="vital" href="{{link "/jobs/processing"}}">
+<span class="vital-value"><span data-count="running">{{num $o.Running}}</span><span class="of">/<span data-count="workers">{{num $o.Workers}}</span></span></span>
+<span class="vital-label">workers busy</span>
+<svg class="meter" aria-hidden="true"><rect data-meter height="100%" width="{{printf "%.1f" $o.Load}}%"></rect></svg>
+</a>
+<a class="vital" href="{{link "/queues"}}">
+<span class="vital-value" data-count="queues">{{num $o.Queues}}</span>
+<span class="vital-label"><span data-plural="queues" data-one="queue" data-other="queues">{{plural $o.Queues "queue" "queues"}}</span><span class="vital-note" data-show="paused"{{if not $o.Paused}} hidden{{end}}> · <span data-count="paused">{{num $o.Paused}}</span> paused</span></span>
+</a>
+<a class="vital" href="{{link "/recurring"}}">
+<span class="vital-value" data-count="recurring">{{num $o.Recurring}}</span>
+<span class="vital-label">recurring</span>
+</a>
+</div>
+</div>
+<div class="party" aria-hidden="true"></div>
 </section>
 
-<section class="panel chart-panel">
-<div class="panel-head">
-<h2>History <small>last 24 hours, per 30 minutes</small></h2>
-<div class="legend"><span><i class="key f-succeeded"></i>Succeeded <b data-total="succeeded">—</b></span><span><i class="key f-failed"></i>Failed <b data-total="failed">—</b></span></div>
+<section class="flow" aria-labelledby="flow-title">
+<div class="flow-head"><h2 id="flow-title">Jobs by state</h2><a class="more" href="{{link "/jobs/enqueued"}}">Browse jobs</a></div>
+<div class="stages">
+{{- range $o.Stages}}
+<div class="stage">
+<h3 class="stage-name">{{.Label}}</h3>
+<div class="stats">
+{{- range .Stats}}
+<div class="stat s-{{.State}}{{if not .N}} zero{{end}}" data-stat="{{.Key}}">
+<a class="stat-link" href="{{.URL}}"><span class="stat-label">{{.Label}}</span><span class="stat-value" data-count="{{.Key}}">{{.Value}}</span></a>
+{{- with .Sub}}
+<a class="stat-sub" href="{{.URL}}"><span data-count="{{.Key}}">{{.Value}}</span> {{.Label}}</a>
+{{- else}}
+<span class="stat-note">{{.Note}}</span>
+{{- end}}
+<svg class="stat-art" aria-hidden="true"><use href="#art-{{.State}}"/></svg>
 </div>
-<div class="chart" data-chart data-src="{{link "/api/series?range=24h"}}" data-every="60000"></div>
+{{- end}}
+</div>
+</div>
+{{- end}}
+</div>
+</section>
+
+<section class="panel chart-panel" data-ranges>
+<div class="panel-head">
+<h2>Throughput</h2>
+<div class="seg" role="tablist" aria-label="Time range">
+<button type="button" role="tab" id="tab-1h" aria-controls="range-1h" aria-selected="true" data-range="1h">Last hour</button>
+<button type="button" role="tab" id="tab-24h" aria-controls="range-24h" aria-selected="false" tabindex="-1" data-range="24h">Last 24 hours</button>
+<i class="seg-thumb" aria-hidden="true"></i>
+</div>
+</div>
+<div class="range" id="range-1h" role="tabpanel" aria-labelledby="tab-1h">
+<div class="legend"><span><i class="key f-succeeded"></i>Succeeded <b data-total="succeeded">—</b></span><span><i class="key f-failed"></i>Failed <b data-total="failed">—</b></span><span class="dim">per minute</span></div>
+<div class="chart" data-chart data-src="{{link "/api/series?range=1h"}}" data-every="5000" data-empty="Nothing finished in the last hour."></div>
+</div>
+<div class="range" id="range-24h" role="tabpanel" aria-labelledby="tab-24h" hidden>
+<div class="legend"><span><i class="key f-succeeded"></i>Succeeded <b data-total="succeeded">—</b></span><span><i class="key f-failed"></i>Failed <b data-total="failed">—</b></span><span class="dim">per 30 minutes</span></div>
+<div class="chart" data-chart data-src="{{link "/api/series?range=24h"}}" data-every="60000" data-empty="Nothing finished in the last 24 hours."></div>
+</div>
 </section>
 
 <div class="split">
@@ -41,7 +115,7 @@
 <thead><tr><th>Queue</th><th class="r">Enqueued</th><th class="r">Processing</th><th class="r">Latency</th></tr></thead>
 <tbody>
 {{- range $o.QueueRows}}
-<tr>
+<tr{{if .Paused}} class="paused"{{end}}>
 <td><a class="strong" href="{{link "/jobs/enqueued?queue=" .Name}}">{{.Name}}</a>{{if .Paused}} <span class="badge s-paused"><i></i>Paused</span>{{end}}</td>
 <td class="r num">{{template "n" .Enqueued}}</td>
 <td class="r num">{{template "n" .Processing}}</td>
@@ -51,7 +125,9 @@
 </tbody>
 </table>
 </div>
-{{- else}}{{template "empty" "No queues yet."}}{{end}}
+{{- else}}
+<div class="empty"><p class="empty-title">No queues yet</p><p>A queue shows up once a server listens on it or a job is enqueued to it.</p></div>
+{{- end}}
 </section>
 
 <section class="panel">
@@ -59,19 +135,21 @@
 {{- if $o.ServerRows}}
 <div class="tbl">
 <table class="grid">
-<thead><tr><th>Server</th><th class="r">Busy</th><th class="r">Heartbeat</th></tr></thead>
+<thead><tr><th>Server</th><th>Busy</th><th class="r">Heartbeat</th></tr></thead>
 <tbody>
 {{- range $o.ServerRows}}
 <tr>
 <td><span class="strong">{{.Host}}</span> <span class="mono dim">{{.PID}}</span></td>
-<td class="r num">{{.Running}}<span class="of">/{{.Workers}}</span></td>
-<td class="r nowrap{{if .Stale}} warn{{end}}">{{template "when" .HeartbeatAt}}</td>
+<td class="nowrap"><span class="load"><svg class="meter" aria-hidden="true"><rect width="{{printf "%.1f" .Load}}%" height="100%"></rect></svg><span class="num">{{.Running}}<span class="of">/{{.Workers}}</span></span></span></td>
+<td class="r nowrap{{if .Stale}} warn{{end}}"><span class="beat{{if .Stale}} stale{{end}}" title="{{if .Stale}}No heartbeat for over a minute{{else}}Checking in{{end}}"></span>{{template "when" .HeartbeatAt}}</td>
 </tr>
 {{- end}}
 </tbody>
 </table>
 </div>
-{{- else}}{{template "empty" "No servers running."}}{{end}}
+{{- else}}
+<div class="empty"><p class="empty-title">No servers running</p><p>Start a kiln.Server and it checks in here within a few seconds.</p></div>
+{{- end}}
 </section>
 </div>
 {{end}}

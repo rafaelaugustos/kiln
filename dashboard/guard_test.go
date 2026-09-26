@@ -17,7 +17,7 @@ func TestHeaders(t *testing.T) {
 	f := seed(t)
 	h := New(f.c, Options{Authorize: grant(ReadOnly)})
 	want := map[string]string{
-		"Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+		"Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
 		"X-Content-Type-Options":  "nosniff",
 		"Referrer-Policy":         "same-origin",
 		"X-Frame-Options":         "DENY",

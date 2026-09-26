@@ -19,7 +19,7 @@ func TestPages(t *testing.T) {
 		path string
 		want []string
 	}{
-		{"/", []string{"<title>Overview · Acme jobs</title>", "Throughput", `data-chart`, `data-count="failed"`, "host-a", "Read-only", "ana"}},
+		{"/", []string{"<title>Overview · Acme jobs</title>", "Throughput", `data-chart`, `data-count="failed"`, "host-a", "Read-only", "ana", `data-mood="failed"`, ">failed job needs a look<", `href="/retries"`}},
 		{"/jobs", nil},
 		{"/jobs/enqueued", []string{"email.send", "mailers", `href="/jobs/` + id(f.enqueued) + `"`}},
 		{"/jobs/processing", []string{"host-a:1:ab", "Started"}},

@@ -2,6 +2,7 @@ const svgNS = 'http://www.w3.org/2000/svg';
 const fmt = new Intl.NumberFormat('en-US');
 const clock = new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit' });
 const api = document.body.dataset.api;
+const calm = matchMedia('(prefers-reduced-motion: reduce)');
 const series = [
   { key: 'succeeded', label: 'Succeeded' },
   { key: 'failed', label: 'Failed' },
@@ -26,7 +27,7 @@ async function load(url) {
   return res.json();
 }
 
-function every(ms, fn) {
+function every(ms, fn, fail) {
   let timer = 0;
   let busy = false;
   const run = async () => {
@@ -35,7 +36,8 @@ function every(ms, fn) {
     busy = true;
     try {
       if (!document.hidden) await fn();
-    } catch {
+    } catch (err) {
+      fail?.(err);
     } finally {
       busy = false;
     }
@@ -45,6 +47,7 @@ function every(ms, fn) {
     if (!document.hidden) run();
   });
   run();
+  return run;
 }
 
 function count(v, capped) {
@@ -78,41 +81,206 @@ function labelEvery(slot, step) {
   return ks.find(k => slot * k >= 64) ?? ks[ks.length - 1];
 }
 
+function mood(o) {
+  const c = o.counts;
+  if (!o.servers && !c.awaiting && !c.scheduled && !c.throttled && !c.enqueued && !c.processing && !c.failed && !c.succeeded && !c.deleted) return 'fresh';
+  if (!o.servers) return 'cold';
+  if (o.counts.failed) return 'failed';
+  if (o.counts.processing) return 'busy';
+  if (o.counts.enqueued) return 'waiting';
+  return 'idle';
+}
+
+function heat(o) {
+  if (!o.servers) return 'off';
+  if (!o.running || !o.workers) return 'idle';
+  if (o.running * 3 < o.workers) return 'low';
+  if (o.running * 3 < o.workers * 2) return 'mid';
+  return 'high';
+}
+
+function bump(n) {
+  if (calm.matches) return;
+  n.classList.remove('bump');
+  void n.offsetWidth;
+  n.classList.add('bump');
+}
+
 function live() {
+  const hero = document.querySelector('[data-hero]');
+  const dot = document.querySelector('[data-live]');
+  const text = dot?.querySelector('[data-live-text]');
+  const link = up => {
+    if (!dot) return;
+    dot.dataset.live = up ? 'up' : 'down';
+    text.textContent = up ? 'Live' : 'Reconnecting…';
+  };
   every(5000, async () => {
     const o = await load(`${api}/overview`);
-    const values = { ...o.counts, servers: o.servers, recurring: o.recurring, queues: o.queues, workers: o.workers, running: o.running };
+    link(true);
+    const values = { ...o.counts, servers: o.servers, recurring: o.recurring, queues: o.queues, workers: o.workers, running: o.running, paused: o.paused_queues };
     for (const n of document.querySelectorAll('[data-count]')) {
       const v = values[n.dataset.count];
       if (v === undefined) continue;
-      n.textContent = count(v, o.counts.capped);
+      const t = count(v, o.counts.capped);
+      if (n.textContent !== t) {
+        n.textContent = t;
+        bump(n);
+      }
       if (n.classList.contains('pill')) n.hidden = v === 0;
     }
+    for (const n of document.querySelectorAll('[data-plural]')) {
+      const v = values[n.dataset.plural];
+      if (v !== undefined) n.textContent = v === 1 ? n.dataset.one : n.dataset.other;
+    }
+    for (const n of document.querySelectorAll('[data-show]')) n.hidden = !values[n.dataset.show];
+    for (const n of document.querySelectorAll('[data-stat]')) n.classList.toggle('zero', !values[n.dataset.stat]);
+    for (const n of document.querySelectorAll('[data-meter]')) n.setAttribute('width', `${o.workers ? Math.min(100, (o.running / o.workers) * 100).toFixed(1) : 0}%`);
+    if (!hero) return;
+    hero.dataset.heat = heat(o);
+    const m = mood(o);
+    if (hero.dataset.mood === m) return;
+    if (hero.dataset.mood === 'failed' && (m === 'busy' || m === 'waiting' || m === 'idle')) party(hero);
+    hero.dataset.mood = m;
+    for (const n of hero.querySelectorAll('[data-mood-is]')) {
+      const on = n.dataset.moodIs === m;
+      n.hidden = !on;
+      n.classList.toggle('enter', on);
+    }
+  }, () => link(false));
+}
+
+const quips = {
+  fresh: ['Ready when you are.', 'Fire me up!'],
+  cold: ['Zzz…', 'Five more minutes…'],
+  failed: ['Some pots cracked.', 'Not my best batch.', 'Let’s look at those?'],
+  busy: ['Firing away.', 'Careful, 1200 °C in here.', 'Hot hands!'],
+  waiting: ['Waiting for a worker…', 'Anyone there?'],
+  idle: ['Just keeping warm.', 'Nice and quiet.'],
+  party: ['All fixed. Nice!', 'Clean batch!'],
+};
+
+function say(hero, key) {
+  const list = quips[key] ?? quips.idle;
+  let b = hero.querySelector('.quip');
+  if (!b) {
+    b = node('span', 'quip');
+    b.setAttribute('aria-hidden', 'true');
+    hero.append(b);
+  }
+  const prev = b.textContent;
+  b.textContent = list.find(q => q !== prev && Math.random() < 0.6) ?? list.find(q => q !== prev) ?? list[0];
+  b.classList.remove('on');
+  void b.offsetWidth;
+  b.classList.add('on');
+  clearTimeout(b.timer);
+  b.timer = setTimeout(() => b.classList.remove('on'), 2400);
+}
+
+function party(hero) {
+  say(hero, 'party');
+  if (calm.matches) return;
+  const box = hero.querySelector('.party');
+  const colors = ['var(--flame-1)', 'var(--flame-2)', 'var(--succeeded)', 'var(--enqueued)', 'var(--processing)', 'var(--scheduled)'];
+  const m = hero.querySelector('.mascot');
+  const x = m.offsetLeft + m.offsetWidth / 2;
+  const y = m.offsetTop + m.offsetHeight / 2;
+  for (let i = 0; i < 28; i++) {
+    const c = node('i');
+    const a = Math.random() * Math.PI * 2;
+    const d = 80 + Math.random() * 140;
+    c.style.setProperty('--x', `${x}px`);
+    c.style.setProperty('--y', `${y}px`);
+    c.style.setProperty('--dx', `${Math.cos(a) * d}px`);
+    c.style.setProperty('--dy', `${Math.sin(a) * d - 40}px`);
+    c.style.setProperty('--r', `${(Math.random() - 0.5) * 720}deg`);
+    c.style.setProperty('--s', `${6 + Math.random() * 6}px`);
+    c.style.setProperty('--pc', colors[i % colors.length]);
+    box.append(c);
+  }
+  setTimeout(() => box.replaceChildren(), 1500);
+}
+
+function mascot() {
+  const hero = document.querySelector('[data-hero]');
+  if (!hero) return;
+  const hello = hero.querySelector('[data-hello]');
+  const h = new Date().getHours();
+  const name = hello.dataset.name;
+  if (h < 5) hello.textContent = name ? `Up late, ${name}?` : 'Up late?';
+  else hello.textContent = `${h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'}${name ? `, ${name}` : ''}`;
+  const btn = hero.querySelector('[data-poke]');
+  btn.addEventListener('click', () => {
+    btn.classList.remove('poke');
+    void btn.offsetWidth;
+    btn.classList.add('poke');
+    say(hero, hero.dataset.mood);
   });
+  if (calm.matches || !matchMedia('(pointer: fine)').matches) return;
+  const eyes = hero.querySelector('.kiln .eyes');
+  let raf = 0;
+  document.addEventListener('pointermove', e => {
+    if (raf || hero.classList.contains('still')) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      const r = btn.getBoundingClientRect();
+      const dx = e.clientX - (r.left + r.width / 2);
+      const dy = e.clientY - (r.top + r.height * 0.62);
+      const len = Math.hypot(dx, dy) || 1;
+      const k = Math.min(1, len / 240) * 1.3;
+      eyes.style.transform = `translate(${((dx / len) * k).toFixed(2)}px, ${((dy / len) * k).toFixed(2)}px)`;
+    });
+  }, { passive: true });
+}
+
+function still() {
+  const sync = () => document.documentElement.classList.toggle('still', document.hidden);
+  document.addEventListener('visibilitychange', sync);
+  sync();
+  const hero = document.querySelector('[data-hero]');
+  if (!hero) return;
+  new IntersectionObserver(([e]) => hero.classList.toggle('still', !e.isIntersecting)).observe(hero);
 }
 
 function chart(root) {
   let data = null;
+  let fresh = true;
   const tip = node('div', 'tip');
   tip.hidden = true;
-  const draw = () => data && render(root, tip, data);
+  const visible = () => !root.closest('[hidden]');
+  const draw = () => {
+    if (!data || !visible()) return;
+    render(root, tip, data, fresh && !calm.matches);
+    fresh = false;
+  };
   new ResizeObserver(draw).observe(root);
-  every(Number(root.dataset.every) || 60000, async () => {
+  const run = every(Number(root.dataset.every) || 60000, async () => {
+    if (!visible()) return;
     data = await load(root.dataset.src);
     draw();
-    const panel = root.closest('.panel');
+    const panel = root.closest('.range') ?? root.closest('.panel');
     for (const s of series) {
       const n = panel.querySelector(`[data-total="${s.key}"]`);
       if (n) n.textContent = fmt.format(data.points.reduce((sum, p) => sum + p[s.key], 0));
     }
+  }, () => {
+    if (data) return;
+    const msg = node('div', 'chart-msg error');
+    msg.append(node('span', '', 'Couldn’t load this chart. Trying again…'));
+    root.replaceChildren(msg);
   });
+  return () => {
+    fresh = true;
+    if (data) draw();
+    run();
+  };
 }
 
-function render(root, tip, data) {
+function render(root, tip, data, intro) {
   const pts = data.points;
-  if (!pts.length) return;
   const W = root.clientWidth;
   const H = root.clientHeight;
+  if (!pts.length || W <= 0) return;
   const m = { t: 14, r: 16, b: 26, l: 48 };
   const w = W - m.l - m.r;
   const h = H - m.t - m.b;
@@ -120,8 +288,10 @@ function render(root, tip, data) {
   const slot = w / pts.length;
   const bw = Math.max(1, Math.min(18, slot - Math.max(2, slot * 0.3)));
   const y = v => m.t + h - (v / max) * h;
-  const sums = series.map(s => `${fmt.format(pts.reduce((n, p) => n + p[s.key], 0))} ${s.label.toLowerCase()}`);
+  const totals = series.map(s => pts.reduce((n, p) => n + p[s.key], 0));
+  const sums = series.map((s, i) => `${fmt.format(totals[i])} ${s.label.toLowerCase()}`);
   const svg = shape('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': sums.join(', ') });
+  if (intro) svg.classList.add('intro');
 
   for (const v of [0, max / 2, max]) {
     const yy = Math.round(y(v)) + 0.5;
@@ -131,11 +301,12 @@ function render(root, tip, data) {
     svg.append(t);
   }
 
-  const cursor = shape('rect', { class: 'cursor', x: 0, y: m.t, width: slot, height: h, rx: 3, visibility: 'hidden' });
+  const cursor = shape('rect', { class: 'cursor', x: 0, y: m.t, width: slot, height: h, rx: 4, visibility: 'hidden' });
   svg.append(cursor);
 
   const cols = pts.map((p, i) => {
     const g = shape('g', { class: 'col' });
+    g.style.setProperty('--i', i);
     const x = m.l + i * slot + (slot - bw) / 2;
     const segs = series.filter(s => p[s.key] > 0);
     let base = m.t + h;
@@ -194,7 +365,57 @@ function render(root, tip, data) {
     tip.hidden = true;
   });
 
-  root.replaceChildren(svg, tip);
+  const parts = [svg, tip];
+  if (totals.every(n => n === 0)) {
+    const msg = node('div', 'chart-msg');
+    msg.append(node('span', '', root.dataset.empty || 'Nothing finished yet.'));
+    parts.push(msg);
+  }
+  root.replaceChildren(...parts);
+}
+
+function ranges(panel, refresh) {
+  const seg = panel.querySelector('.seg');
+  const tabs = [...seg.querySelectorAll('[role="tab"]')];
+  const key = 'kiln.range';
+  const pick = (tab, focus) => {
+    tabs.forEach((t, i) => {
+      const on = t === tab;
+      t.setAttribute('aria-selected', on);
+      t.tabIndex = on ? 0 : -1;
+      const p = document.getElementById(t.getAttribute('aria-controls'));
+      if (p.hidden === on) {
+        p.hidden = !on;
+        p.classList.toggle('enter', on);
+      }
+      if (on) {
+        seg.dataset.at = i;
+        refresh.get(p.querySelector('[data-chart]'))?.();
+      }
+    });
+    if (focus) tab.focus();
+    try {
+      localStorage.setItem(key, tab.dataset.range);
+    } catch {}
+  };
+  seg.addEventListener('click', e => {
+    const t = e.target.closest('[role="tab"]');
+    if (t) pick(t);
+  });
+  seg.addEventListener('keydown', e => {
+    const i = tabs.indexOf(document.activeElement);
+    if (i < 0) return;
+    const d = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+    if (!d) return;
+    e.preventDefault();
+    pick(tabs[(i + d + tabs.length) % tabs.length], true);
+  });
+  let saved = null;
+  try {
+    saved = localStorage.getItem(key);
+  } catch {}
+  const t = tabs.find(t => t.dataset.range === saved);
+  if (t && t.getAttribute('aria-selected') !== 'true') pick(t);
 }
 
 function bulk() {
@@ -233,6 +454,22 @@ function bulk() {
   sync();
 }
 
+function flash() {
+  const f = document.querySelector('[data-flash]');
+  if (!f) return;
+  const u = new URL(location.href);
+  if (u.searchParams.has('done')) {
+    u.searchParams.delete('done');
+    u.searchParams.delete('n');
+    history.replaceState(history.state, '', u);
+  }
+  f.querySelector('[data-dismiss]')?.addEventListener('click', () => {
+    if (calm.matches) return f.remove();
+    f.classList.add('out');
+    f.addEventListener('animationend', () => f.remove(), { once: true });
+  });
+}
+
 document.addEventListener('submit', e => {
   const msg = e.submitter?.dataset.confirm;
   if (msg && !window.confirm(msg)) e.preventDefault();
@@ -242,6 +479,11 @@ for (const s of document.querySelectorAll('[data-autosubmit]')) {
   s.addEventListener('change', () => s.form.requestSubmit());
 }
 
-for (const c of document.querySelectorAll('[data-chart]')) chart(c);
+const refresh = new Map();
+for (const c of document.querySelectorAll('[data-chart]')) refresh.set(c, chart(c));
+for (const p of document.querySelectorAll('[data-ranges]')) ranges(p, refresh);
 live();
+still();
+mascot();
 bulk();
+flash();

@@ -106,6 +106,14 @@ func label(s driver.State) string {
 	return strings.ToUpper(string(s[:1])) + string(s[1:])
 }
 
+func plural(n any, one, other string) string {
+	switch n {
+	case 1, int64(1):
+		return one
+	}
+	return other
+}
+
 func initial(s string) string {
 	r, _ := utf8.DecodeRuneInString(s)
 	return strings.ToUpper(string(r))
