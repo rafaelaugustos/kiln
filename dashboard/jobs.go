@@ -117,6 +117,8 @@ func (l *jobList) Empty() string {
 		return "No retries scheduled."
 	case l.Filtered():
 		return "No " + string(l.State) + " jobs match these filters."
+	case l.State == driver.Failed:
+		return "No failed jobs. Clean batch."
 	}
 	return "No " + string(l.State) + " jobs."
 }

@@ -1,5 +1,6 @@
 {{define "content"}}{{$e := .Data}}
-<div class="error-page">
+<div class="error-page" data-mood="{{if eq $e.Code 404}}waiting{{else}}failed{{end}}" data-heat="idle">
+{{template "kiln"}}
 <p class="code-num">{{$e.Code}}</p>
 <h1>{{.Title}}</h1>
 <p class="sub">{{$e.Message}}</p>

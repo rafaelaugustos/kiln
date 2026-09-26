@@ -10,23 +10,24 @@
 <script type="module" src="{{.JS}}"></script>
 </head>
 <body data-api="{{link "/api"}}">
+<a class="skip" href="#main">Skip to content</a>
 <header class="top">
 <div class="wrap bar">
 <a class="brand" href="{{link "/"}}">{{template "logo"}}<span>{{.App}}</span></a>
 <nav class="nav" aria-label="Main">
 {{- range .Nav}}
-<a href="{{.URL}}"{{if .On}} class="on" aria-current="page"{{end}}>{{.Label}}{{if .Key}}<span class="pill{{if .Alert}} alert{{end}}" data-count="{{.Key}}"{{if not .Count}} hidden{{end}}>{{num .Count}}</span>{{end}}</a>
+<a href="{{.URL}}"{{if .On}} class="on" aria-current="page"{{end}}>{{.Label}}{{if .Key}}<span class="pill{{if .Alert}} alert{{end}}" data-count="{{.Key}}"{{if not .Count}} hidden{{end}}>{{num .Count}}</span>{{end}}{{if .On}}<span class="ember" aria-hidden="true"></span>{{end}}</a>
 {{- end}}
 </nav>
 <div class="who">
-{{- if not .Write}}<span class="tag">Read-only</span>{{end}}
+{{- if not .Write}}<span class="tag" title="You can look around, but actions are turned off"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7"/></svg>Read-only</span>{{end}}
 {{- with .Actor}}<span class="actor" title="Signed in as {{.}}"><span class="avatar">{{initial .}}</span><span class="name">{{.}}</span></span>{{end -}}
 </div>
 </div>
 </header>
-<main class="wrap">
+<main class="wrap" id="main">
 {{- with .Flash}}
-<div class="flash" role="status"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span>{{.Text}}</span>{{with .URL}}<a href="{{.}}">View job</a>{{end}}</div>
+<div class="flash" role="status" data-flash><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span>{{.Text}}</span>{{with .URL}}<a href="{{.}}">View job</a>{{end}}<button class="flash-x" type="button" data-dismiss aria-label="Dismiss"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7m0-7l-7 7"/></svg></button></div>
 {{- end}}
 {{template "content" .}}
 </main>
@@ -34,7 +35,49 @@
 </html>
 {{end}}
 
-{{define "logo"}}<svg class="logo" viewBox="0 0 20 20" aria-hidden="true"><path class="arch" d="M4 17V10a6 6 0 0 1 12 0v7"/><path class="base" d="M2 17h16"/><path class="flame" d="M10 7.2c1.5 1.5 2.4 2.7 2.4 4.2a2.4 2.4 0 0 1-4.8 0c0-.9.4-1.6 1-2.2.2.7.5 1.1 1 1.2C9.4 9.3 9.5 8.2 10 7.2Z"/></svg>{{end}}
+{{define "logo"}}<svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><path class="hex" d="M12 2.6l8.2 4.7v9.4L12 21.4l-8.2-4.7V7.3z"/><path class="hearth" d="M5.4 17.6h13.2L12 21.4z"/><g transform="translate(12 17.5) scale(1.1) translate(-12 -16.1)"><path class="flame" d="M12.4 5.8c.5 2.1 3.4 3.6 3.4 6.9 0 2-1.7 3.4-3.8 3.4s-3.8-1.4-3.8-3.4c0-1.6.8-2.8 1.8-3.6.1 1.1.6 1.8 1.3 2.1-.3-1.8.1-3.9 1.1-5.4z"/><path class="core" d="M12.2 11c.4 1.2 1.8 1.8 1.8 3.2 0 1-.9 1.8-2 1.8s-2-.8-2-1.8c0-.8.5-1.4 1.1-1.7.2.5.5.8.9.9-.2-.8-.1-1.7.2-2.4z"/></g></svg>{{end}}
+
+{{define "kiln"}}<svg class="kiln" viewBox="0 0 120 120" aria-hidden="true">
+<defs>
+<radialGradient id="kiln-glow"><stop offset="0" class="glow-0"/><stop offset="1" class="glow-1"/></radialGradient>
+<radialGradient id="kiln-heat" cx=".5" cy="1" r=".9"><stop offset="0" class="heat-0"/><stop offset="1" class="heat-1"/></radialGradient>
+<clipPath id="kiln-inside"><path d="M60 16l41 23.7v47.4L96 90H24l-5-2.9V39.7z"/></clipPath>
+</defs>
+<circle class="halo" cx="60" cy="72" r="58" fill="url(#kiln-glow)"/>
+<path class="inside" d="M60 16l41 23.7v47.4L60 110.8 19 87.1V39.7z"/>
+<rect class="warmth" x="19" y="16" width="82" height="74" fill="url(#kiln-heat)" clip-path="url(#kiln-inside)"/>
+<g clip-path="url(#kiln-inside)"><g class="sparks"><circle cx="53" cy="50" r="1.7"/><circle cx="66" cy="44" r="1.4"/><circle cx="60" cy="56" r="1.2"/><circle cx="71" cy="58" r="1.3"/></g></g>
+<g transform="translate(60 88) scale(1.2) translate(-60 -81)"><g class="flame"><g class="flame-in">
+<path class="f1" d="M63 30c3 11 17 18 17 34 0 10-9 17-20 17s-20-7-20-17c0-8 4-14 9.5-18 .5 5.5 3 9 6.5 10.5-1.5-9 .5-19 7-26.5z"/>
+<path class="f2" d="M61.5 43c2.5 8 12.5 12.5 12.5 23 0 8-6 14-14 14s-14-6-14-14c0-5.8 3.2-9.5 7-11.8.5 3.9 2.6 6.5 5.2 7.5-.9-6.3 0-13 3.3-18.7z"/>
+<path class="f3" d="M60.5 53c2 6 10 9 10 16.5 0 6-4.6 10.5-10.5 10.5S49.5 75.5 49.5 69.5c0-4.3 2.4-7.3 5.4-8.8.3 2.6 1.4 4.3 3 5-.6-4.4 0-9 2.6-12.7z"/>
+<g class="face">
+<g class="eyes"><g class="eye"><ellipse cx="56" cy="68" rx="1.9" ry="2.6"/><circle class="glint" cx="56.6" cy="67.2" r=".65"/></g><g class="eye"><ellipse cx="64" cy="68" rx="1.9" ry="2.6"/><circle class="glint" cx="64.6" cy="67.2" r=".65"/></g></g>
+<path class="shut" d="M54 68.4q2 1.8 4 0M62 68.4q2 1.8 4 0"/>
+<path class="brows" d="M53.4 64.4l3.6-1.5M66.6 64.4L63 62.9"/>
+<path class="mouth smile" d="M57.6 72.4q2.4 2.2 4.8 0"/>
+<path class="mouth grin" d="M56.8 72q3.2 4.2 6.4 0z"/>
+<ellipse class="mouth oh" cx="60" cy="73.4" rx="1.3" ry="1.6"/>
+<path class="mouth flat" d="M58.2 73.2h3.6"/>
+<circle class="blush" cx="53.6" cy="71.6" r="1.6"/><circle class="blush" cx="66.4" cy="71.6" r="1.6"/>
+</g>
+</g></g></g>
+<path class="sweat" d="M79 50c1.6 2.4 2.4 3.8 2.4 5a2.4 2.4 0 0 1-4.8 0c0-1.2.8-2.6 2.4-5z"/>
+<g class="zzz"><text x="70" y="58">z</text><text x="77" y="49">z</text><text x="83" y="41">z</text></g>
+<path class="shell" d="M60 16l41 23.7v47.4L60 110.8 19 87.1V39.7z"/>
+<path class="hearth" d="M24 90h72l-36 20.8z"/>
+</svg>{{end}}
+
+{{define "art"}}<svg class="sprite" aria-hidden="true">
+<symbol id="art-awaiting" viewBox="0 0 48 48"><path d="M15 8h18M15 40h18M17 8c0 9 13 10 13 16S17 31 17 40M31 8c0 9-13 10-13 16s13 7 13 16"/><path class="fill" d="M20 36c1-3 7-3 8 0z"/></symbol>
+<symbol id="art-scheduled" viewBox="0 0 48 48"><circle cx="24" cy="25" r="15"/><path d="M24 16v9l6 4M19 6h10"/></symbol>
+<symbol id="art-throttled" viewBox="0 0 48 48"><path d="M9 33a15 15 0 1 1 30 0"/><path d="M24 33l8-10"/><circle class="fill" cx="24" cy="33" r="2.6"/><path d="M13 22l2 1.5M24 16v2.5M35 22l-2 1.5"/></symbol>
+<symbol id="art-enqueued" viewBox="0 0 48 48"><path d="M5 38h38"/><path d="M8 24h7M9 24c-2 2-3 4-3 7 0 3 2.5 5 5.5 5s5.5-2 5.5-5c0-3-1-5-3-7M21 22h7M22 22c-2 2.5-3 5-3 8 0 3.5 2.5 6 5.5 6s5.5-2.5 5.5-6c0-3-1-5.5-3-8M34 24h7M35 24c-2 2-3 4-3 7 0 3 2.5 5 5.5 5s5.5-2 5.5-5c0-3-1-5-3-7"/></symbol>
+<symbol id="art-processing" viewBox="0 0 48 48"><path class="fill" d="M25 6c2 7 11 11 11 21 0 7-5.4 12-12 12s-12-5-12-12c0-5 2.4-8.6 5.7-11 .3 3.3 1.8 5.4 3.9 6.3C20.7 17 21.3 11 25 6z"/><path d="M25 6c2 7 11 11 11 21 0 7-5.4 12-12 12s-12-5-12-12c0-5 2.4-8.6 5.7-11 .3 3.3 1.8 5.4 3.9 6.3C20.7 17 21.3 11 25 6z"/></symbol>
+<symbol id="art-succeeded" viewBox="0 0 48 48"><path class="fill" d="M19 11v2c0 3-8 6-8 15 0 7 5.5 12 13 12s13-5 13-12c0-9-8-12-8-15v-2z"/><path d="M17 9h14M19 9v4c0 3-8 6-8 15 0 7 5.5 12 13 12s13-5 13-12c0-9-8-12-8-15V9M13 26c7 3 15 3 22 0"/><path d="M40 6v6M37 9h6"/></symbol>
+<symbol id="art-failed" viewBox="0 0 48 48"><path class="fill" d="M19 11v2c0 3-8 6-8 15 0 7 5.5 12 13 12s13-5 13-12c0-9-8-12-8-15v-2z"/><path d="M17 9h14M19 9v4c0 3-8 6-8 15 0 7 5.5 12 13 12s13-5 13-12c0-9-8-12-8-15V9"/><path class="crack" d="M26 13l-3.5 7 4.5 3.5-4 6 2.5 5"/></symbol>
+<symbol id="art-deleted" viewBox="0 0 48 48"><path class="fill" d="M9 36l6-12 7 4-3 9zM25 38l3-13 8 3-2 10zM17 18l5-7 5 5-4 5z"/><path d="M9 36l6-12 7 4-3 9zM25 38l3-13 8 3-2 10zM17 18l5-7 5 5-4 5zM6 40h36"/></symbol>
+</svg>{{end}}
 
 {{define "when"}}{{if .IsZero}}<span class="none">—</span>{{else}}<time datetime="{{iso .}}" title="{{abs .}}">{{ago .}}</time>{{end}}{{end}}
 

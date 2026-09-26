@@ -81,6 +81,7 @@ func (h *handler) parse() map[string]*template.Template {
 		"label":   label,
 		"preview": preview,
 		"pretty":  pretty,
+		"plural":  plural,
 	}).ParseFS(templateFS, "templates/layout.html"))
 	out := make(map[string]*template.Template, len(views))
 	for v, file := range views {

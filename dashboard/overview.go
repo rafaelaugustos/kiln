@@ -128,20 +128,71 @@ func (h *handler) loadOverview(ctx context.Context) (*snapshot, error) {
 	return s, nil
 }
 
-type card struct {
+type stat struct {
 	Key   string
 	Label string
-	Hint  string
+	Note  string
 	State driver.State
+	N     int64
 	Value string
 	URL   string
+	Sub   *stat
+}
+
+type stage struct {
+	Label string
+	Stats []stat
 }
 
 type overviewPage struct {
 	*snapshot
-	Cards      []card
+	Mood       string
+	Heat       string
+	Load       float64
+	Stages     []stage
 	QueueRows  []queueView
 	ServerRows []serverView
+}
+
+func (p *overviewPage) Stat(key string) stat {
+	for _, g := range p.Stages {
+		for _, s := range g.Stats {
+			if s.Key == key {
+				return s
+			}
+		}
+	}
+	return stat{}
+}
+
+func mood(s *snapshot) string {
+	switch {
+	case s.Servers == 0 && s.Counts == (counts{}):
+		return "fresh"
+	case s.Servers == 0:
+		return "cold"
+	case s.Counts.Failed > 0:
+		return "failed"
+	case s.Counts.Processing > 0:
+		return "busy"
+	case s.Counts.Enqueued > 0:
+		return "waiting"
+	}
+	return "idle"
+}
+
+func heat(s *snapshot) string {
+	switch {
+	case s.Servers == 0:
+		return "off"
+	case s.Running == 0 || s.Workers == 0:
+		return "idle"
+	case s.Running*3 < s.Workers:
+		return "low"
+	case s.Running*3 < s.Workers*2:
+		return "mid"
+	}
+	return "high"
 }
 
 func (h *handler) overview(w http.ResponseWriter, r *http.Request) {
@@ -155,27 +206,41 @@ func (h *handler) overview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c := &s.Counts
-	state := func(st driver.State) card {
-		return card{Key: string(st), Label: label(st), State: st, Value: c.text(c.of(st)), URL: h.link("/jobs/", st)}
+	state := func(st driver.State, note string) stat {
+		n := c.of(st)
+		return stat{Key: string(st), Label: label(st), Note: note, State: st, N: n, Value: c.text(n), URL: h.link("/jobs/", st)}
 	}
+	scheduled := state(driver.Scheduled, "")
+	scheduled.Sub = &stat{Key: "retries", Label: "retrying", N: c.Retries, Value: c.text(c.Retries), URL: h.link("/retries")}
+	succeeded := state(driver.Succeeded, "all time")
+	succeeded.Value = num(c.Succeeded)
+	deleted := state(driver.Deleted, "all time")
+	deleted.Value = num(c.Deleted)
 	p := &overviewPage{
 		snapshot: s,
-		Cards: []card{
-			state(driver.Enqueued),
-			state(driver.Processing),
-			state(driver.Scheduled),
-			{Key: "retries", Label: "Retries", State: driver.Scheduled, Value: c.text(c.Retries), URL: h.link("/retries")},
-			state(driver.Awaiting),
-			state(driver.Throttled),
-			state(driver.Failed),
-			{Key: "succeeded", Label: "Succeeded", Hint: "all time", State: driver.Succeeded, Value: num(c.Succeeded), URL: h.link("/jobs/", driver.Succeeded)},
-			{Key: "deleted", Label: "Deleted", Hint: "all time", State: driver.Deleted, Value: num(c.Deleted), URL: h.link("/jobs/", driver.Deleted)},
-			{Key: "servers", Label: "Servers", Value: num(s.Servers), URL: h.link("/servers")},
-			{Key: "recurring", Label: "Recurring", Value: num(s.Recurring), URL: h.link("/recurring")},
-			{Key: "queues", Label: "Queues", Value: num(s.Queues), URL: h.link("/queues")},
+		Mood:     mood(s),
+		Heat:     heat(s),
+		Stages: []stage{
+			{Label: "Held back", Stats: []stat{
+				state(driver.Awaiting, "on other jobs"),
+				scheduled,
+				state(driver.Throttled, "by a limit"),
+			}},
+			{Label: "Queued & running", Stats: []stat{
+				state(driver.Enqueued, "ready for a worker"),
+				state(driver.Processing, "running now"),
+			}},
+			{Label: "Outcomes", Stats: []stat{
+				succeeded,
+				state(driver.Failed, "stay until handled"),
+				deleted,
+			}},
 		},
 		QueueRows:  queueViews(s.queues),
 		ServerRows: serverViews(s.servers),
+	}
+	if s.Workers > 0 {
+		p.Load = min(float64(s.Running)/float64(s.Workers)*100, 100)
 	}
 	h.render(w, r, http.StatusOK, "overview", "Overview", p)
 }
