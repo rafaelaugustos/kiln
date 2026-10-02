@@ -136,7 +136,7 @@ func (t *Tx) Commit() error {
 		case op.seal != 0:
 			s.seal(s.batches[op.seal])
 		default:
-			s.apply(op.plan, false)
+			s.apply(op.plan, true)
 		}
 	}
 	s.settle()

@@ -128,11 +128,14 @@ func TestTxWriterCommit(t *testing.T) {
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Sweep(ctx, 100); err != nil {
+	if r := record(t, s, res[1].ID); r.State != driver.Throttled {
+		t.Fatalf("limited job %s after commit, want throttled until Notify", r.State)
+	}
+	if err := w.Notify(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if got := claim(t, s, 10); len(got) != 2 {
-		t.Fatalf("claimed %d after commit and sweep, want 2", len(got))
+		t.Fatalf("claimed %d after commit and Notify, want 2", len(got))
 	}
 	if r := record(t, s, res[2].ID); r.State != driver.Throttled {
 		t.Fatalf("second limited job %s, want throttled", r.State)
