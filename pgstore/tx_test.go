@@ -2,9 +2,11 @@ package pgstore
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"testing"
 
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
@@ -78,5 +80,91 @@ func TestTxWriter(t *testing.T) {
 	s.pool.QueryRow(ctx, "SELECT count(*) FROM "+s.schema+".jobs WHERE kind = 'gone'").Scan(&n)
 	if n != 0 {
 		t.Fatal("rolled back InTx insert persisted")
+	}
+}
+
+func TestSQLTxWriter(t *testing.T) {
+	t.Parallel()
+	s := open(t)
+	ctx := context.Background()
+	db, err := sql.Open("pgx", dbURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	if _, err := s.SQLTx(nil).Insert(ctx, []driver.InsertParams{job("a")}); !errors.Is(err, driver.ErrNilTx) {
+		t.Fatalf("nil tx: %v", err)
+	}
+
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := s.SQLTx(tx).Insert(ctx, []driver.InsertParams{job("a"), job("a", limited("sql", 1))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := claim(t, s, 10); len(got) != 0 {
+		t.Fatalf("uncommitted jobs visible: %v", got)
+	}
+	if err := tx.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Job(ctx, res[0].ID); !errors.Is(err, driver.ErrNotFound) {
+		t.Fatalf("rolled back job exists: %v", err)
+	}
+
+	tx, err = db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := s.SQLTx(tx)
+	batch, err := w.OpenBatch(ctx, driver.NewBatch{Description: "sql"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err = w.Insert(ctx, []driver.InsertParams{
+		job("a", unique("sql", 0)),
+		job("a", unique("sql", 0)),
+		job("a", limited("sql", 1)),
+		job("a", limited("sql", 1)),
+		job("m", inBatch(batch)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res[1].Duplicate || res[1].ID != res[0].ID {
+		t.Fatalf("second unique job %+v, want a duplicate of %d", res[1], res[0].ID)
+	}
+	child, err := w.Insert(ctx, []driver.InsertParams{job("c", after(driver.OnSucceeded, res[0].ID))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if child[0].State != driver.Awaiting {
+		t.Fatalf("child state %s, want awaiting", child[0].State)
+	}
+	if err := w.SealBatch(ctx, batch); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Notify(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := claim(t, s, 10); len(got) != 3 {
+		t.Fatalf("claimed %d after commit and Notify, want the unique job, one limited job and the batch member", len(got))
+	}
+	if b, err := s.Batch(ctx, batch); err != nil || !b.Sealed || b.Total != 1 {
+		t.Fatalf("batch %+v %v", b, err)
+	}
+
+	tx, err = db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err := s.SQLTx(tx).Insert(ctx, []driver.InsertParams{job("c", after(driver.OnSucceeded, 1<<40))}); !errors.Is(err, driver.ErrNotFound) {
+		t.Fatalf("missing parent: %v, want ErrNotFound", err)
 	}
 }

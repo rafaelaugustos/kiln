@@ -52,9 +52,10 @@ func (c *Client) Enqueue(ctx context.Context, args Args, opts ...InsertOption) (
 }
 
 // EnqueueTx is [Client.Enqueue] inside the application's transaction: w is a [driver.Writer]
-// bound to it, such as the TxWriter of pgstore, mysqlstore or sqlitestore. The job exists only if
-// the transaction commits. Servers find it at their next poll, or immediately if the writer's
-// Notify method is called after the commit. EnqueueTx returns [driver.ErrNilTx] when w is nil.
+// bound to it, usually a [driver.TxWriter] such as the TxWriter of pgstore, mysqlstore or
+// sqlitestore. The job exists only if the transaction commits. Servers find it at their next poll,
+// or right away if [driver.TxWriter.Notify] is called after the commit. EnqueueTx returns
+// [driver.ErrNilTx] when w is nil.
 func (c *Client) EnqueueTx(ctx context.Context, w driver.Writer, args Args, opts ...InsertOption) (int64, error) {
 	if w == nil {
 		return 0, driver.ErrNilTx

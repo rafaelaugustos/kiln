@@ -13,7 +13,7 @@ var (
 	_ driver.Store      = (*Store)(nil)
 	_ driver.Notifier   = (*Store)(nil)
 	_ driver.Transactor = (*Store)(nil)
-	_ driver.Writer     = (*Tx)(nil)
+	_ driver.TxWriter   = (*Tx)(nil)
 )
 
 const nstates = len(driver.States)

@@ -21,7 +21,7 @@ type Writer interface {
 	// also admits the throttled jobs of the keys it touched and, after the commit, publishes
 	// [JobsReady] for every queue that received enqueued jobs; a failure to publish never fails the
 	// call. A Writer bound to an application's transaction publishes nothing, since it cannot see
-	// the commit, and may leave admission to a later Sweep.
+	// the commit, and may leave admission to [TxWriter.Notify] or a later Sweep.
 	Insert(ctx context.Context, jobs []InsertParams) ([]Inserted, error)
 
 	// OpenBatch creates an unsealed batch and returns its id. See [Batch] for its life.
@@ -248,6 +248,20 @@ type Bus interface {
 	// error reports events that could not be sent; a store never fails the write that produced
 	// them because of it.
 	Publish(ctx context.Context, events []Event) error
+}
+
+// TxWriter is a [Writer] bound to an application's transaction, such as the TxWriter of pgstore,
+// mysqlstore and sqlitestore, or a memstore.Tx. Code that enqueues inside transactions can hold
+// one without knowing the store.
+type TxWriter interface {
+	Writer
+
+	// Notify is called after the application's transaction commits. It admits the throttled jobs
+	// of the keys the transaction touched and publishes [JobsReady] for the queues that received
+	// jobs. Its error is advisory: the jobs are committed either way, and without Notify they wait
+	// for the next Sweep and the servers' next poll. Calling it twice, or after a rollback, is
+	// harmless.
+	Notify(ctx context.Context) error
 }
 
 // Transactor is implemented by stores that can run several writes in one transaction. Package kiln
