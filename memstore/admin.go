@@ -8,6 +8,8 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
+// Delete deletes the jobs that match f as [driver.Admin.Delete] describes, all of them in one
+// step.
 func (s *Store) Delete(_ context.Context, f driver.Filter) (int, error) {
 	if err := driver.CheckFilter(f); err != nil {
 		return 0, err
@@ -32,6 +34,8 @@ func (s *Store) Delete(_ context.Context, f driver.Filter) (int, error) {
 	return n, nil
 }
 
+// Requeue moves the jobs that match f back to their queues as [driver.Admin.Requeue] describes,
+// all of them in one step.
 func (s *Store) Requeue(_ context.Context, f driver.Filter) (int, error) {
 	if err := driver.CheckFilter(f); err != nil {
 		return 0, err
@@ -69,6 +73,8 @@ func (s *Store) Requeue(_ context.Context, f driver.Filter) (int, error) {
 	return n, nil
 }
 
+// PauseQueue pauses or resumes the queue called name and sends [driver.QueueChanged] to
+// subscribers. An empty name is [driver.ErrInvalid].
 func (s *Store) PauseQueue(_ context.Context, name string, paused bool) error {
 	if name == "" {
 		return fmt.Errorf("%w: empty queue", driver.ErrInvalid)

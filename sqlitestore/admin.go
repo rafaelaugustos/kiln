@@ -80,6 +80,10 @@ func where(f driver.Filter) (string, []any) {
 	return b.String(), args
 }
 
+// Delete deletes the jobs that match f, as [driver.Admin.Delete] describes, in transactions of up
+// to 1000 jobs taken in order of id, so an error leaves the earlier transactions applied. The
+// servers running jobs it marks for cancellation hear of it at once when they subscribed to the
+// Store or share its bus, and otherwise at their next heartbeat.
 func (s *Store) Delete(ctx context.Context, f driver.Filter) (int, error) {
 	if err := driver.CheckFilter(f); err != nil {
 		return 0, err
@@ -187,6 +191,9 @@ type requeued struct {
 	at      int64
 }
 
+// Requeue moves the jobs that match f back to their queues, as [driver.Admin.Requeue] describes,
+// in transactions of up to 1000 jobs, failed and scheduled ones before archived ones, so an error
+// leaves the earlier transactions applied.
 func (s *Store) Requeue(ctx context.Context, f driver.Filter) (int, error) {
 	if err := driver.CheckFilter(f); err != nil {
 		return 0, err
@@ -328,6 +335,9 @@ func (s *Store) reclaim(ctx context.Context, q querier, now int64, jobs []requeu
 	return jobs, nil
 }
 
+// PauseQueue pauses or resumes queue and tells the servers subscribed to the Store, and the bus
+// when the store has one. Other servers see the change at their next heartbeat. An empty queue
+// name is [driver.ErrInvalid].
 func (s *Store) PauseQueue(ctx context.Context, queue string, paused bool) error {
 	if queue == "" {
 		return fmt.Errorf("%w: empty queue", driver.ErrInvalid)

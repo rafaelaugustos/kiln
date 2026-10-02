@@ -18,12 +18,20 @@ var (
 
 const nstates = len(driver.States)
 
+// Option configures a [Store].
 type Option func(*Store)
 
+// Clock makes the store take the time from now instead of [time.Now]. Run times, leases, unique
+// key windows, retention and statistics all follow it, so a test can move it forward to make a
+// delayed job due or a lease expire. now must be safe for concurrent use.
 func Clock(now func() time.Time) Option {
 	return func(s *Store) { s.clock = now }
 }
 
+// Store is a [driver.Store] kept in memory, which also implements [driver.Notifier] and
+// [driver.Transactor]. It is safe for concurrent use. Every write runs under one lock, so it
+// takes effect all at once, even a Delete or Requeue of many jobs. The store copies the values it
+// is given and those it returns, so callers may change them afterwards.
 type Store struct {
 	mu    sync.Mutex
 	clock func() time.Time
@@ -57,6 +65,7 @@ type Store struct {
 	listeners atomic.Int32
 }
 
+// New returns an empty Store.
 func New(opts ...Option) *Store {
 	s := &Store{
 		clock:     time.Now,
@@ -82,6 +91,8 @@ func New(opts ...Option) *Store {
 	return s
 }
 
+// Now returns the time on the store's clock, which is [time.Now] unless [Clock] set another. It
+// never fails.
 func (s *Store) Now(context.Context) (time.Time, error) {
 	return s.clock(), nil
 }

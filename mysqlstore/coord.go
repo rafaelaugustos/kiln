@@ -43,6 +43,8 @@ WHERE j.state = 'processing' AND NOT EXISTS (
 	SELECT 1 FROM {p}servers s WHERE s.id = j.server AND s.heartbeat_at > UTC_TIMESTAMP(6) - INTERVAL ? MICROSECOND)
 LIMIT ?`
 
+// Now returns UTC_TIMESTAMP(6) from the database server, the clock every method of the store
+// uses.
 func (s *Store) Now(ctx context.Context) (time.Time, error) {
 	var now stamp
 	if err := s.db.QueryRowContext(ctx, sqlNow).Scan(&now); err != nil {
@@ -51,6 +53,8 @@ func (s *Store) Now(ctx context.Context) (time.Time, error) {
 	return now.Time, nil
 }
 
+// Lead acquires or renews the lease called name for holder, as [driver.Coordinator.Lead]
+// describes.
 func (s *Store) Lead(ctx context.Context, name, holder string, ttl time.Duration) (time.Duration, bool, error) {
 	us := micros(ttl)
 	if _, err := s.db.ExecContext(ctx, render(s.q.lead, name, holder, us)); err != nil {
@@ -72,6 +76,7 @@ func (s *Store) Lead(ctx context.Context, name, holder string, ttl time.Duration
 	return time.Duration(max(window-us, 0)) * time.Microsecond, true, nil
 }
 
+// Resign deletes the lease called name if holder has it.
 func (s *Store) Resign(ctx context.Context, name, holder string) error {
 	if _, err := s.db.ExecContext(ctx, render(s.q.resign, name, holder)); err != nil {
 		return wrap("resign", err)
@@ -113,6 +118,10 @@ func (s *Store) pending(ctx context.Context) (next time.Duration, found bool, gr
 	return next, found, granted, rows.Err()
 }
 
+// Promote moves up to limit scheduled jobs whose run time has come, earliest first, as
+// [driver.Coordinator.Promote] describes, skipping rows that other transactions have locked. It
+// looks with a plain read first and opens a transaction only when jobs are due or granted jobs
+// wait for admission, so that frequent calls on an idle store stay cheap.
 func (s *Store) Promote(ctx context.Context, limit int) (driver.Promoted, error) {
 	var p driver.Promoted
 	next, found, granted, err := s.pending(ctx)
@@ -190,6 +199,8 @@ func (s *Store) Promote(ctx context.Context, limit int) (driver.Promoted, error)
 	return p, nil
 }
 
+// Orphans returns up to limit processing jobs whose server has no row or has not sent a heartbeat
+// for deadAfter. It changes nothing.
 func (s *Store) Orphans(ctx context.Context, deadAfter time.Duration, limit int) ([]driver.Orphan, error) {
 	rows, err := s.db.QueryContext(ctx, render(s.q.orphans, micros(deadAfter), max(limit, 1)))
 	if err != nil {

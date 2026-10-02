@@ -12,6 +12,11 @@ import (
 
 var errDone = errors.New("kiln: transaction already committed or rolled back")
 
+// Tx is a transaction on a [Store], and a [driver.TxWriter]. Each write is checked when it is
+// made, against the store and the earlier writes of the Tx, and checked again by Commit, which
+// applies them all or none. The unique keys of the jobs it inserts are taken at once: while the Tx
+// is open, an insert elsewhere with one of them is a duplicate of the Tx's job. Commit or Rollback
+// finishes the Tx; any write, Commit or Rollback after that fails.
 type Tx struct {
 	s    *Store
 	ov   overlay
@@ -41,10 +46,14 @@ func newOverlay() overlay {
 	return overlay{jobs: make(map[int64]driver.State), batches: make(map[int64]*bview)}
 }
 
+// Begin starts a transaction. The jobs and batches written through the [Tx] stay out of sight
+// until [Tx.Commit] applies them together, and [Tx.Rollback] discards them.
 func (s *Store) Begin() *Tx {
 	return &Tx{s: s, ov: newOverlay()}
 }
 
+// InTx calls fn with a new [Tx] and commits it if fn returns nil. Otherwise it rolls the Tx back
+// and returns fn's error.
 func (s *Store) InTx(_ context.Context, fn func(driver.Writer) error) error {
 	tx := s.Begin()
 	defer tx.Rollback()
@@ -54,6 +63,8 @@ func (s *Store) InTx(_ context.Context, fn func(driver.Writer) error) error {
 	return tx.Commit()
 }
 
+// Insert checks jobs and returns the ids they will have, but the jobs exist only once
+// [Tx.Commit] has applied them.
 func (t *Tx) Insert(_ context.Context, jobs []driver.InsertParams) ([]driver.Inserted, error) {
 	s := t.s
 	s.begin()
@@ -84,6 +95,8 @@ func (t *Tx) Insert(_ context.Context, jobs []driver.InsertParams) ([]driver.Ins
 	return res, nil
 }
 
+// OpenBatch returns the id of a new batch, which exists once the transaction commits. Jobs
+// inserted through the Tx can join it before then.
 func (t *Tx) OpenBatch(_ context.Context, nb driver.NewBatch) (int64, error) {
 	s := t.s
 	s.begin()
@@ -98,6 +111,8 @@ func (t *Tx) OpenBatch(_ context.Context, nb driver.NewBatch) (int64, error) {
 	return b.id, nil
 }
 
+// SealBatch seals the batch id, whether the Tx opened it or not, when the transaction commits. It
+// fails with [driver.ErrNotFound] for a batch that does not exist.
 func (t *Tx) SealBatch(_ context.Context, id int64) error {
 	s := t.s
 	s.begin()
@@ -114,6 +129,10 @@ func (t *Tx) SealBatch(_ context.Context, id int64) error {
 	return nil
 }
 
+// Commit checks the writes of the transaction again and applies them all, or none if a parent
+// job or a batch they rely on was pruned, or a batch closed, in the meantime. Like the writes of
+// the store, it then admits throttled jobs and wakes subscribers. The Tx is finished even when
+// Commit fails.
 func (t *Tx) Commit() error {
 	s := t.s
 	s.begin()
@@ -143,10 +162,13 @@ func (t *Tx) Commit() error {
 	return nil
 }
 
+// Notify does nothing and returns nil: [Tx.Commit] has already admitted throttled jobs and woken
+// subscribers. It makes Tx a [driver.TxWriter].
 func (t *Tx) Notify(context.Context) error {
 	return nil
 }
 
+// Rollback discards the writes of the transaction and releases the unique keys its inserts took.
 func (t *Tx) Rollback() error {
 	s := t.s
 	s.begin()

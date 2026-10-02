@@ -11,6 +11,8 @@ type lease struct {
 	acquired time.Time
 }
 
+// Lead acquires or renews the lease called name for holder, as [driver.Coordinator.Lead]
+// describes.
 func (s *Store) Lead(_ context.Context, name, holder string, ttl time.Duration) (time.Duration, bool, error) {
 	s.begin()
 	defer s.end()
@@ -26,6 +28,7 @@ func (s *Store) Lead(_ context.Context, name, holder string, ttl time.Duration) 
 	return 0, false, nil
 }
 
+// Resign releases the lease called name if holder has it.
 func (s *Store) Resign(_ context.Context, name, holder string) error {
 	s.begin()
 	defer s.end()

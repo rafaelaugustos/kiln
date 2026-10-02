@@ -15,6 +15,8 @@ import (
 
 const countCap = 100000
 
+// Job returns the job id, live or archived, with its history, output, children and pending
+// dependencies, or an error wrapping [driver.ErrNotFound].
 func (s *Store) Job(_ context.Context, id int64) (driver.Record, error) {
 	s.begin()
 	defer s.end()
@@ -57,6 +59,8 @@ func order(st driver.State) func(*job) pos {
 	return func(j *job) pos { return pos{0, -j.id} }
 }
 
+// Jobs returns a page of the jobs in q.State, in the order [driver.Inspector.Jobs] gives. Its
+// records leave out History, Output and Children.
 func (s *Store) Jobs(_ context.Context, q driver.JobQuery) (driver.Page, error) {
 	if !q.State.Valid() {
 		return driver.Page{}, fmt.Errorf("%w: state %q", driver.ErrInvalid, q.State)
@@ -96,6 +100,8 @@ func (s *Store) Jobs(_ context.Context, q driver.JobQuery) (driver.Page, error) 
 	return p, nil
 }
 
+// Counts returns the number of jobs in each live state, at most 100000, how many scheduled jobs
+// are retries, and the all-time totals of succeeded and deleted jobs.
 func (s *Store) Counts(context.Context) (driver.Counts, error) {
 	s.begin()
 	defer s.end()
@@ -126,6 +132,8 @@ func (s *Store) Counts(context.Context) (driver.Counts, error) {
 	return c, nil
 }
 
+// Series sums the outcomes counted between from and to into buckets of step, which must be a
+// positive multiple of a minute, as [driver.Inspector.Series] describes.
 func (s *Store) Series(_ context.Context, from, to time.Time, step time.Duration) ([]driver.Point, error) {
 	if step < time.Minute || step%time.Minute != 0 {
 		return nil, fmt.Errorf("%w: step %s", driver.ErrInvalid, step)
@@ -169,6 +177,8 @@ func floor(v, step int64) int64 {
 	return q * step
 }
 
+// Queues returns every queue that has live jobs, a pause setting or a server working on it,
+// ordered by name.
 func (s *Store) Queues(context.Context) ([]driver.QueueInfo, error) {
 	s.begin()
 	defer s.end()

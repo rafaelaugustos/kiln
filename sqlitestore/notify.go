@@ -35,6 +35,11 @@ func newHub(b driver.Bus) *hub {
 	return h
 }
 
+// Subscribe calls fn with the events of the writes made through this Store, and with those of the
+// bus given with [Bus], until ctx is done, then returns nil. It returns sooner when the Store is
+// closed, with an error, and when the bus's Subscribe returns, with that call's error. Each
+// subscriber has a buffer of 256 events; when one falls behind, the events that do not fit are
+// dropped and fn gets a [driver.Resync] instead.
 func (s *Store) Subscribe(ctx context.Context, fn func(driver.Event)) error {
 	h := s.hub
 	sb := &sub{events: make(chan driver.Event, 256), resync: make(chan struct{}, 1)}

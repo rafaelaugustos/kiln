@@ -80,6 +80,11 @@ func latest() int {
 	return migrations[len(migrations)-1].version
 }
 
+// Migrate creates the store's tables, or brings them up to date, in one transaction begun with
+// BEGIN IMMEDIATE, so that callers running at the same time take turns and apply each step once,
+// and a failure leaves nothing half done; [New] does the same unless [NoMigrate] is given. Of the
+// options it reads only [Prefix]. Migrate changes nothing when the tables are newer than this
+// release knows, and returns an error saying so.
 func Migrate(ctx context.Context, db *sql.DB, opts ...Option) error {
 	c := newConfig(opts)
 	if !validPrefix(c.prefix) {

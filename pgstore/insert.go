@@ -167,6 +167,9 @@ type inserter struct {
 	w       wake
 }
 
+// Insert inserts jobs in one transaction, as [driver.Writer.Insert] describes, and admits the
+// throttled jobs of the limit keys they use. After the commit it notifies the queues that received
+// jobs to run, from a goroutine of the store, so the call does not wait for it.
 func (s *Store) Insert(ctx context.Context, jobs []driver.InsertParams) ([]driver.Inserted, error) {
 	res, w, err := s.insert(ctx, nil, jobs)
 	if err != nil {

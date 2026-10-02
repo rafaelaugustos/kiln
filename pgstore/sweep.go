@@ -58,6 +58,9 @@ FROM (
 ) c
 WHERE l.key = c.k AND l.active <> c.n`
 
+// Sweep repairs what other methods leave to it, as [driver.Coordinator.Sweep] describes, in a few
+// short transactions rather than one. It keeps its place in the dependencies and the limit keys
+// between calls, so successive calls on the same Store go through all of them.
 func (s *Store) Sweep(ctx context.Context, limit int) (int, error) {
 	limit = max(limit, 1)
 	var (

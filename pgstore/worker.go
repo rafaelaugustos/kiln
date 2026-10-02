@@ -26,6 +26,8 @@ const sqlUnregister = `DELETE FROM {s}.servers WHERE id = $1`
 const sqlSetMeta = `UPDATE {s}.jobs SET meta = coalesce(meta, '{}') || $3::jsonb
 WHERE id = $1 AND claim = $2 AND state = 'processing'`
 
+// Heartbeat records that the server si describes is alive and reads the leases of its processing
+// jobs and the paused queues, all in one round trip; see [driver.Worker.Heartbeat].
 func (s *Store) Heartbeat(ctx context.Context, si driver.ServerInfo) (driver.Directives, error) {
 	var d driver.Directives
 	started := pgtype.Timestamptz{Time: si.StartedAt, Valid: !si.StartedAt.IsZero()}
@@ -61,6 +63,7 @@ func (s *Store) Heartbeat(ctx context.Context, si driver.ServerInfo) (driver.Dir
 	return d, nil
 }
 
+// Unregister deletes the server's row. Jobs it still has processing become orphans at once.
 func (s *Store) Unregister(ctx context.Context, server string) error {
 	if _, err := s.pool.Exec(ctx, s.q.unregister, server); err != nil {
 		return fmt.Errorf("kiln: unregister: %w", err)
@@ -68,6 +71,8 @@ func (s *Store) Unregister(ctx context.Context, server string) error {
 	return nil
 }
 
+// SetMeta merges meta into the job's jsonb metadata while the job is processing under ref's
+// claim, and fails with [driver.ErrLost] otherwise.
 func (s *Store) SetMeta(ctx context.Context, ref driver.Ref, meta map[string]string) error {
 	m := encodeMeta(meta)
 	if m == "" {

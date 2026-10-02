@@ -105,6 +105,10 @@ func filterSQL(f driver.Filter) (index, cond raw) {
 	return index, raw(b)
 }
 
+// Delete deletes the jobs that match f, as [driver.Admin.Delete] describes, in transactions of up
+// to 1000 jobs taken in order of id, so an error leaves the earlier transactions applied. The
+// servers running jobs it marks for cancellation hear of it through the bus, or at their next
+// heartbeat.
 func (s *Store) Delete(ctx context.Context, f driver.Filter) (int, error) {
 	if err := driver.CheckFilter(f); err != nil {
 		return 0, err
@@ -227,6 +231,9 @@ type requeued struct {
 	limit   string
 }
 
+// Requeue moves the jobs that match f back to their queues, as [driver.Admin.Requeue] describes,
+// in transactions of up to 1000 jobs, failed and scheduled ones before archived ones, so an error
+// leaves the earlier transactions applied.
 func (s *Store) Requeue(ctx context.Context, f driver.Filter) (int, error) {
 	if err := driver.CheckFilter(f); err != nil {
 		return 0, err
@@ -420,6 +427,8 @@ func (s *Store) reclaim(ctx context.Context, tx *sql.Tx, jobs []requeued) ([]req
 	}), nil
 }
 
+// PauseQueue pauses or resumes queue and publishes the change, when the store has a bus. Servers
+// without one see it at their next heartbeat. An empty queue name is [driver.ErrInvalid].
 func (s *Store) PauseQueue(ctx context.Context, queue string, paused bool) error {
 	if queue == "" {
 		return fmt.Errorf("%w: empty queue", driver.ErrInvalid)

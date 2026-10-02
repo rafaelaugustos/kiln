@@ -11,6 +11,8 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
+// Heartbeat records that the server info describes is alive and returns the leases of its
+// processing jobs and the paused queues; see [driver.Worker.Heartbeat].
 func (s *Store) Heartbeat(_ context.Context, info driver.ServerInfo) (driver.Directives, error) {
 	s.begin()
 	defer s.end()
@@ -43,6 +45,7 @@ func (s *Store) Heartbeat(_ context.Context, info driver.ServerInfo) (driver.Dir
 	return d, nil
 }
 
+// Unregister forgets the server. Jobs it still has processing become orphans at once.
 func (s *Store) Unregister(_ context.Context, server string) error {
 	s.begin()
 	defer s.end()
@@ -50,6 +53,8 @@ func (s *Store) Unregister(_ context.Context, server string) error {
 	return nil
 }
 
+// SetMeta merges meta into the metadata of the job ref points to while the job is processing
+// under ref's claim, and fails with [driver.ErrLost] otherwise.
 func (s *Store) SetMeta(_ context.Context, ref driver.Ref, meta map[string]string) error {
 	s.begin()
 	defer s.end()
@@ -64,6 +69,8 @@ func (s *Store) SetMeta(_ context.Context, ref driver.Ref, meta map[string]strin
 	return nil
 }
 
+// Orphans returns up to limit processing jobs whose server is unknown or has not sent a heartbeat
+// for deadAfter. It changes nothing.
 func (s *Store) Orphans(_ context.Context, deadAfter time.Duration, limit int) ([]driver.Orphan, error) {
 	s.begin()
 	defer s.end()
@@ -90,6 +97,7 @@ func (s *Store) Orphans(_ context.Context, deadAfter time.Duration, limit int) (
 	return out[:min(len(out), limitOr(limit, 1000))], nil
 }
 
+// Servers returns the registered servers, ordered by id.
 func (s *Store) Servers(context.Context) ([]driver.ServerInfo, error) {
 	s.begin()
 	defer s.end()

@@ -89,6 +89,12 @@ func latest() int {
 	return migrations[len(migrations)-1].version
 }
 
+// Migrate creates the schema, or brings it up to date, through pool; [New] does the same unless
+// [NoMigrate] is given. Of the options it reads only [Schema]. Each migration and change runs in a
+// transaction of its own, under an advisory lock named after the schema and with lock_timeout set
+// to 5s, so that callers running at the same time apply it once, and a step that would wait longer
+// for a lock fails instead of queueing. Migrate changes nothing when the schema is newer than this
+// release knows, and returns an error saying so.
 func Migrate(ctx context.Context, pool *pgxpool.Pool, opts ...Option) error {
 	c := newConfig(opts)
 	if !validSchema(c.schema) {

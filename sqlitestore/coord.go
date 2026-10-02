@@ -40,6 +40,8 @@ WHERE j.state = 'processing' AND NOT EXISTS (
 ORDER BY j.id
 LIMIT ?`
 
+// Now returns the time on SQLite's clock, in UTC and to the millisecond, the clock every method of
+// the store uses.
 func (s *Store) Now(ctx context.Context) (time.Time, error) {
 	var now int64
 	if err := s.db.QueryRowContext(ctx, s.q.now).Scan(&now); err != nil {
@@ -48,6 +50,8 @@ func (s *Store) Now(ctx context.Context) (time.Time, error) {
 	return time.UnixMicro(now).UTC(), nil
 }
 
+// Lead acquires or renews the lease called name for holder in one statement, as
+// [driver.Coordinator.Lead] describes.
 func (s *Store) Lead(ctx context.Context, name, holder string, ttl time.Duration) (time.Duration, bool, error) {
 	us := micros(ttl)
 	var (
@@ -66,6 +70,7 @@ func (s *Store) Lead(ctx context.Context, name, holder string, ttl time.Duration
 	return time.Duration(max(window-us, 0)) * time.Microsecond, true, nil
 }
 
+// Resign deletes the lease called name if holder has it.
 func (s *Store) Resign(ctx context.Context, name, holder string) error {
 	err := s.write(ctx, func(ctx context.Context, q querier) error {
 		_, err := q.ExecContext(ctx, s.q.resign, name, holder)
@@ -105,6 +110,10 @@ func (s *Store) pending(ctx context.Context) (next time.Duration, found bool, gr
 	return next, found, granted, err
 }
 
+// Promote moves up to limit scheduled jobs whose run time has come, earliest first, as
+// [driver.Coordinator.Promote] describes. It looks with a plain read first and takes the write
+// lock only when jobs are due or granted jobs wait for admission, so that frequent calls on an
+// idle store stay cheap.
 func (s *Store) Promote(ctx context.Context, limit int) (driver.Promoted, error) {
 	var p driver.Promoted
 	next, found, granted, err := s.pending(ctx)
@@ -163,6 +172,8 @@ func (s *Store) Promote(ctx context.Context, limit int) (driver.Promoted, error)
 	return p, nil
 }
 
+// Orphans returns up to limit processing jobs whose server has no row or has not sent a heartbeat
+// for deadAfter. It changes nothing.
 func (s *Store) Orphans(ctx context.Context, deadAfter time.Duration, limit int) ([]driver.Orphan, error) {
 	var out []driver.Orphan
 	rows, err := s.db.QueryContext(ctx, s.q.orphans, micros(deadAfter), max(limit, 1))

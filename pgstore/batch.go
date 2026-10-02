@@ -17,10 +17,13 @@ type sender interface {
 	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
 }
 
+// OpenBatch creates an unsealed batch and returns its id.
 func (s *Store) OpenBatch(ctx context.Context, nb driver.NewBatch) (int64, error) {
 	return s.openBatch(ctx, s.pool, nb)
 }
 
+// SealBatch seals the batch id and, when none of its members is live, finishes it and releases the
+// jobs that wait for it, in one round trip. It fails with [driver.ErrNotFound] for an unknown id.
 func (s *Store) SealBatch(ctx context.Context, id int64) error {
 	w, err := s.sealBatch(ctx, s.pool, id)
 	if err != nil {

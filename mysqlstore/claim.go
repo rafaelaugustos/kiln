@@ -26,6 +26,9 @@ const sqlClaimKinds = `SELECT UTC_TIMESTAMP(6), ` + jobColumns + claimWhere + ` 
 const sqlTake = `UPDATE {p}jobs SET state = 'processing', attempt = attempt + 1, claim = claim + 1, attempted_at = ?,
 	server = ?, cancel_requested = FALSE WHERE id IN (?)`
 
+// Claim moves up to q.Limit enqueued jobs to processing in one transaction, as
+// [driver.Worker.Claim] describes. It reads them with FOR UPDATE SKIP LOCKED, so servers claiming
+// at the same time neither wait for each other nor take the same job.
 func (s *Store) Claim(ctx context.Context, q driver.ClaimQuery) ([]driver.Job, error) {
 	if q.Limit <= 0 || len(q.Queues) == 0 {
 		return nil, nil

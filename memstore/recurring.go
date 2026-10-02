@@ -11,6 +11,8 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
+// Due returns up to limit recurring jobs that are not paused and whose next run has come, the
+// earliest first, with the store's time.
 func (s *Store) Due(_ context.Context, limit int) ([]driver.Recurring, time.Time, error) {
 	s.begin()
 	defer s.end()
@@ -31,6 +33,8 @@ func (s *Store) Due(_ context.Context, limit int) ([]driver.Recurring, time.Time
 	return out, s.now, nil
 }
 
+// Fire inserts f.Jobs and stores the new schedule if the recurring job is still at f.Version, as
+// [driver.Coordinator.Fire] describes.
 func (s *Store) Fire(_ context.Context, f driver.Fire) ([]driver.Inserted, error) {
 	s.begin()
 	defer s.end()
@@ -54,6 +58,7 @@ func (s *Store) Fire(_ context.Context, f driver.Fire) ([]driver.Inserted, error
 	return res, nil
 }
 
+// Recurring returns the recurring job id, or an error wrapping [driver.ErrNotFound].
 func (s *Store) Recurring(_ context.Context, id string) (driver.Recurring, error) {
 	s.begin()
 	defer s.end()
@@ -64,6 +69,9 @@ func (s *Store) Recurring(_ context.Context, id string) (driver.Recurring, error
 	return cloneRecurring(r), nil
 }
 
+// PutRecurring creates r when r.Version is 0 and no recurring job has its ID, or replaces the
+// stored one when r.Version matches it, and fails with [driver.ErrConflict] otherwise. An empty ID
+// is [driver.ErrInvalid].
 func (s *Store) PutRecurring(_ context.Context, r driver.Recurring) error {
 	if r.ID == "" {
 		return fmt.Errorf("%w: empty recurring id", driver.ErrInvalid)
@@ -86,6 +94,8 @@ func (s *Store) PutRecurring(_ context.Context, r driver.Recurring) error {
 	return nil
 }
 
+// RemoveRecurring deletes the recurring job id, or fails with [driver.ErrNotFound]. Jobs it
+// created stay as they are.
 func (s *Store) RemoveRecurring(_ context.Context, id string) error {
 	s.begin()
 	defer s.end()
@@ -96,6 +106,7 @@ func (s *Store) RemoveRecurring(_ context.Context, id string) error {
 	return nil
 }
 
+// Recurrings returns every recurring job, ordered by id.
 func (s *Store) Recurrings(context.Context) ([]driver.Recurring, error) {
 	s.begin()
 	defer s.end()

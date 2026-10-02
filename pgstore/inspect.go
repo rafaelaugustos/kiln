@@ -86,6 +86,8 @@ const sqlBatch = `SELECT ` + batchColumns + ` FROM {s}.batches b WHERE b.id = $1
 
 const sqlBatches = `SELECT ` + batchColumns + ` FROM {s}.batches b WHERE b.id < $1 ORDER BY b.id DESC LIMIT $2`
 
+// Job returns the job id, live or archived, with its history, output, children and pending
+// dependencies, in one round trip, or an error wrapping [driver.ErrNotFound].
 func (s *Store) Job(ctx context.Context, id int64) (driver.Record, error) {
 	var (
 		recs     []driver.Record
@@ -170,6 +172,8 @@ func decodeHistory(b []byte) []driver.Entry {
 	return out
 }
 
+// Jobs returns a page of the jobs in q.State, in the order [driver.Inspector.Jobs] gives. Its
+// records leave out History, Output and Children.
 func (s *Store) Jobs(ctx context.Context, q driver.JobQuery) (driver.Page, error) {
 	if !q.State.Valid() {
 		return driver.Page{}, fmt.Errorf("%w: state %q", driver.ErrInvalid, q.State)
@@ -284,6 +288,9 @@ func decodeCursor(c string) (int64, int64, error) {
 	return 0, 0, fmt.Errorf("%w: cursor %q", driver.ErrInvalid, c)
 }
 
+// Counts returns, in one query, the number of jobs in each live state, counting no further than
+// 100000, how many scheduled jobs are retries, and the all-time totals of succeeded and deleted
+// jobs.
 func (s *Store) Counts(ctx context.Context) (driver.Counts, error) {
 	var c driver.Counts
 	err := s.pool.QueryRow(ctx, s.q.counts).Scan(&c.Awaiting, &c.Scheduled, &c.Throttled, &c.Enqueued,
@@ -299,6 +306,8 @@ func (s *Store) Counts(ctx context.Context) (driver.Counts, error) {
 	return c, nil
 }
 
+// Series sums the statistics between from and to into buckets of step, which must be a positive
+// multiple of a minute, as [driver.Inspector.Series] describes.
 func (s *Store) Series(ctx context.Context, from, to time.Time, step time.Duration) ([]driver.Point, error) {
 	if step <= 0 || step%time.Minute != 0 {
 		return nil, fmt.Errorf("%w: series step %s", driver.ErrInvalid, step)
@@ -323,6 +332,7 @@ func (s *Store) Series(ctx context.Context, from, to time.Time, step time.Durati
 	return out, nil
 }
 
+// Servers returns the registered servers, ordered by id.
 func (s *Store) Servers(ctx context.Context) ([]driver.ServerInfo, error) {
 	rows, err := s.pool.Query(ctx, s.q.servers)
 	if err != nil {
@@ -349,6 +359,8 @@ func (s *Store) Servers(ctx context.Context) ([]driver.ServerInfo, error) {
 	return out, nil
 }
 
+// Queues returns every queue that has live jobs, a pause setting or a server working on it,
+// ordered by name.
 func (s *Store) Queues(ctx context.Context) ([]driver.QueueInfo, error) {
 	rows, err := s.pool.Query(ctx, s.q.queues)
 	if err != nil {
@@ -374,6 +386,8 @@ func (s *Store) Queues(ctx context.Context) ([]driver.QueueInfo, error) {
 	return out, nil
 }
 
+// Batch returns the batch id with its members counted by state, or an error wrapping
+// [driver.ErrNotFound].
 func (s *Store) Batch(ctx context.Context, id int64) (driver.Batch, error) {
 	rows, err := s.pool.Query(ctx, s.q.batch, id)
 	if err != nil {
@@ -389,6 +403,7 @@ func (s *Store) Batch(ctx context.Context, id int64) (driver.Batch, error) {
 	return bs[0], nil
 }
 
+// Batches returns a page of batches, newest first.
 func (s *Store) Batches(ctx context.Context, q driver.BatchQuery) (driver.BatchPage, error) {
 	limit := q.Limit
 	switch {

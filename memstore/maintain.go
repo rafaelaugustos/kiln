@@ -9,6 +9,8 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
+// Promote moves up to limit scheduled jobs whose run time has come, earliest first, as
+// [driver.Coordinator.Promote] describes.
 func (s *Store) Promote(_ context.Context, limit int) (driver.Promoted, error) {
 	limit = limitOr(limit, 1000)
 	s.begin()
@@ -30,6 +32,7 @@ func (s *Store) Promote(_ context.Context, limit int) (driver.Promoted, error) {
 	return p, nil
 }
 
+// Sweep repairs what other calls leave to it, as [driver.Coordinator.Sweep] describes.
 func (s *Store) Sweep(_ context.Context, limit int) (int, error) {
 	limit = limitOr(limit, 1000)
 	s.begin()
@@ -73,6 +76,9 @@ func (s *Store) Sweep(_ context.Context, limit int) (int, error) {
 	return n, nil
 }
 
+// Prune deletes finished jobs past their retention, silent servers, old statistics, expired
+// unique keys, unused limit keys and finished batches with no members left, at most p.Limit of
+// each, as [driver.Coordinator.Prune] describes.
 func (s *Store) Prune(_ context.Context, p driver.PruneParams) (int, error) {
 	limit := limitOr(p.Limit, 1000)
 	servers := cmp.Or(p.Servers, time.Hour)

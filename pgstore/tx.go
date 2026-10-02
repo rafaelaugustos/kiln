@@ -8,12 +8,21 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
+// TxWriter is a [driver.TxWriter] bound to an application's transaction, made by [Store.Tx] or
+// [Store.SQLTx]. Its writes neither admit throttled jobs nor send NOTIFY from inside the
+// transaction; [TxWriter.Notify] does both after the commit. Keep the transaction short: until it
+// ends, other inserts with the same unique keys or into the same batches wait for it, and the jobs
+// its inserts name as parents can be neither claimed nor finished. A write that fails in the
+// database aborts the transaction, as any failed statement does in PostgreSQL. A TxWriter is not
+// safe for concurrent use.
 type TxWriter struct {
 	s  *Store
 	tx sender
 	w  wake
 }
 
+// Insert inserts jobs inside the transaction, as [driver.Writer.Insert] describes, leaving the
+// admission of throttled jobs to [TxWriter.Notify].
 func (w *TxWriter) Insert(ctx context.Context, jobs []driver.InsertParams) ([]driver.Inserted, error) {
 	if w.tx == nil {
 		return nil, driver.ErrNilTx
@@ -26,6 +35,7 @@ func (w *TxWriter) Insert(ctx context.Context, jobs []driver.InsertParams) ([]dr
 	return res, nil
 }
 
+// OpenBatch creates an unsealed batch inside the transaction and returns its id.
 func (w *TxWriter) OpenBatch(ctx context.Context, nb driver.NewBatch) (int64, error) {
 	if w.tx == nil {
 		return 0, driver.ErrNilTx
@@ -33,6 +43,8 @@ func (w *TxWriter) OpenBatch(ctx context.Context, nb driver.NewBatch) (int64, er
 	return w.s.openBatch(ctx, w.tx, nb)
 }
 
+// SealBatch seals the batch id inside the transaction, finishing it when none of its members is
+// live, or fails with [driver.ErrNotFound].
 func (w *TxWriter) SealBatch(ctx context.Context, id int64) error {
 	if w.tx == nil {
 		return driver.ErrNilTx
@@ -45,6 +57,11 @@ func (w *TxWriter) SealBatch(ctx context.Context, id int64) error {
 	return nil
 }
 
+// Notify admits the throttled jobs of the limit keys the transaction's inserts used and sends a
+// NOTIFY for the queues that received jobs to run, so that servers start them at once. Call it
+// after the transaction commits. Its error is advisory: the jobs are committed either way, and
+// without Notify they wait for the next sweep and the servers' next poll. Calling it twice, or
+// after a rollback, does no harm.
 func (w *TxWriter) Notify(ctx context.Context) error {
 	wk := w.w
 	w.w = wake{}
@@ -62,6 +79,9 @@ func (w *TxWriter) Notify(ctx context.Context) error {
 	return nil
 }
 
+// InTx runs fn in a transaction on the store's pool and commits it if fn returns nil; otherwise
+// it rolls back and returns fn's error. After the commit it admits throttled jobs and notifies the
+// queues that received jobs, as [TxWriter.Notify] would, and neither can fail the call.
 func (s *Store) InTx(ctx context.Context, fn func(w driver.Writer) error) error {
 	var w *TxWriter
 	err := pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {

@@ -43,6 +43,10 @@ type running struct {
 	children bool
 }
 
+// Finish applies outcomes in one transaction, as [driver.Worker.Finish] describes. An outcome
+// whose job row another transaction has locked is [driver.Busy] while the job is still processing
+// under its claim. An Output that is not valid JSON is [driver.Rejected], and so is an outcome
+// MySQL refuses, which Finish finds by retrying the outcomes in halves.
 func (s *Store) Finish(ctx context.Context, server string, outs []driver.Outcome) ([]driver.Result, error) {
 	res := make([]driver.Result, len(outs))
 	idx := make([]int, 0, len(outs))

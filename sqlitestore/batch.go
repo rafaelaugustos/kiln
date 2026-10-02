@@ -15,6 +15,7 @@ const sqlLockBatch = `SELECT sealed, finished_at IS NULL, {now} FROM {p}batches 
 
 const sqlSeal = `UPDATE {p}batches SET sealed = 1 WHERE id = ?`
 
+// OpenBatch creates an unsealed batch and returns its id.
 func (s *Store) OpenBatch(ctx context.Context, nb driver.NewBatch) (int64, error) {
 	var id int64
 	err := s.write(ctx, func(ctx context.Context, q querier) (err error) {
@@ -33,6 +34,8 @@ func (s *Store) openBatch(ctx context.Context, q querier, nb driver.NewBatch) (i
 	return id, err
 }
 
+// SealBatch seals the batch id and, when none of its members is live, finishes it and releases the
+// jobs that wait for it, in one transaction. It fails with [driver.ErrNotFound] for an unknown id.
 func (s *Store) SealBatch(ctx context.Context, id int64) error {
 	var f *fallout
 	err := s.write(ctx, func(ctx context.Context, q querier) (err error) {

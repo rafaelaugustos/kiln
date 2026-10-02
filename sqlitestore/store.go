@@ -17,6 +17,9 @@ var (
 	_ driver.TxWriter   = (*TxWriter)(nil)
 )
 
+// Store is a [driver.Store] on SQLite, which also implements [driver.Notifier] and
+// [driver.Transactor]. It is safe for concurrent use. The Stores opened on one [sql.DB] share the
+// connection kept for writes, so their writes take turns.
 type Store struct {
 	db     *sql.DB
 	prefix string
@@ -33,6 +36,12 @@ type Store struct {
 	}
 }
 
+// New returns a store on db, after switching the file to WAL. It fails with [driver.ErrInvalid]
+// when db allows a single open connection, when its connections have no busy_timeout, or when the
+// database cannot use WAL, as an in-memory one cannot. New also creates the tables or brings them
+// up to date, as [Migrate] does, unless [NoMigrate] is given, in which case it fails when a
+// migration or change of this release is missing; either way it fails when the tables are newer
+// than this release knows.
 func New(ctx context.Context, db *sql.DB, opts ...Option) (*Store, error) {
 	c := newConfig(opts)
 	if !validPrefix(c.prefix) {
@@ -86,11 +95,20 @@ func configure(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
+// Close publishes the events still pending, when the store has a bus, makes Subscribe calls
+// return with an error, and gives back the connection kept for writes once every Store on db is
+// closed. It closes neither db nor the bus. Call it once the servers that use the store have
+// stopped.
 func (s *Store) Close() {
 	s.hub.close()
 	s.w.release()
 }
 
+// Tx returns a writer that inserts jobs and opens and seals batches inside tx, so that they
+// commit or roll back with the application's work. Begin tx with BEGIN IMMEDIATE, which the DSN
+// parameter _txlock=immediate makes the default, so that it holds the write lock from the start,
+// and keep it short: while it is open, every other writer on the file waits, kiln's servers
+// included. A nil tx gives a writer whose writes fail with [driver.ErrNilTx].
 func (s *Store) Tx(tx *sql.Tx) *TxWriter {
 	w := &TxWriter{s: s}
 	if tx != nil {
