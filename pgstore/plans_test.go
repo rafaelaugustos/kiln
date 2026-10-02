@@ -116,7 +116,6 @@ ANALYZE {s}.limits;`
 	}{
 		{"admit with rules", s.q.admit, override.args()},
 		{"admit", s.q.admit, rules{keys: []string{"key3", "key4", "key5"}}.args()},
-		{"admit skip", s.q.admitSkip, []any{[]string{"key6", "key7", "key8"}}},
 		{"admit finished", s.q.admitFinished, []any{[]int64{9, 19, 6029}}},
 	}
 	for _, c := range cases {
@@ -171,23 +170,20 @@ SELECT 'throttled', 'default', 'k', 3, now(), '{}', $1, $2 FROM generate_series(
 		if err != nil {
 			t.Fatal(err)
 		}
-		rows, _ := tx.Query(ctx, s.q.admit, rules{keys: []string{key}}.args()...)
-		var (
-			queue    string
-			n, moved int
-		)
-		if _, err := pgx.ForEachRow(rows, []any{&queue, &n}, func() error { moved += n; return nil }); err != nil {
-			t.Fatalf("%s: %v", c.name, err)
-		}
+		var w wake
+		err = w.admitted(rules{})(tx.QueryRow(ctx, s.q.admit, rules{keys: []string{key}}.args()...))
 		var free int
 		q := "SELECT count(*) FROM (SELECT 1 FROM " + s.schema + ".jobs WHERE limit_key = $1 AND state = 'throttled' FOR UPDATE SKIP LOCKED) x"
-		if err := s.pool.QueryRow(ctx, q, key).Scan(&free); err != nil {
-			t.Fatal(err)
+		if err == nil {
+			err = s.pool.QueryRow(ctx, q, key).Scan(&free)
 		}
 		tx.Rollback(ctx)
-		if moved != c.moved || free != waiting-c.moved {
+		if err != nil {
+			t.Fatalf("%s: %v", c.name, err)
+		}
+		if w.moved != c.moved || free != waiting-c.moved {
 			t.Errorf("%s: moved %d and left %d of %d waiting jobs unlocked, want %d moved and the rest unlocked",
-				c.name, moved, free, waiting, c.moved)
+				c.name, w.moved, free, waiting, c.moved)
 		}
 	}
 }

@@ -16,6 +16,11 @@ var rateTests = []test{
 	{"Mutex", testRateMutex},
 	{"Unlimited", testRateUnlimited},
 	{"Stall", testRateStall},
+	{"Held", testRateHeld},
+	{"Freed", testRateFreed},
+	{"Overdue", testRateOverdue},
+	{"OverdueBurst", testRateOverdueBurst},
+	{"Jitter", testRateJitter},
 	{"Retry", testRateRetry},
 	{"Requeue", testRateRequeue},
 	{"Update", testRateUpdate},
@@ -53,6 +58,24 @@ func wantSlot(t *testing.T, s driver.Store, id int64, lo, hi time.Time, gap time
 	return r.RunAt
 }
 
+func admitAt(t *testing.T, s driver.Store, id int64, late time.Duration) time.Duration {
+	t.Helper()
+	at := record(t, s, id).RunAt
+	reach(t, s, at.Add(late))
+	promote(t, s, 1)
+	wantState(t, s, driver.Enqueued, id)
+	return now(t, s).Sub(at)
+}
+
+type promoter struct {
+	drift, late time.Duration
+}
+
+func (p *promoter) admit(t *testing.T, s driver.Store, id int64, late time.Duration) {
+	t.Helper()
+	p.late = max(p.late, admitAt(t, s, id, max(late, p.late-p.drift)))
+}
+
 func wantConsistent(t *testing.T, s driver.Store) {
 	t.Helper()
 	if n, err := s.Sweep(t.Context(), 1000); err != nil || n != 0 {
@@ -73,9 +96,10 @@ func testRateSpacing(t *testing.T, s driver.Store) {
 	}
 	wantConsistent(t, s)
 
-	reach(t, s, at)
-	promote(t, s, 100)
-	wantState(t, s, driver.Enqueued, ids...)
+	pr := promoter{drift: gap / 4}
+	for _, id := range ids[1:] {
+		pr.admit(t, s, id, 0)
+	}
 	next := add(t, s, p)
 	if stateOf(t, s, next) == driver.Enqueued {
 		if n := now(t, s); n.Before(at.Add(gap - 5*time.Millisecond)) {
@@ -83,7 +107,7 @@ func testRateSpacing(t *testing.T, s driver.Store) {
 		}
 		return
 	}
-	wantSlot(t, s, next, at, at, gap)
+	wantSlot(t, s, next, at, at.Add(pr.late), gap)
 }
 
 func testRateBurst(t *testing.T, s driver.Store) {
@@ -151,10 +175,110 @@ func testRateStall(t *testing.T, s driver.Store) {
 	wantState(t, s, driver.Throttled, ids[1:]...)
 
 	apply(t, s, outcome(running, driver.Succeeded))
+	done := now(t, s)
 	wantState(t, s, driver.Enqueued, ids[1])
 	wantState(t, s, driver.Throttled, ids[2])
+	reach(t, s, done.Add(gap))
 	apply(t, s, outcome(claimOne(t, s, "st", ids[1]), driver.Succeeded))
 	wantState(t, s, driver.Enqueued, ids[2])
+}
+
+func testRateHeld(t *testing.T, s driver.Store) {
+	const gap = 50 * time.Millisecond
+	p := rated("h", "k", 20, time.Second, 1)
+	p.LimitMax = 1
+	ids := insertedIDs(insert(t, s, repeat(5, p)...))
+	cur := claimOne(t, s, "h", ids[0])
+	slots := make([]time.Time, len(ids))
+	for i, id := range ids {
+		slots[i] = record(t, s, id).RunAt
+	}
+	reach(t, s, slots[len(slots)-1])
+	promote(t, s, 100)
+	wantState(t, s, driver.Throttled, ids[1:]...)
+
+	for i := 1; i < len(ids); i++ {
+		apply(t, s, outcome(cur, driver.Succeeded))
+		done := now(t, s)
+		cur = claimOne(t, s, "h", ids[i])
+		for j := i + 1; j < len(ids); j++ {
+			if r := record(t, s, ids[j]); r.State != driver.Throttled || !r.RunAt.Equal(slots[j]) {
+				t.Fatalf("job %d %s at %v after %d finishes, want it throttled at its slot %v", ids[j], r.State, r.RunAt, i, slots[j])
+			}
+		}
+		reach(t, s, done.Add(gap))
+	}
+}
+
+func testRateFreed(t *testing.T, s driver.Store) {
+	const gap = 50 * time.Millisecond
+	p := rated("fr", "k", 20, time.Second, 1)
+	p.LimitMax = 2
+	ids := insertedIDs(insert(t, s, repeat(5, p)...))
+	wantState(t, s, driver.Scheduled, ids[1:]...)
+	admitAt(t, s, ids[1], 0)
+	done := now(t, s)
+	js := claimN(t, s, 2, "fr")
+	reach(t, s, record(t, s, ids[4]).RunAt)
+	promote(t, s, 100)
+	wantState(t, s, driver.Throttled, ids[2:]...)
+	reach(t, s, done.Add(gap))
+
+	n0 := now(t, s)
+	apply(t, s, outcome(js[0], driver.Succeeded), outcome(js[1], driver.Succeeded))
+	n1 := now(t, s)
+	wantState(t, s, driver.Enqueued, ids[2])
+	at := wantSlot(t, s, ids[3], n0, n1, gap)
+	wantSlot(t, s, ids[4], at, at, gap)
+	wantConsistent(t, s)
+	admitAt(t, s, ids[3], 0)
+}
+
+func testRateOverdue(t *testing.T, s driver.Store)      { overdue(t, s, 1) }
+func testRateOverdueBurst(t *testing.T, s driver.Store) { overdue(t, s, 3) }
+
+func overdue(t *testing.T, s driver.Store, burst int) {
+	const gap = 50 * time.Millisecond
+	n0 := now(t, s)
+	ids := insertedIDs(insert(t, s, repeat(burst+5, rated("od", "k", 20, time.Second, burst))...))
+	n1 := now(t, s)
+	wantState(t, s, driver.Enqueued, ids[:burst]...)
+	reserved := ids[burst:]
+	at := wantSlot(t, s, reserved[0], n0, n1, gap)
+	for _, id := range reserved[1:] {
+		at = wantSlot(t, s, id, at, at, gap)
+	}
+
+	reach(t, s, at.Add(100*time.Millisecond))
+	n0 = now(t, s)
+	promote(t, s, 100)
+	n1 = now(t, s)
+	wantState(t, s, driver.Enqueued, reserved[:burst]...)
+	deferred := reserved[burst:]
+	at = wantSlot(t, s, deferred[0], n0, n1, gap)
+	for _, id := range deferred[1:] {
+		at = wantSlot(t, s, id, at, at, gap)
+	}
+	wantConsistent(t, s)
+
+	pr := promoter{drift: gap / 4}
+	for i, id := range deferred {
+		pr.admit(t, s, id, 0)
+		if got, want := counts(t, s).Enqueued, int64(2*burst+i+1); got != want {
+			t.Fatalf("%d jobs enqueued after job %d was promoted at its slot, want %d", got, id, want)
+		}
+	}
+}
+
+func testRateJitter(t *testing.T, s driver.Store) {
+	const gap, jitter = 100 * time.Millisecond, 20 * time.Millisecond
+	ids := insertedIDs(insert(t, s, repeat(5, rated("j", "k", 10, time.Second, 1))...))
+	wantState(t, s, driver.Enqueued, ids[0])
+	wantState(t, s, driver.Scheduled, ids[1:]...)
+	pr := promoter{drift: gap / 4}
+	for i, late := range []time.Duration{jitter, 0, jitter, 0} {
+		pr.admit(t, s, ids[i+1], late)
+	}
 }
 
 func testRateRetry(t *testing.T, s driver.Store) {
@@ -162,8 +286,10 @@ func testRateRetry(t *testing.T, s driver.Store) {
 	ids := insertedIDs(insert(t, s, repeat(65, rated("r", "k", 20, time.Second, 1))...))
 	granted := ids[1:5]
 	wantState(t, s, driver.Scheduled, ids[1:]...)
-	reach(t, s, record(t, s, granted[3]).RunAt)
-	promote(t, s, 100)
+	pr := promoter{drift: gap / 4}
+	for _, id := range granted {
+		pr.admit(t, s, id, 0)
+	}
 	js := claimN(t, s, 5, "r")
 	slices.SortFunc(js, func(a, b driver.Job) int { return cmp.Compare(a.ID, b.ID) })
 	if got := jobIDs(js); !slices.Equal(got, ids[:5]) {

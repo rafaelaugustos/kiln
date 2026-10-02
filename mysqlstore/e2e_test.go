@@ -614,3 +614,68 @@ func TestE2ETxEnqueue(t *testing.T) {
 	}
 	waitState(t, cl, id, kiln.Succeeded)
 }
+
+func TestE2EBus(t *testing.T) {
+	c := newCluster(t)
+	b := mysqlstore.NewBus()
+	type begun struct {
+		name string
+		at   time.Time
+	}
+	began := make(chan begun, 8)
+	canceled := make(chan time.Time, 1)
+	m := kiln.NewMux()
+	kiln.Handle(m, func(_ context.Context, j *kiln.Job[step]) error {
+		send(began, begun{j.Args.Name, time.Now()})
+		return nil
+	})
+	kiln.Handle(m, func(ctx context.Context, _ *kiln.Job[hold]) error {
+		send(began, begun{"hold", time.Now()})
+		<-ctx.Done()
+		send(canceled, time.Now())
+		return context.Cause(ctx)
+	})
+	cfg := fast()
+	cfg.PollInterval = 5 * time.Second
+	cfg.HeartbeatInterval = 5 * time.Second
+	cfg.DeadAfter = 30 * time.Second
+	cfg.Queues = map[string]int{kiln.DefaultQueue: 4, "a": 4}
+	srvA, _ := serve(t, c.store(mysqlstore.Bus(b)), m, cfg)
+	cfg.Queues = map[string]int{kiln.DefaultQueue: 4, "b": 4}
+	srvB, _ := serve(t, c.store(mysqlstore.Bus(b)), m, cfg)
+	waitFor(t, 5*time.Second, "both servers to subscribe", func() bool {
+		return srvA.Stats().Listening && srvB.Stats().Listening
+	})
+	cl := kiln.NewClient(c.store(mysqlstore.Bus(b)))
+	ctx := context.Background()
+
+	at := time.Now()
+	enqueue(t, cl, step{Name: "enqueued"})
+	if j := recv(t, began, 5*time.Second); j.name != "enqueued" || j.at.Sub(at) > 100*time.Millisecond {
+		t.Fatalf("%s started %v after the enqueue, want within 100ms", j.name, j.at.Sub(at))
+	}
+
+	var f kiln.Flow
+	parent := f.Add(step{Name: "parent"}, kiln.Queue("a"))
+	f.Add(step{Name: "child"}, kiln.Queue("b"), kiln.Needs{parent})
+	if _, err := cl.EnqueueMany(ctx, f...); err != nil {
+		t.Fatal(err)
+	}
+	p, ch := recv(t, began, 5*time.Second), recv(t, began, 5*time.Second)
+	if p.name != "parent" || ch.name != "child" || ch.at.Sub(p.at) > 100*time.Millisecond {
+		t.Fatalf("%s then %s %v later, want the child on server B within 100ms of its parent on A", p.name, ch.name, ch.at.Sub(p.at))
+	}
+
+	id := enqueue(t, cl, hold{}, kiln.Queue("a"))
+	if j := recv(t, began, 5*time.Second); j.name != "hold" {
+		t.Fatalf("started %s, want hold", j.name)
+	}
+	at = time.Now()
+	if n, err := cl.Delete(ctx, id); err != nil || n != 1 {
+		t.Fatalf("delete: %d, %v", n, err)
+	}
+	if stopped := recv(t, canceled, 5*time.Second); stopped.Sub(at) > 100*time.Millisecond {
+		t.Fatalf("running job canceled %v after the delete, want within 100ms", stopped.Sub(at))
+	}
+	waitState(t, cl, id, kiln.Deleted)
+}

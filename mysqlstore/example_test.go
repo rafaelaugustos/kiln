@@ -76,4 +76,7 @@ func ExampleStore_Tx() {
 	if err := tx.Commit(); err != nil {
 		log.Fatal(err)
 	}
+	if err := w.Notify(ctx); err != nil {
+		log.Fatal(err)
+	}
 }

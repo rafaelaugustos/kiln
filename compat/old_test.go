@@ -155,6 +155,12 @@ func (p *proc) result() *result {
 
 func (p *proc) send(pl plan) *result {
 	p.t.Helper()
+	p.post(pl)
+	return p.result()
+}
+
+func (p *proc) post(pl plan) {
+	p.t.Helper()
 	b, err := json.Marshal(pl)
 	if err != nil {
 		p.t.Fatal(err)
@@ -162,7 +168,6 @@ func (p *proc) send(pl plan) *result {
 	if _, err := p.stdin.Write(append(b, '\n')); err != nil {
 		p.t.Fatalf("send a plan to %s: %v", oldVersion, err)
 	}
-	return p.result()
 }
 
 func (p *proc) stop() (*summary, error) {

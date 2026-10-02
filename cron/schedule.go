@@ -9,6 +9,7 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
+// Schedule is a parsed spec. It is immutable and safe for concurrent use.
 type Schedule struct {
 	spec     string
 	every    time.Duration
@@ -27,6 +28,8 @@ type Schedule struct {
 	interval bool
 }
 
+// Parse parses spec, ignoring extra spaces between fields. The error names the field at fault and
+// wraps [driver.ErrInvalid].
 func Parse(spec string) (*Schedule, error) {
 	s, err := parse(spec)
 	if err != nil {
@@ -35,6 +38,10 @@ func Parse(spec string) (*Schedule, error) {
 	return s, nil
 }
 
+// String returns the spec in normal form, the one kiln stores: five fields when the seconds field
+// is 0, numbers without leading zeros, names in upper case, ? as *, @annually as @yearly,
+// @midnight as @daily, and the interval of @every as Go prints durations. Parsing it gives the
+// same schedule.
 func (s *Schedule) String() string {
 	return s.spec
 }

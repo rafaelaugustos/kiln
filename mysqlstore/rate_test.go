@@ -102,9 +102,9 @@ func TestPromoteAdmitsThrottledGrant(t *testing.T) {
 	t.Parallel()
 	s := open(t)
 	ctx := context.Background()
-	exec := func(q string, args ...any) {
+	exec := func(q string) {
 		t.Helper()
-		if _, err := s.db.ExecContext(ctx, render(q, args...)); err != nil {
+		if _, err := s.db.ExecContext(ctx, q); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -129,13 +129,14 @@ func TestPromoteAdmitsThrottledGrant(t *testing.T) {
 	wantState(running, driver.Enqueued)
 	wantState(due, driver.Scheduled)
 	wantState(later, driver.Scheduled)
+	exec("UPDATE kiln_jobs SET run_at = run_at - INTERVAL 1 MINUTE WHERE granted")
+	exec("UPDATE kiln_limits SET tat = tat - INTERVAL 1 MINUTE, admit_tat = admit_tat - INTERVAL 1 MINUTE")
 	slot := record(t, s, later).RunAt
 	tat, granted := reserved()
 	if granted != 2 {
 		t.Fatalf("%d granted jobs, want both reservations", granted)
 	}
 
-	exec("UPDATE kiln_jobs SET run_at = UTC_TIMESTAMP(6) WHERE id = ?", due)
 	exec("UPDATE kiln_jobs SET state = 'throttled' WHERE state = 'scheduled' AND run_at <= UTC_TIMESTAMP(6)")
 	wantState(due, driver.Throttled)
 

@@ -23,7 +23,8 @@ failing with `SQLITE_BUSY`. Reads use the other connections and run alongside th
 - `synchronous=NORMAL` is the usual choice with WAL: a process crash loses nothing, a power failure can
   lose the last few transactions. Keep the default `FULL` if that is not acceptable.
 - A server in the same process as the code that enqueues is woken immediately; servers in other processes
-  pick up new work on their next poll.
+  pick up new work on their next poll, unless every process opens the store with `sqlitestore.Bus(b)` on a
+  shared `driver.Bus`, which carries the same wake-ups between them.
 - Timestamps come from SQLite's clock, which has millisecond resolution.
 
 Additive schema changes are recorded by name in `kiln_schema_changes`, so a server of the previous release

@@ -34,25 +34,32 @@ func (s *Store) openBatch(ctx context.Context, q querier, nb driver.NewBatch) (i
 }
 
 func (s *Store) SealBatch(ctx context.Context, id int64) error {
-	return s.txn(ctx, func(tx *sql.Tx) error {
+	var queues []string
+	err := s.txn(ctx, func(tx *sql.Tx) error {
+		queues = nil
 		f, err := s.seal(ctx, tx, id)
-		if err != nil || len(f.throttle) == 0 {
+		if err != nil {
 			return err
 		}
-		slots, err := s.lockLimits(ctx, tx, f.throttle, true)
-		if err != nil {
-			return wrap("seal batch", err)
+		if len(f.throttle) > 0 {
+			slots, err := s.lockLimits(ctx, tx, f.throttle, true)
+			if err != nil {
+				return wrap("seal batch", err)
+			}
+			a, err := s.fill(ctx, tx, slots)
+			if err != nil {
+				return wrap("seal batch", err)
+			}
+			f.queue(a.queues...)
 		}
-		if _, err := s.fill(ctx, tx, slots); err != nil {
-			return wrap("seal batch", err)
-		}
+		queues = f.queues
 		return nil
 	})
-}
-
-func (s *Store) sealBatch(ctx context.Context, tx *sql.Tx, id int64) error {
-	_, err := s.seal(ctx, tx, id)
-	return err
+	if err != nil {
+		return err
+	}
+	s.nt.ready(queues)
+	return nil
 }
 
 func (s *Store) seal(ctx context.Context, q querier, id int64) (*fallout, error) {

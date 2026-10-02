@@ -90,6 +90,9 @@ func TestRequireEnqueued(t *testing.T) {
 	if j.Args.Email != "later@x.io" || j.Kind != "signup" || j.ID == 0 {
 		t.Fatalf("job %+v", j)
 	}
+	if d := j.RunAt.Sub(j.CreatedAt); d < 59*time.Minute || d > time.Hour+time.Minute {
+		t.Fatalf("RunAt is %v after CreatedAt, want about 1h", d)
+	}
 	if j := kilntest.RequireEnqueued[signup](t, c, nil); j.Args.Email != "now@x.io" {
 		t.Fatalf("job %+v", j)
 	}

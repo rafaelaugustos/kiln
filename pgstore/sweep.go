@@ -192,9 +192,7 @@ func (s *Store) sweepThrottled(ctx context.Context, limit int, w *wake) (int, er
 		return 0, err
 	}
 	var a wake
-	b := &pgx.Batch{}
-	b.Queue(s.q.admitSkip, keys).Query(a.scanAdmitted)
-	err = s.pool.SendBatch(ctx, b).Close()
+	err = a.admitted(rules{})(s.pool.QueryRow(ctx, s.q.admit, rules{keys: keys}.args()...))
 	w.merge(a)
 	return a.moved, err
 }
@@ -237,7 +235,7 @@ func (s *Store) reconcile(ctx context.Context, limit int, w *wake) (int, error) 
 			n += int(tag.RowsAffected())
 			return nil
 		})
-		b.Queue(s.q.admit, rules{keys: keys}.args()...).Query(a.scanAdmitted)
+		b.Queue(s.q.admit, rules{keys: keys}.args()...).QueryRow(a.admitted(rules{}))
 	}
 	b.Queue("commit")
 	if err := c.SendBatch(ctx, b).Close(); err != nil {

@@ -12,7 +12,12 @@ import (
 )
 
 const (
-	DefaultQueue       = "default"
+	// DefaultQueue is the queue of jobs inserted without a [Queue] option, and the one a server
+	// works on when its [ServerConfig] names no queues.
+	DefaultQueue = "default"
+
+	// DefaultMaxAttempts is the number of attempts of a job inserted without a [MaxAttempts]
+	// option.
 	DefaultMaxAttempts = 10
 
 	maxArgs     = 1 << 20

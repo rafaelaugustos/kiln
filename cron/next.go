@@ -10,6 +10,9 @@ const (
 	horizon = (5*365 + 2) * day
 )
 
+// Next returns the first time after t at which the schedule fires, in t's location, or the zero
+// time if it does not fire within five years. For @every it returns t, truncated to the second,
+// plus the interval. Next does not allocate.
 func (s *Schedule) Next(t time.Time) time.Time {
 	if s.every > 0 {
 		return t.Truncate(time.Second).Add(s.every)

@@ -12,7 +12,7 @@ import (
 
 const paceLimit = 1000
 
-const slotColumns = `limit_key, max, active, rate, per_us, burst, tat`
+const slotColumns = `limit_key, max, active, rate, per_us, burst, tat, admit_tat`
 
 const sqlSlots = `SELECT ` + slotColumns + ` FROM {p}limits WHERE limit_key IN (SELECT value FROM json_each(?))`
 
@@ -29,7 +29,7 @@ const sqlEnqueue = `UPDATE {p}jobs SET state = 'enqueued', granted = 0 WHERE id 
 
 const sqlReserve = `UPDATE {p}jobs SET state = 'scheduled', run_at = ?, granted = 1 WHERE id = ?`
 
-const sqlActivate = `UPDATE {p}limits AS l SET active = v.value ->> 0, tat = v.value ->> 1
+const sqlActivate = `UPDATE {p}limits AS l SET active = v.value ->> 0, tat = v.value ->> 1, admit_tat = v.value ->> 2
 FROM json_each(?) AS v WHERE l.limit_key = v.key`
 
 const sqlDeclare = `INSERT INTO {p}limits (limit_key, max, rate, per_us, burst)
@@ -56,6 +56,7 @@ type slot struct {
 	rule
 	active   int
 	tat      sql.NullInt64
+	admitTat sql.NullInt64
 	dirty    bool
 	admitted []int64
 	reserved []int64
@@ -70,7 +71,7 @@ func scanSlot(rows *sql.Rows) (string, *slot, error) {
 		key string
 		sl  slot
 	)
-	err := rows.Scan(&key, &sl.max, &sl.active, &sl.rate, &sl.per, &sl.burst, &sl.tat)
+	err := rows.Scan(&key, &sl.max, &sl.active, &sl.rate, &sl.per, &sl.burst, &sl.tat, &sl.admitTat)
 	return key, &sl, err
 }
 
@@ -157,6 +158,10 @@ func (s *Store) walk(ctx context.Context, q querier, key string, sl *slot, f *fa
 	if !sl.tat.Valid {
 		tat = f.now
 	}
+	admitTat := sl.admitTat.Int64
+	if !sl.admitTat.Valid {
+		admitTat = f.now
+	}
 	for rows.Next() {
 		var (
 			id      int64
@@ -166,24 +171,28 @@ func (s *Store) walk(ctx context.Context, q querier, key string, sl *slot, f *fa
 		if err := rows.Scan(&id, &queue, &granted); err != nil {
 			return nil, err
 		}
+		rated := !granted || admitTat-tau-gap/2 > f.now
 		at := f.now
-		if !granted {
+		if rated {
 			at = max(at, tat-tau)
 		}
-		if at <= f.now && sl.full() {
+		if (granted || at <= f.now) && sl.full() {
 			break
 		}
-		if !granted {
+		if rated {
 			tat = max(tat, at) + gap
-			sl.tat = sql.NullInt64{Int64: tat, Valid: true}
 		}
 		if at > f.now {
 			reserved = append(reserved, at, id)
 			sl.reserved = append(sl.reserved, id)
 		} else {
+			admitTat = max(admitTat, f.now) + gap
+			tat = max(tat, admitTat)
+			sl.admitTat = sql.NullInt64{Int64: admitTat, Valid: true}
 			sl.admitted = append(sl.admitted, id)
 			sl.active++
 		}
+		sl.tat = sql.NullInt64{Int64: tat, Valid: true}
 		sl.dirty = true
 		f.queue(queue)
 		f.changed++
@@ -192,7 +201,7 @@ func (s *Store) walk(ctx context.Context, q querier, key string, sl *slot, f *fa
 }
 
 func activation(slots map[string]*slot, keys []string) string {
-	b := make([]byte, 0, 40*len(keys)+2)
+	b := make([]byte, 0, 56*len(keys)+2)
 	b = append(b, '{')
 	for i, key := range keys {
 		sl := slots[key]
@@ -202,11 +211,13 @@ func activation(slots map[string]*slot, keys []string) string {
 		b = appendJSONString(b, key)
 		b = append(b, ":["...)
 		b = strconv.AppendInt(b, int64(sl.active), 10)
-		b = append(b, ',')
-		if sl.tat.Valid {
-			b = strconv.AppendInt(b, sl.tat.Int64, 10)
-		} else {
-			b = append(b, "null"...)
+		for _, n := range [...]sql.NullInt64{sl.tat, sl.admitTat} {
+			b = append(b, ',')
+			if n.Valid {
+				b = strconv.AppendInt(b, n.Int64, 10)
+			} else {
+				b = append(b, "null"...)
+			}
 		}
 		b = append(b, ']')
 	}

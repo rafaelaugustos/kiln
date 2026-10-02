@@ -168,6 +168,64 @@ func TestUpgradeFromV020(t *testing.T) {
 	}
 }
 
+func v031(t *testing.T, db *sql.DB) {
+	t.Helper()
+	v020(t, db)
+	r := strings.NewReplacer("{p}", "kiln_", "{now}", clock)
+	stmts := []string{"CREATE TABLE kiln_schema_changes (name TEXT PRIMARY KEY, applied_at INTEGER)"}
+	for _, ch := range changes {
+		if ch.name <= "001_rate_limits" {
+			for _, stmt := range ch.stmts {
+				stmts = append(stmts, r.Replace(stmt))
+			}
+		}
+	}
+	stmts = append(stmts,
+		"INSERT INTO kiln_schema_changes (name, applied_at) VALUES ('001_rate_limits', 0)",
+		r.Replace(`INSERT INTO kiln_limits (limit_key, max, rate, per_us, burst, tat)
+		VALUES ('paced', 0, 1, 60000000, 1, {now} + 59000000)`),
+		r.Replace(`INSERT INTO kiln_jobs (id, state, queue, kind, max_attempts, run_at, created_at, limit_key, args, granted)
+		VALUES (3, 'scheduled', 'default', 'old', 3, {now} - 1000000, 0, 'paced', '{}', 1)`),
+		"UPDATE kiln_sequences SET last_id = 3 WHERE name = 'jobs'",
+	)
+	for _, stmt := range stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+}
+
+func TestUpgradeFromV031(t *testing.T) {
+	t.Parallel()
+	db := database(t)
+	ctx := context.Background()
+	v031(t, db)
+	if _, err := New(ctx, db, NoMigrate()); err == nil || !strings.Contains(err.Error(), "002_admit_gate: run sqlitestore.Migrate") {
+		t.Fatalf("no-migrate on a v0.3.1 file: %v", err)
+	}
+	s, err := New(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(s.Close)
+	if _, err := New(ctx, db, NoMigrate()); err != nil {
+		t.Fatalf("no-migrate after the upgrade: %v", err)
+	}
+	if v := count(t, s, "SELECT max(version) FROM kiln_migrations"); v != 1 {
+		t.Fatalf("migrations at version %d, v0.3.1 refuses to start above 1", v)
+	}
+	if n := count(t, s, "SELECT count(*) FROM kiln_limits WHERE admit_tat IS NULL"); n != 2 {
+		t.Fatalf("%d limit rows without an admission state, want both v0.3.1 rows", n)
+	}
+
+	if _, err := s.Promote(ctx, 100); err != nil {
+		t.Fatal(err)
+	}
+	if st := record(t, s, 3).State; st != driver.Enqueued {
+		t.Fatalf("job in a slot reserved by v0.3.1 is %s once due, want enqueued", st)
+	}
+}
+
 func TestPrefixes(t *testing.T) {
 	t.Parallel()
 	db := database(t)

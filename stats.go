@@ -11,24 +11,26 @@ import (
 
 const stuckAfter = 30 * time.Second
 
+// Stats is a snapshot of a server's activity. The counters start at zero with the server and only
+// grow; those about attempts count outcomes once the store has applied them.
 type Stats struct {
-	Running      int
-	Capacity     int
-	Claimed      uint64
-	Succeeded    uint64
-	Failed       uint64
-	Retried      uint64
-	Snoozed      uint64
-	Canceled     uint64
-	Abandoned    uint64
-	Stale        uint64
-	Busy         uint64
-	EmptyFetches uint64
-	Pending      int
-	HeartbeatAge time.Duration
-	Leader       bool
-	Fenced       bool
-	Listening    bool
+	Running      int           // jobs claimed and not finished yet
+	Capacity     int           // workers across all pools
+	Claimed      uint64        // jobs claimed
+	Succeeded    uint64        // attempts that succeeded
+	Failed       uint64        // attempts that left their job failed
+	Retried      uint64        // failed attempts scheduled to run again
+	Snoozed      uint64        // attempts rescheduled without counting, as by Snooze
+	Canceled     uint64        // attempts that left their job deleted
+	Abandoned    uint64        // jobs handed back at shutdown while their handlers still ran
+	Stale        uint64        // outcomes dropped because the job had moved on
+	Busy         uint64        // outcomes sent again because the job's row was locked
+	EmptyFetches uint64        // claims that found no jobs
+	Pending      int           // finished jobs whose outcome is not stored yet
+	HeartbeatAge time.Duration // age of the last successful heartbeat; zero when there is none
+	Leader       bool          // the server is the leader
+	Fenced       bool          // the server stopped work after failing to heartbeat
+	Listening    bool          // the store's notifications are reaching the server
 }
 
 type counters struct {
@@ -61,6 +63,7 @@ func (c *counters) count(o *driver.Outcome) {
 	}
 }
 
+// Stats returns a snapshot of the server's counters and state.
 func (s *Server) Stats() Stats {
 	st := Stats{
 		Capacity:     s.capacity,
@@ -88,6 +91,10 @@ func (s *Server) Stats() Stats {
 	return st
 }
 
+// Healthy returns an error when the server should not be trusted with work: it is not running or
+// has not managed a first heartbeat, it has fenced itself, its last heartbeat is older than half
+// of DeadAfter, or outcomes have waited more than 30s to be stored. It suits readiness and
+// liveness probes.
 func (s *Server) Healthy() error {
 	if s.fenced.Load() {
 		return errors.New("kiln: server is fenced after failed heartbeats")

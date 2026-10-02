@@ -20,6 +20,17 @@ const (
 	casAttempts    = 3
 )
 
+// SetRecurring creates or updates the recurring job id, which inserts a job with args and opts at
+// every occurrence of the cron spec (package cron describes the syntax), evaluated in the time
+// zone of the [TZ] option, UTC by default. Each job is due at its occurrence, which it also
+// carries in Meta under "kiln.occurrence". Ids are 1 to 200 bytes of letters, digits, '_', '.',
+// ':' and '-'.
+//
+// Changing the spec or the time zone reschedules the job from now; other changes keep its next
+// run. A paused job stays paused, and an identical definition is not written again. Occurrences
+// are fired by the leader, so at least one server must run with maintenance enabled.
+// SetRecurring fails with [ErrInvalid] for a bad id, spec or option, and with [driver.ErrConflict]
+// if concurrent updates keep it from applying after three tries.
 func (c *Client) SetRecurring(ctx context.Context, id, spec string, args Args, opts ...RecurringOption) error {
 	if !validRecurringID(id) {
 		return fmt.Errorf("%w: recurring id %q", ErrInvalid, id)
@@ -46,10 +57,14 @@ func (c *Client) SetRecurring(ctx context.Context, id, spec string, args Args, o
 	})
 }
 
+// RemoveRecurring deletes the recurring job id. Jobs it already inserted are not affected. It
+// fails with [ErrNotFound] if there is no such recurring job.
 func (c *Client) RemoveRecurring(ctx context.Context, id string) error {
 	return c.store.RemoveRecurring(ctx, id)
 }
 
+// PauseRecurring stops the recurring job id from firing until [Client.ResumeRecurring]. Pausing
+// a paused job does nothing.
 func (c *Client) PauseRecurring(ctx context.Context, id string) error {
 	return c.updateRecurring(ctx, id, false, func(cur *driver.Recurring, _ time.Time) (bool, error) {
 		if cur.Paused {
@@ -60,6 +75,9 @@ func (c *Client) PauseRecurring(ctx context.Context, id string) error {
 	})
 }
 
+// ResumeRecurring lets the recurring job id fire again, from its first occurrence after now:
+// occurrences that passed while it was paused are skipped. Resuming a job that is not paused
+// does nothing.
 func (c *Client) ResumeRecurring(ctx context.Context, id string) error {
 	return c.updateRecurring(ctx, id, false, func(cur *driver.Recurring, now time.Time) (bool, error) {
 		if !cur.Paused {
@@ -75,6 +93,10 @@ func (c *Client) ResumeRecurring(ctx context.Context, id string) error {
 	})
 }
 
+// TriggerRecurring inserts a job of the recurring job id right away, outside its schedule and
+// even if it is paused, and returns the job's id. The schedule does not change. With
+// Overlap(false), while the job of an earlier occurrence has not finished, nothing is inserted and
+// the id returned is that job's.
 func (c *Client) TriggerRecurring(ctx context.Context, id string) (int64, error) {
 	r, err := c.store.Recurring(ctx, id)
 	if err != nil {

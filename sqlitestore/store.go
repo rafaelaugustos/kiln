@@ -58,7 +58,7 @@ func New(ctx context.Context, db *sql.DB, opts ...Option) (*Store, error) {
 		prefix: c.prefix,
 		q:      render(c.prefix),
 		w:      acquire(db),
-		hub:    newHub(),
+		hub:    newHub(c.bus),
 	}, nil
 }
 

@@ -25,14 +25,15 @@ FOR UPDATE OF j FOR UPDATE OF u SKIP LOCKED`
 
 const sqlCancel = `UPDATE {p}jobs SET cancel_requested = TRUE WHERE id IN (?)`
 
-const sqlLockFailed = `SELECT UTC_TIMESTAMP(6), j.id, j.attempt, j.unique_key, COALESCE(j.limit_key, '')
+const sqlLockFailed = `SELECT UTC_TIMESTAMP(6), j.id, j.attempt, j.queue, j.unique_key, COALESCE(j.limit_key, '')
 FROM {p}jobs j FORCE INDEX (?)
 WHERE ? AND j.state IN ('failed', 'scheduled') AND j.id > ?
 ORDER BY j.id
 LIMIT 1000
 FOR UPDATE`
 
-const sqlLockArchived = `SELECT UTC_TIMESTAMP(6), j.id, j.attempt, j.unique_key, COALESCE(j.limit_key, ''), j.finalized_at
+const sqlLockArchived = `SELECT UTC_TIMESTAMP(6), j.id, j.attempt, j.queue, j.unique_key, COALESCE(j.limit_key, ''),
+	j.finalized_at
 FROM {p}archive j FORCE INDEX (?)
 WHERE ?
 ORDER BY j.finalized_at DESC, j.id DESC
@@ -127,16 +128,20 @@ func (s *Store) Delete(ctx context.Context, f driver.Filter) (int, error) {
 }
 
 func (s *Store) deleteChunk(ctx context.Context, stmt string) (n, seen int, last int64, err error) {
+	var (
+		fo       *fallout
+		canceled []int64
+	)
 	err = s.txn(ctx, func(tx *sql.Tx) error {
-		n, seen, last = 0, 0, 0
+		n, seen, last, canceled = 0, 0, 0, nil
+		fo = &fallout{}
 		rows, err := tx.QueryContext(ctx, stmt)
 		if err != nil {
 			return err
 		}
-		fo := &fallout{}
 		var (
-			canceled, gone []int64
-			archive        []byte
+			gone    []int64
+			archive []byte
 		)
 		for rows.Next() {
 			var (
@@ -205,12 +210,18 @@ func (s *Store) deleteChunk(ctx context.Context, stmt string) (n, seen int, last
 		n = len(canceled) + len(gone)
 		return s.settle(ctx, tx, fo)
 	})
-	return n, seen, last, err
+	if err != nil {
+		return n, seen, last, err
+	}
+	s.nt.cancel(canceled)
+	s.nt.ready(fo.queues)
+	return n, seen, last, nil
 }
 
 type requeued struct {
 	id      int64
 	attempt int
+	queue   string
 	key     []byte
 	limit   string
 }
@@ -266,8 +277,9 @@ type requeueCursor struct {
 }
 
 func (s *Store) requeueChunk(ctx context.Context, stmt string, archived bool) (n, seen int, last requeueCursor, err error) {
+	var queues []string
 	err = s.txn(ctx, func(tx *sql.Tx) error {
-		n, seen, last = 0, 0, requeueCursor{}
+		n, seen, last, queues = 0, 0, requeueCursor{}, nil
 		rows, err := tx.QueryContext(ctx, stmt)
 		if err != nil {
 			return err
@@ -279,7 +291,7 @@ func (s *Store) requeueChunk(ctx context.Context, stmt string, archived bool) (n
 		for rows.Next() {
 			var (
 				r   requeued
-				dst = []any{&now, &r.id, &r.attempt, &r.key, &r.limit}
+				dst = []any{&now, &r.id, &r.attempt, &r.queue, &r.key, &r.limit}
 				at  stamp
 			)
 			if archived {
@@ -315,7 +327,9 @@ func (s *Store) requeueChunk(ctx context.Context, stmt string, archived bool) (n
 			st := driver.Enqueued
 			if r.limit != "" {
 				st = driver.Throttled
-				keys = merge(keys, []string{r.limit})
+				keys = merge(keys, r.limit)
+			} else {
+				queues = merge(queues, r.queue)
 			}
 			if i > 0 {
 				b = append(b, ',')
@@ -346,10 +360,15 @@ func (s *Store) requeueChunk(ctx context.Context, stmt string, archived bool) (n
 		if err != nil {
 			return err
 		}
-		_, err = s.fill(ctx, tx, slots)
+		a, err := s.fill(ctx, tx, slots)
+		queues = merge(queues, a.queues...)
 		return err
 	})
-	return n, seen, last, err
+	if err != nil {
+		return n, seen, last, err
+	}
+	s.nt.ready(queues)
+	return n, seen, last, nil
 }
 
 func (s *Store) reclaim(ctx context.Context, tx *sql.Tx, jobs []requeued) ([]requeued, error) {
@@ -407,5 +426,6 @@ func (s *Store) PauseQueue(ctx context.Context, queue string, paused bool) error
 	if _, err := s.db.ExecContext(ctx, render(s.q.pause, queue, paused)); err != nil {
 		return wrap("pause queue", err)
 	}
+	s.nt.changed(queue)
 	return nil
 }

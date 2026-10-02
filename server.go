@@ -35,6 +35,8 @@ func buildVersion() string {
 	return "kiln/devel"
 }
 
+// Server claims jobs from a store and runs them with the handlers of a [Mux]. Any number of servers
+// can share a store. A Server runs once, and its methods are safe for concurrent use.
 type Server struct {
 	client   *Client
 	store    driver.Store
@@ -74,6 +76,9 @@ type Server struct {
 	logged map[string]time.Time
 }
 
+// NewServer returns a server that runs the handlers of m for the jobs in c's store. It freezes m,
+// so that registering handlers or middleware on it afterwards panics. It fails with [ErrInvalid]
+// when c or m is nil, when m has no handlers, or when cfg breaks a rule of [ServerConfig].
 func NewServer(c *Client, m *Mux, cfg ServerConfig) (*Server, error) {
 	if c == nil || m == nil {
 		return nil, fmt.Errorf("%w: nil client or mux", ErrInvalid)
@@ -111,12 +116,19 @@ func NewServer(c *Client, m *Mux, cfg ServerConfig) (*Server, error) {
 	return s, nil
 }
 
+// ID returns the id the server registers with, made of ServerConfig.Name, the process id and 16
+// random hex digits. It is empty until [Server.Run] starts.
 func (s *Server) ID() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.id
 }
 
+// Run runs the server until ctx is canceled. It first waits for the store to accept a heartbeat,
+// retrying as long as ctx allows, and then claims and runs jobs. Once ctx is canceled, Run stops
+// claiming, gives running jobs ShutdownTimeout and then KillGrace to finish (see [ServerConfig]),
+// writes their outcomes and unregisters the server. It returns nil after such a stop, and an
+// error only when the server has already been run.
 func (s *Server) Run(ctx context.Context) error {
 	if !s.started.CompareAndSwap(false, true) {
 		return errors.New("kiln: server already started")
@@ -210,7 +222,7 @@ func (s *Server) listen(ctx context.Context, n driver.Notifier) {
 	for {
 		err := n.Subscribe(ctx, s.event)
 		s.listening.Store(false)
-		if ctx.Err() != nil {
+		if ctx.Err() != nil || errors.Is(err, errors.ErrUnsupported) {
 			return
 		}
 		s.fail("subscribe", err)

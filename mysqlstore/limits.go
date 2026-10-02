@@ -9,7 +9,7 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
-const sqlLockLimits = `SELECT limit_key, max, active, rate, per_us, burst, tat FROM {p}limits FORCE INDEX (PRIMARY)
+const sqlLockLimits = `SELECT limit_key, max, active, rate, per_us, burst, tat, admit_tat FROM {p}limits FORCE INDEX (PRIMARY)
 WHERE limit_key IN (?) ORDER BY limit_key FOR UPDATE`
 
 const sqlDeclared = `SELECT limit_key, max, rate, per_us, burst FROM {p}limits WHERE limit_key IN (?)`

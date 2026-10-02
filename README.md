@@ -17,6 +17,8 @@ go get github.com/rafaelaugustos/kiln/mysqlstore
 go get github.com/rafaelaugustos/kiln/sqlitestore
 ```
 
+Optional: `kilnotel` for OpenTelemetry and `redisbus` to wake MySQL and SQLite servers through Redis.
+
 Requires Go 1.27. `kiln` itself has no external dependencies; each store module pulls in only what its
 database needs (`pgstore` uses `pgx/v5`, the others take a `*sql.DB` from the driver you already use).
 
@@ -140,8 +142,12 @@ missed occurrence, capped), or `MisfireSkip` (drop stale ones).
 
 ### Unique jobs
 
-`Unique{Key, For}` deduplicates by kind and key: a matching live job already in the store makes
-the new `Enqueue` return the existing id instead of inserting a duplicate, for the given TTL.
+`Unique{Key}` makes `Enqueue` return the id of a live job with the same kind and key instead of
+inserting another one. The key is released as soon as that job succeeds, fails or is deleted.
+
+`Unique{Key, For: d}` holds the key for `d` from the first enqueue, whatever happens to the job in the
+meantime, including success. It means "at most once per `d`" (one reminder per 10 minutes), not "no
+duplicates while it runs".
 
 ### Limits
 
@@ -162,6 +168,11 @@ client.Enqueue(ctx, ChargeCard{OrderID: id}, kiln.Limit{Key: "stripe", Rate: 100
 `Max` and `Rate` can be combined on one key: `Max` bounds how many run at once, `Rate` how often
 they start.
 
+The rate also holds when kiln falls behind. If admission stalls for a while, because the database was
+slow or a lock was held, the jobs whose start times passed in the meantime don't all start when it
+resumes: `Burst` of them start and the rest get new start times at the back of the line. No window of
+length `Per` sees more than `Rate + Burst` starts of a key.
+
 ### Transactional enqueue
 
 `EnqueueTx` and `EnqueueManyTx` take a `driver.Writer` bound to your own transaction, so a job is
@@ -174,7 +185,9 @@ tx.Commit(ctx)
 w.Notify(ctx)
 ```
 
-`Notify` wakes idle workers after commit; without it the job still runs, just after the next poll.
+Call `Notify` after the commit, never before. The job is already committed by then, so an error from
+`Notify` changes nothing about it: log it and carry on, don't turn it into a failed request, or a client
+that retries will create the order twice. Without `Notify` the job still runs, after the next poll.
 
 ### Cancellation
 
@@ -187,12 +200,42 @@ handler that stops and returns an error is recorded as `deleted`.
 `Mux.Use` wraps every handler (logging, panics-to-errors, tracing); `NewClient`'s variadic
 `EnqueueMiddleware` wraps every insert the same way (e.g. to stamp tenant metadata).
 
+### Observability
+
+`kilnotel` traces every job from the request that enqueued it to the handler that ran it, and records
+job counts, durations and the delay between a job's scheduled time and its start:
+
+```go
+client := kiln.NewClient(store, kilnotel.EnqueueMiddleware())
+mux.Use(kilnotel.Middleware())
+unregister, err := kilnotel.Observe(server, store)
+```
+
+It depends only on the OpenTelemetry API, so it reports through whatever SDK and exporters the
+application already has. `Server.Stats()` and `Server.Healthy()` cover the same ground without it.
+
 ### Testing with kilntest
 
 `kilntest.Work` drives a job through the real frozen middleware chain and classification logic
 without a server, for handler unit tests. `RequireEnqueued`/`RequireNotEnqueued` assert on what a
 piece of code actually enqueued. `drivertest.Run` is the conformance suite a `driver.Store`
 implementation must pass.
+
+## Behaviour worth knowing
+
+- **Failed is not final.** A job that exhausts its attempts or returns `Permanent` stays `failed` until
+  someone requeues or deletes it, as in Hangfire. Continuations that wait for its success (`After`,
+  `Needs`) and batches that contain it wait too. Deleting the failed job deletes those continuations;
+  `AfterFinished` continuations run either way.
+- **Requeue.** `Requeue` moves a job back to `enqueued` without resetting its attempt count. A job that
+  had exhausted its attempts gets one more.
+- **At least once.** A job can run more than once: a worker can crash after the handler's side effect
+  and before its result is stored, and a stalled worker's jobs are retried elsewhere. Make handlers
+  idempotent; `SetParam` keeps checkpoints and idempotency keys across attempts.
+- **History.** A job's history records transitions that have a reason (retries, snoozes, cancellations,
+  requeues, rescues). A plain success adds no entry; its timestamps are on the job.
+- **Dead workers.** Jobs of a server that stops heartbeating are retried once it has been silent for
+  `DeadAfter`. See [Operating kiln](#operating-kiln) for the timings.
 
 ## kiln vs. Hangfire
 
@@ -210,22 +253,66 @@ implementation must pass.
 | Transactional enqueue           | built-in (ambient tx)        | explicit (`EnqueueTx`, `Tx`)       |
 | Job cancellation                | built-in (CancellationToken) | built-in (`Delete`)                |
 | Dashboard                       | built-in                     | built-in                           |
+| OpenTelemetry                   | contrib package              | `kilnotel` (traces and metrics)    |
 | Storage                         | SQL Server/Redis/others      | PostgreSQL, MySQL, SQLite          |
 | Language                        | .NET                         | Go                                 |
+
+## Coming from Hangfire
+
+Hangfire serializes a method call; kiln enqueues a typed value and routes it to a handler registered
+for its `Kind()`. Most calls map one to one:
+
+| Hangfire | kiln |
+|---|---|
+| `BackgroundJob.Enqueue(() => mailer.Send(to))` | `client.Enqueue(ctx, SendEmail{To: to})` |
+| `BackgroundJob.Schedule(() => ..., TimeSpan.FromMinutes(30))` | `client.Enqueue(ctx, args, kiln.Delay(30*time.Minute))` |
+| `BackgroundJob.Schedule(() => ..., runAt)` | `client.Enqueue(ctx, args, kiln.At(runAt))` |
+| `BackgroundJob.ContinueJobWith(parentId, () => ...)` | `client.Enqueue(ctx, args, kiln.After{parentID})` |
+| `ContinueJobWith(..., JobContinuationOptions.OnAnyFinishedState)` | `kiln.AfterFinished{parentID}` |
+| `BackgroundJob.Delete(id)` / `BackgroundJob.Requeue(id)` | `client.Delete(ctx, id)` / `client.Requeue(ctx, id)` |
+| `RecurringJob.AddOrUpdate("report", () => ..., Cron.Daily())` | `client.SetRecurring(ctx, "report", "@daily", Report{})` |
+| `new RecurringJobOptions { TimeZone = tz }` | `kiln.TZ("America/Sao_Paulo")` |
+| `RecurringJob.TriggerJob("report")` / `RemoveIfExists("report")` | `client.TriggerRecurring(ctx, "report")` / `client.RemoveRecurring(ctx, "report")` |
+| `[Queue("critical")]` | `kiln.Queue("critical")`, or `InsertOptions()` on the args type |
+| `[AutomaticRetry(Attempts = 5)]` | `kiln.MaxAttempts(5)` |
+| `[AutomaticRetry(DelaysInSeconds = new[] { 60, 300 })]` | `kiln.Handle(mux, h, kiln.Delays(time.Minute, 5*time.Minute))` |
+| `[DisableConcurrentExecution(60)]` | `kiln.Limit{Key: "reports", Max: 1}` |
+| Ace semaphore / rate limiter | `kiln.Limit{Key: k, Max: n}` / `kiln.Limit{Key: k, Rate: n, Per: time.Second}` |
+| Pro `BatchJob.StartNew(x => x.Enqueue(...))` | `b := &kiln.Batch{}; b.Add(args); client.StartBatch(ctx, b)` |
+| Pro `BatchJob.ContinueBatchWith(batchId, ...)` | `b.Then(args)`, or `client.Enqueue(ctx, args, kiln.AfterBatch(batchID))` |
+| `CancellationToken` parameter | the handler's `ctx`, cancelled with cause `kiln.ErrCanceled` on `Delete` |
+| `context.SetJobParameter("cursor", c)` | `j.SetParam(ctx, "cursor", c)` / `j.Param("cursor", &c)` |
+| `IClientFilter` / `IServerFilter` | `kiln.NewClient(store, mw...)` / `mux.Use(mw...)` |
+| `Enqueue<IMailer>(x => x.Send(...))` resolved from DI | a method value with its dependencies: `kiln.Handle(mux, mailer.Send)` |
+| `AddHangfireServer(o => { o.WorkerCount = 20; o.Queues = ... })` | `kiln.ServerConfig{Pools: []kiln.Pool{{Queues: []string{"critical", "default"}, Workers: 20}}}` |
+| `UseSqlServerStorage(conn)` | `pgstore.New(ctx, pool)`, `mysqlstore.New(ctx, db)` or `sqlitestore.New(ctx, db)` |
+| `app.UseHangfireDashboard("/hangfire")` | `http.Handle("/kiln/", dashboard.New(client, dashboard.Options{Prefix: "/kiln", Authorize: auth}))` |
 
 ## Storage backends
 
 | Backend | Package | Notes |
 |---|---|---|
 | PostgreSQL (CI runs 17) | `pgstore` | `LISTEN`/`NOTIFY` wakeups, pgx v5, schema option |
-| MySQL 8.0.19+ (CI runs 8.4) | `mysqlstore` | any `*sql.DB`, table prefix option, servers poll for new work; due and reserved jobs are checked every 100ms |
-| SQLite 3.35+ | `sqlitestore` | any `database/sql` driver, WAL, servers in the same process are notified, others poll |
-| in memory | `memstore` | tests and single-process tools |
+| MySQL 8.0.19+ (CI runs 8.4) | `mysqlstore` | any `*sql.DB`, table prefix option; servers are woken through a `Bus`, or poll without one |
+| SQLite 3.35+ | `sqlitestore` | any `database/sql` driver, WAL; servers in the same process are woken directly, other processes through a `Bus` |
+| in memory | `memstore` | tests and single-process tools; everything is lost when the process exits |
 
 Every backend passes the same conformance suite, `drivertest.Run`, so the semantics (retries,
 continuations, batches, uniqueness, limits, fencing) do not change when the database does. Writing a
 new backend means implementing `driver.Store` (and optionally `driver.Notifier` and
 `driver.Transactor`) and making that suite pass.
+
+PostgreSQL wakes servers with `LISTEN`/`NOTIFY`. MySQL has nothing equivalent, and SQLite can only wake
+servers in its own process, so both accept a `driver.Bus`. `redisbus` is one over Redis Pub/Sub:
+
+```go
+rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", ContextTimeoutEnabled: true})
+store, err := mysqlstore.New(ctx, db, mysqlstore.Bus(redisbus.New(rdb)))
+```
+
+With a bus, new jobs, released continuations and cancellations reach every server within milliseconds.
+Without one, servers find new work on their next poll (`PollInterval`) and check for due jobs every
+100ms. Events are only hints: a lost one delays a job until the next poll, it never loses the job.
 
 With `mysqlstore`, begin your own transactions with `sql.LevelReadCommitted` before handing them to
 `store.Tx`. At `REPEATABLE READ` InnoDB takes gap locks that can make concurrent enqueues wait for
@@ -267,6 +354,45 @@ Additive changes are recorded in a `schema_changes` table next to the jobs table
 kiln runs with was granted privileges table by table, grant it the same on `schema_changes` after the
 upgrade.
 
+v0.4 adds a nullable `admit_tat` column to the limits table. Until every server runs v0.4, the ones
+still on v0.3 release jobs whose start time has come without the check that keeps them from starting
+together after a stall.
+
+## Operating kiln
+
+| `ServerConfig` | Default | What it controls |
+|---|---|---|
+| `PollInterval` | 1s | How often an idle pool looks for work when no notification arrives |
+| `HeartbeatInterval` | 5s | How often a server reports that it is alive |
+| `DeadAfter` | 60s | Silence after which a server's running jobs are retried elsewhere |
+| `LeaderTTL` | 15s | Lease of the leader that runs recurring jobs, rescue, sweep and pruning |
+| `ShutdownTimeout` | 30s | How long `Run` waits for running jobs after its context is cancelled |
+| `KillGrace` | 5s | Extra wait after cancelling jobs that ignored the shutdown |
+| `Timeout` | 30m | Default per-job timeout |
+
+**Recovering from a dead worker.** A server that exits cleanly finishes its running jobs, or hands them
+back, before `Run` returns. A server that dies is noticed after `DeadAfter`, and within one more
+`HeartbeatInterval` its jobs are rescued and retried with the job's backoff, like a failed attempt: 15 to
+45 seconds for a first retry with the default backoff. With the defaults, a job whose worker was killed
+starts again after roughly 75 to 110 seconds. If the dead server was also the leader, a new leader takes
+over after `LeaderTTL` and waits `DeadAfter + HeartbeatInterval` before rescuing anything, which adds
+about 20 seconds. Lower `DeadAfter` (it must stay above `3*HeartbeatInterval + KillGrace + 5s`) to
+notice dead workers sooner, and keep long jobs resumable with `SetParam` checkpoints.
+
+**Connections.** `pgstore` opens its own pool (`MaxConns`, 8 by default) plus one connection for
+`LISTEN`, on top of your application's pool: budget up to 9 connections per process that opens a store.
+`mysqlstore` and `sqlitestore` use the `*sql.DB` you pass, keeping one of its connections for their own
+writes, so leave `SetMaxOpenConns` at 2 or more.
+
+**Polling.** An idle server runs one indexed query per pool every `PollInterval`, and, when it gets no
+notifications (MySQL without a `Bus`), one more every 100ms to release delayed jobs on time, besides its
+heartbeat and the leader's periodic work. Each query is cheap, but they add up: an API process and two
+idle workers on MySQL ran about 70 queries per second with the default `PollInterval` and 200 with
+200ms. A `Bus` removes the 100ms check and lets `PollInterval` stay long.
+
+**Health.** `Server.Healthy()` fails when the server has fenced itself off, its heartbeat is stale or its
+results are piling up; use it for readiness and liveness probes. `Server.Stats()` has the counters.
+
 ## Performance
 
 Apple M4 Max. PostgreSQL and MySQL run in Docker on the same machine; SQLite writes to the local SSD
@@ -277,7 +403,7 @@ with `synchronous=NORMAL`. Medians; see the benchmark code for ranges.
 | Bulk insert, 10k jobs per call | ~250k jobs/s | ~77k jobs/s | ~300k jobs/s |
 | Claim + finish, 50 per fetch | ~45k jobs/s | ~15k jobs/s | ~80k jobs/s |
 | One server, 100 workers, no-op handler | ~21k jobs/s | ~6k jobs/s | ~70k jobs/s |
-| Enqueue to handler start | p50 3.3ms, p99 6.6ms | bounded by `PollInterval` | p50 0.16ms in the same process |
+| Enqueue to handler start | p50 3.3ms, p99 6.6ms | ~5–20ms with `redisbus`, `PollInterval` without | p50 0.16ms in the same process |
 
 The MySQL numbers are dominated by commit latency on this setup (binlog with `sync_binlog=1`,
 4-6ms per commit); a server with a faster disk will do noticeably better.

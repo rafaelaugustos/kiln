@@ -14,6 +14,8 @@ const (
 	handoffBy   = "compat.by"
 	handoffWait = 150 * time.Millisecond
 	limitKey    = "compat"
+	rateKey     = "compat.rate"
+	rate        = 20
 )
 
 var errHandoff = errors.New("compat: waiting for the other version")
@@ -61,6 +63,10 @@ type Rated struct {
 }
 
 func (Rated) Kind() string { return "compat.rated" }
+
+func (Rated) InsertOptions() []kiln.InsertOption {
+	return []kiln.InsertOption{kiln.Limit{Key: rateKey, Rate: rate, Per: time.Second, Burst: 1}}
+}
 
 func echo(ctx context.Context, j *kiln.Job[Echo]) error {
 	if err := pause(ctx, 20*time.Millisecond); err != nil {
@@ -187,6 +193,7 @@ type plan struct {
 	Fail    int           `json:"fail,omitempty"`
 	Handoff int           `json:"handoff,omitempty"`
 	Limited int           `json:"limited,omitempty"`
+	Rated   int           `json:"rated,omitempty"`
 	Flows   int           `json:"flows,omitempty"`
 	Batches int           `json:"batches,omitempty"`
 	Delayed int           `json:"delayed,omitempty"`
@@ -223,6 +230,7 @@ func (r *result) add(ctx context.Context, c *kiln.Client, p plan) error {
 		{"fail", p.Fail, func(i int) kiln.Spec { return kiln.Spec{Args: FailOnce{N: i}} }},
 		{"handoff", p.Handoff, func(int) kiln.Spec { return kiln.Spec{Args: Handoff{From: version}} }},
 		{"limited", p.Limited, func(i int) kiln.Spec { return kiln.Spec{Args: Limited{N: i}} }},
+		{"rated", p.Rated, func(i int) kiln.Spec { return kiln.Spec{Args: Rated{N: i}} }},
 		{"delayed", p.Delayed, func(i int) kiln.Spec { return kiln.Spec{Args: Echo{N: i}, Options: delay} }},
 		{"after", len(p.After), func(i int) kiln.Spec {
 			return kiln.Spec{Args: Child{N: i}, Options: []kiln.InsertOption{kiln.After{p.After[i]}}}

@@ -144,9 +144,9 @@ func (s *Store) Promote(ctx context.Context, limit int) (driver.Promoted, error)
 			}
 			ids = append(ids, id)
 			if limit != "" {
-				keys = merge(keys, []string{limit})
-			} else if !slices.Contains(p.Queues, queue) {
-				p.Queues = append(p.Queues, queue)
+				keys = merge(keys, limit)
+			} else {
+				p.Queues = merge(p.Queues, queue)
 			}
 		}
 		rows.Close()
@@ -160,7 +160,7 @@ func (s *Store) Promote(ctx context.Context, limit int) (driver.Promoted, error)
 			}
 			p.Count = len(ids)
 		}
-		keys = merge(keys, granted)
+		keys = merge(keys, granted...)
 		if len(keys) > 0 {
 			slices.Sort(keys)
 			slots, err := s.lockLimits(ctx, tx, keys, false)
@@ -171,7 +171,7 @@ func (s *Store) Promote(ctx context.Context, limit int) (driver.Promoted, error)
 			if err != nil {
 				return err
 			}
-			p.Queues = merge(p.Queues, a.queues)
+			p.Queues = merge(p.Queues, a.queues...)
 		}
 		next, found, err := s.nextDue(ctx, tx)
 		if err != nil {
@@ -185,6 +185,7 @@ func (s *Store) Promote(ctx context.Context, limit int) (driver.Promoted, error)
 	if err != nil {
 		return driver.Promoted{}, fmt.Errorf("kiln: promote: %w", err)
 	}
+	s.nt.ready(p.Queues)
 	return p, nil
 }
 

@@ -38,14 +38,46 @@ func TestRateSlots(t *testing.T) {
 	expectSlots(t, s, got, slot{enq, 0}, slot{enq, 0}, slot{sch, 250 * ms}, slot{sch, 500 * ms}, slot{sch, 750 * ms}, slot{sch, time.Second})
 
 	c.add(time.Second)
-	if p, err := s.Promote(ctx, 100); err != nil || p.Count != 4 || p.Next != 0 {
+	if p, err := s.Promote(ctx, 100); err != nil || p.Count != 4 || p.Next != 250*ms {
 		t.Fatalf("promote = %+v, %v", p, err)
 	}
-	expectSlots(t, s, got[2:], slot{enq, 250 * ms}, slot{enq, 500 * ms}, slot{enq, 750 * ms}, slot{enq, time.Second})
-	expectSlots(t, s, ids(t, s, job, job), slot{sch, 1250 * ms}, slot{sch, 1500 * ms})
+	expectSlots(t, s, got[2:], slot{enq, 250 * ms}, slot{enq, 500 * ms}, slot{sch, 1250 * ms}, slot{sch, 1500 * ms})
+	expectSlots(t, s, ids(t, s, job, job), slot{sch, 1750 * ms}, slot{sch, 2 * time.Second})
 
 	c.add(10 * time.Second)
 	expectSlots(t, s, ids(t, s, job, job, job), slot{enq, 11 * time.Second}, slot{enq, 11 * time.Second}, slot{sch, 11250 * ms})
+}
+
+func TestRateGate(t *testing.T) {
+	t.Parallel()
+	const ms = time.Millisecond
+	enq, sch := driver.Enqueued, driver.Scheduled
+	cases := []struct {
+		name        string
+		late        time.Duration
+		third, next slot
+	}{
+		{"within slack", 50 * ms, slot{enq, 200 * ms}, slot{sch, 350 * ms}},
+		{"past slack", 50*ms + 1, slot{sch, 300 * ms}, slot{sch, 400 * ms}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s, c := open(t)
+			job := params("a", rated("k", 10, time.Second, 1))
+			promote := func(d time.Duration) {
+				c.add(d)
+				_, err := s.Promote(ctx, 100)
+				must(t, err)
+			}
+			got := ids(t, s, job, job, job)
+			promote(100*ms + tc.late)
+			expectSlots(t, s, got[1:2], slot{enq, 100 * ms})
+			promote(100*ms - tc.late)
+			expectSlots(t, s, got[2:], tc.third)
+			expectSlots(t, s, ids(t, s, job), tc.next)
+		})
+	}
 }
 
 func TestRateBound(t *testing.T) {

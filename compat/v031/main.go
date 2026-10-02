@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	version = "v0.2.0"
+	version = "v0.3.1"
 	pragmas = "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)&_txlock=immediate"
 )
 
@@ -70,7 +70,7 @@ func main() {
 	flag.StringVar(&c.schema, "schema", "kiln", "postgres schema")
 	flag.StringVar(&c.prefix, "prefix", "kiln_", "mysql and sqlite table prefix")
 	flag.StringVar(&c.role, "role", "both", "worker, enqueue or both")
-	flag.StringVar(&c.name, "name", "compat-v020", "server name")
+	flag.StringVar(&c.name, "name", "compat-v031", "server name")
 	flag.IntVar(&c.workers, "workers", 8, "worker goroutines")
 	flag.DurationVar(&c.poll, "poll", 100*time.Millisecond, "poll interval")
 	flag.DurationVar(&c.backoff, "backoff", 150*time.Millisecond, "delay before a retry")
@@ -80,6 +80,7 @@ func main() {
 	flag.IntVar(&c.plan.Fail, "fail", 0, "compat.fail_once jobs to enqueue")
 	flag.IntVar(&c.plan.Handoff, "handoff", 0, "compat.handoff jobs that must start on this version")
 	flag.IntVar(&c.plan.Limited, "limited", 0, "compat.limited jobs to enqueue")
+	flag.IntVar(&c.plan.Rated, "rated", 0, "compat.rated jobs to enqueue")
 	flag.IntVar(&c.plan.Flows, "flows", 0, "flows of four jobs to enqueue")
 	flag.IntVar(&c.plan.Batches, "batches", 0, "batches of three jobs and a continuation to start")
 	flag.IntVar(&c.plan.Delayed, "delayed", 0, "compat.echo jobs to enqueue with -delay")

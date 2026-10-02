@@ -10,3 +10,7 @@ import (
 func TestConformance(t *testing.T) {
 	drivertest.Run(t, func(t *testing.T) driver.Store { return open(t) })
 }
+
+func TestConformanceBus(t *testing.T) {
+	drivertest.Run(t, func(t *testing.T) driver.Store { return open(t, Bus(newBus())) })
+}

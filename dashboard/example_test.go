@@ -13,6 +13,7 @@ func ExampleNew() {
 	client := kiln.NewClient(memstore.New())
 
 	dash := dashboard.New(client, dashboard.Options{
+		Prefix: "/kiln",
 		Authorize: func(r *http.Request) dashboard.Access {
 			if r.Header.Get("Authorization") == "Bearer devtoken" {
 				return dashboard.ReadWrite
@@ -22,7 +23,7 @@ func ExampleNew() {
 	})
 
 	mux := http.NewServeMux()
-	mux.Handle("/kiln/", http.StripPrefix("/kiln", dash))
+	mux.Handle("/kiln/", dash)
 
 	log.Fatal(http.ListenAndServe(":8080", mux))
 }

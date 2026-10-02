@@ -34,9 +34,19 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       KILN_DATABASE_URL: postgres://kiln:kiln@localhost:5432/kiln?sslmode=disable
       KILN_MYSQL_DSN: root:kiln@tcp(localhost:3306)/kiln
+      KILN_REDIS_ADDR: localhost:6379
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -52,6 +62,10 @@ jobs:
         working-directory: mysqlstore
       - run: go vet ./... && go test -race ./...
         working-directory: sqlitestore
+      - run: go vet ./... && go test -race ./...
+        working-directory: kilnotel
+      - run: go vet ./... && go test -race ./...
+        working-directory: redisbus
       - run: go vet ./... && go test ./...
         working-directory: compat
       - run: go vet ./... && go build ./...

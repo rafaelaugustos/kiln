@@ -1,14 +1,14 @@
-module github.com/rafaelaugustos/kiln/compat/v020
+module github.com/rafaelaugustos/kiln/compat/v031
 
 go 1.27.0
 
 require (
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/jackc/pgx/v5 v5.11.0
-	github.com/rafaelaugustos/kiln v0.2.0
-	github.com/rafaelaugustos/kiln/mysqlstore v0.2.0
-	github.com/rafaelaugustos/kiln/pgstore v0.2.0
-	github.com/rafaelaugustos/kiln/sqlitestore v0.2.0
+	github.com/rafaelaugustos/kiln v0.3.1
+	github.com/rafaelaugustos/kiln/mysqlstore v0.3.1
+	github.com/rafaelaugustos/kiln/pgstore v0.3.1
+	github.com/rafaelaugustos/kiln/sqlitestore v0.3.1
 	modernc.org/sqlite v1.59.0
 )
 
