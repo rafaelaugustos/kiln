@@ -3,7 +3,7 @@
 Every module in this repository (`kiln`, `pgstore`, `mysqlstore`, `sqlitestore`, `kilnotel`, `redisbus`) is
 released together under the same version. The GitHub releases have the full notes.
 
-## Unreleased
+## v0.4.0 (2026-10-02)
 
 ### Added
 - `kilnotel` module: OpenTelemetry spans from the enqueue to the handler, job metrics, and server and queue
