@@ -19,8 +19,9 @@ func (c *Client) Delete(ctx context.Context, ids ...int64) (int, error) {
 }
 
 // Requeue puts the given jobs back in their queues to run now, and returns how many it moved. It
-// applies to failed, scheduled, succeeded and deleted jobs and skips the others. The attempt count
-// is kept, and a job that had used all its attempts gets one more. A job is also skipped when its
+// applies to failed, scheduled, succeeded and deleted jobs and skips the others. A failed,
+// succeeded or deleted job starts over with all of its [MaxAttempts], and its retries back off
+// from the start again; a scheduled job keeps its attempt count. A job is also skipped when its
 // [Unique] key, held without For, now belongs to another job.
 func (c *Client) Requeue(ctx context.Context, ids ...int64) (int, error) {
 	if len(ids) == 0 {

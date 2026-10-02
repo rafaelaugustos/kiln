@@ -55,6 +55,9 @@ func (s *Store) Requeue(_ context.Context, f driver.Filter) (int, error) {
 		if j.limit != "" {
 			to = driver.Throttled
 		}
+		if j.state != driver.Scheduled {
+			j.attempt = 0
+		}
 		j.maxAttempts = max(j.maxAttempts, j.attempt+1)
 		j.cancel, j.granted = false, false
 		j.runAt = s.now

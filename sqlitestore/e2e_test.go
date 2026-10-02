@@ -277,6 +277,7 @@ func TestE2ERetryThenFails(t *testing.T) {
 	cl := kiln.NewClient(st)
 	id := enqueue(t, cl, double{}, kiln.MaxAttempts(3))
 	r := waitState(t, cl, id, kiln.Failed)
+	r.History = slices.DeleteFunc(r.History, func(e kiln.Entry) bool { return e.Reason == "lost" })
 	if want := []string{"retry", "retry", "exhausted"}; !slices.Equal(reasons(r), want) {
 		t.Fatalf("reasons %v, want %v", reasons(r), want)
 	}

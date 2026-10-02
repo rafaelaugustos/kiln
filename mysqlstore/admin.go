@@ -25,14 +25,15 @@ FOR UPDATE OF j FOR UPDATE OF u SKIP LOCKED`
 
 const sqlCancel = `UPDATE {p}jobs SET cancel_requested = TRUE WHERE id IN (?)`
 
-const sqlLockFailed = `SELECT UTC_TIMESTAMP(6), j.id, j.attempt, j.queue, j.unique_key, COALESCE(j.limit_key, '')
+const sqlLockFailed = `SELECT UTC_TIMESTAMP(6), j.id, IF(j.state = 'scheduled', j.attempt, 0), j.queue, j.unique_key,
+	COALESCE(j.limit_key, '')
 FROM {p}jobs j FORCE INDEX (?)
 WHERE ? AND j.state IN ('failed', 'scheduled') AND j.id > ?
 ORDER BY j.id
 LIMIT 1000
 FOR UPDATE`
 
-const sqlLockArchived = `SELECT UTC_TIMESTAMP(6), j.id, j.attempt, j.queue, j.unique_key, COALESCE(j.limit_key, ''),
+const sqlLockArchived = `SELECT UTC_TIMESTAMP(6), j.id, 0, j.queue, j.unique_key, COALESCE(j.limit_key, ''),
 	j.finalized_at
 FROM {p}archive j FORCE INDEX (?)
 WHERE ?
@@ -54,19 +55,19 @@ const sqlKeyHolders = `SELECT unique_key, job_id FROM {p}uniques WHERE unique_ke
 
 const sqlRequeueLive = `UPDATE (VALUES `
 
-const sqlRequeueLiveTail = `) AS v (id, state, entry) STRAIGHT_JOIN {p}jobs j FORCE INDEX (PRIMARY) ON j.id = v.id
+const sqlRequeueLiveTail = `) AS v (id, state, entry, attempt) STRAIGHT_JOIN {p}jobs j FORCE INDEX (PRIMARY) ON j.id = v.id
 SET j.state = v.state, j.run_at = ?, j.finalized_at = NULL, j.cancel_requested = FALSE, j.granted = FALSE,
-	j.max_attempts = GREATEST(j.max_attempts, j.attempt + 1), j.history = ` + pushHistory
+	j.attempt = v.attempt, j.max_attempts = GREATEST(j.max_attempts, v.attempt + 1), j.history = ` + pushHistory
 
 const sqlRequeueArchived = `INSERT INTO {p}jobs (id, state, queue, kind, priority, attempt, max_attempts, claim, timeout_ms,
 	deps_pending, run_at, created_at, attempted_at, server, batch_id, after_batch, parents, recurring_id, unique_key,
 	limit_key, args, meta, tags, history)
-SELECT j.id, v.state, j.queue, j.kind, j.priority, j.attempt, GREATEST(j.max_attempts, j.attempt + 1), j.claim,
+SELECT j.id, v.state, j.queue, j.kind, j.priority, v.attempt, j.max_attempts, j.claim,
 	j.timeout_ms, 0, ?, j.created_at, j.attempted_at, j.server, j.batch_id, j.after_batch, j.parents, j.recurring_id,
 	j.unique_key, j.limit_key, j.args, j.meta, j.tags, ` + pushHistory + `
 FROM (VALUES `
 
-const sqlRequeueArchivedTail = `) AS v (id, state, entry) STRAIGHT_JOIN {p}archive j FORCE INDEX (PRIMARY) ON j.id = v.id`
+const sqlRequeueArchivedTail = `) AS v (id, state, entry, attempt) STRAIGHT_JOIN {p}archive j FORCE INDEX (PRIMARY) ON j.id = v.id`
 
 const sqlDropArchived = `DELETE FROM {p}archive WHERE id IN (?)`
 
@@ -335,7 +336,7 @@ func (s *Store) requeueChunk(ctx context.Context, stmt string, archived bool) (n
 				b = append(b, ',')
 			}
 			e := entry{state: st, attempt: r.attempt, reason: "requeued"}
-			b = appendSQL(b, "ROW(?, ?, ?)", r.id, st, e.encode(now.Time))
+			b = appendSQL(b, "ROW(?, ?, ?, ?)", r.id, st, e.encode(now.Time), r.attempt)
 			ids = append(ids, r.id)
 		}
 		if archived {

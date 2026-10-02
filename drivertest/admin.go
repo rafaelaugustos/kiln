@@ -211,11 +211,10 @@ func testRequeue(t *testing.T, s driver.Store) {
 	if n := requeueIDs(t, s, ids...); n != len(ids) {
 		t.Fatalf("requeued %d, want %d", n, len(ids))
 	}
-	attempts := map[int64]int{failed: 1, succeeded: 1, deleted: 1, scheduled: 0}
 	for _, id := range ids {
 		r := record(t, s, id)
-		if r.State != driver.Enqueued || r.Attempt != attempts[id] {
-			t.Fatalf("job %d: state %s attempt %d, want enqueued with attempt %d", id, r.State, r.Attempt, attempts[id])
+		if r.State != driver.Enqueued || r.Attempt != 0 {
+			t.Fatalf("job %d: state %s attempt %d, want enqueued with attempt 0", id, r.State, r.Attempt)
 		}
 		if e := lastEntry(t, r); e.Reason != "requeued" {
 			t.Fatalf("job %d last reason %q, want requeued", id, e.Reason)
@@ -226,8 +225,8 @@ func testRequeue(t *testing.T, s driver.Store) {
 		t.Fatalf("claimed %d, want %d", len(js), len(ids))
 	}
 	for _, j := range js {
-		if j.Attempt != attempts[j.ID]+1 {
-			t.Fatalf("job %d attempt %d, want %d", j.ID, j.Attempt, attempts[j.ID]+1)
+		if j.Attempt != 1 {
+			t.Fatalf("job %d attempt %d, want 1", j.ID, j.Attempt)
 		}
 	}
 	if c := counts(t, s); c.Succeeded != 1 || c.Deleted != 1 || c.Processing != 4 {
@@ -265,25 +264,37 @@ func testRequeueSkips(t *testing.T, s driver.Store) {
 
 func testRequeueAttempts(t *testing.T, s driver.Store) {
 	p := task("q")
-	p.MaxAttempts = 1
+	p.MaxAttempts = 2
 	j := start(t, s, p)
+	apply(t, s, outcome(j, driver.Enqueued))
+	j = claimOne(t, s, "q", j.ID)
 	apply(t, s, outcome(j, driver.Failed))
 	requeueIDs(t, s, j.ID)
-	if r := record(t, s, j.ID); r.MaxAttempts != 2 || r.Attempt != 1 {
-		t.Fatalf("max attempts %d attempt %d, want 2 and 1", r.MaxAttempts, r.Attempt)
+	if r := record(t, s, j.ID); r.MaxAttempts != 2 || r.Attempt != 0 {
+		t.Fatalf("max attempts %d attempt %d, want 2 and 0", r.MaxAttempts, r.Attempt)
+	}
+	if h := record(t, s, j.ID).History; len(h) == 0 || h[len(h)-1].Reason != "requeued" || h[len(h)-1].Attempt != 0 {
+		t.Fatalf("history %+v, want a requeued entry at attempt 0", h)
 	}
 	j = claimOne(t, s, "q", j.ID)
-	if j.Attempt != 2 || j.MaxAttempts != 2 {
-		t.Fatalf("attempt %d of %d, want 2 of 2", j.Attempt, j.MaxAttempts)
+	if j.Attempt != 1 || j.MaxAttempts != 2 {
+		t.Fatalf("attempt %d of %d, want 1 of 2", j.Attempt, j.MaxAttempts)
 	}
 
-	p = task("r")
-	p.MaxAttempts = 5
-	k := start(t, s, p)
-	apply(t, s, outcome(k, driver.Failed))
+	k := start(t, s, task("r"))
+	o := outcome(k, driver.Scheduled)
+	o.Delay = time.Hour
+	apply(t, s, o)
 	requeueIDs(t, s, k.ID)
-	if r := record(t, s, k.ID); r.MaxAttempts != 5 {
-		t.Fatalf("max attempts %d, want 5", r.MaxAttempts)
+	if r := record(t, s, k.ID); r.State != driver.Enqueued || r.Attempt != 1 || r.MaxAttempts != 5 {
+		t.Fatalf("scheduled job requeued as %s attempt %d of %d, want enqueued 1 of 5", r.State, r.Attempt, r.MaxAttempts)
+	}
+
+	d := start(t, s, task("d"))
+	apply(t, s, outcome(d, driver.Succeeded))
+	requeueIDs(t, s, d.ID)
+	if r := record(t, s, d.ID); r.State != driver.Enqueued || r.Attempt != 0 || r.MaxAttempts != 5 {
+		t.Fatalf("succeeded job requeued as %s attempt %d of %d, want enqueued 0 of 5", r.State, r.Attempt, r.MaxAttempts)
 	}
 
 	c := start(t, s, task("c"))
@@ -291,8 +302,8 @@ func testRequeueAttempts(t *testing.T, s driver.Store) {
 	apply(t, s, outcome(c, driver.Failed))
 	wantState(t, s, driver.Deleted, c.ID)
 	requeueIDs(t, s, c.ID)
-	if r := record(t, s, c.ID); r.State != driver.Enqueued || r.CancelRequested {
-		t.Fatalf("state %s cancel %v, want enqueued without cancel", r.State, r.CancelRequested)
+	if r := record(t, s, c.ID); r.State != driver.Enqueued || r.CancelRequested || r.Attempt != 0 {
+		t.Fatalf("state %s cancel %v attempt %d, want enqueued without cancel at attempt 0", r.State, r.CancelRequested, r.Attempt)
 	}
 	c = claimOne(t, s, "c", c.ID)
 	apply(t, s, outcome(c, driver.Failed))
