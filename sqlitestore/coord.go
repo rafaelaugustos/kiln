@@ -40,8 +40,8 @@ WHERE j.state = 'processing' AND NOT EXISTS (
 ORDER BY j.id
 LIMIT ?`
 
-// Now returns the time on SQLite's clock, in UTC and to the millisecond, the clock every method of
-// the store uses.
+// Now returns the time on SQLite's clock, which every method of the store uses, in UTC and to the
+// millisecond.
 func (s *Store) Now(ctx context.Context) (time.Time, error) {
 	var now int64
 	if err := s.db.QueryRowContext(ctx, s.q.now).Scan(&now); err != nil {

@@ -1,6 +1,6 @@
 // Package memstore keeps kiln's jobs in memory. Its [Store] implements [driver.Store],
 // [driver.Notifier] and [driver.Transactor], and is the reference implementation of the contract
-// package driver documents.
+// documented in package driver.
 //
 // Jobs live as long as the Store, and only the clients and servers that share it see them, so it
 // suits tests, examples and tools that run in a single process:

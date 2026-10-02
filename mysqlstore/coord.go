@@ -119,7 +119,7 @@ func (s *Store) pending(ctx context.Context) (next time.Duration, found bool, gr
 }
 
 // Promote moves up to limit scheduled jobs whose run time has come, earliest first, as
-// [driver.Coordinator.Promote] describes, skipping rows that other transactions have locked. It
+// [driver.Coordinator.Promote] describes, skipping due jobs that other transactions have locked. It
 // looks with a plain read first and opens a transaction only when jobs are due or granted jobs
 // wait for admission, so that frequent calls on an idle store stay cheap.
 func (s *Store) Promote(ctx context.Context, limit int) (driver.Promoted, error) {

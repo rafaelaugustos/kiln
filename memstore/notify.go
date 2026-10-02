@@ -11,10 +11,10 @@ type sub struct {
 	resync chan struct{}
 }
 
-// Subscribe calls fn with the events of the store's writes until ctx is done, then returns nil.
-// Only the subscribers of this Store receive them, each through a buffer of 256 events; when a
-// subscriber falls that far behind, the events that do not fit are dropped and fn gets a
-// [driver.Resync] instead.
+// Subscribe calls fn with a [driver.Resync], then with the events of the store's writes until
+// ctx is done, and returns nil. Only the subscribers of this Store receive them, each through a
+// buffer of 256 events; when a subscriber falls that far behind, the events that do not fit are
+// dropped and fn gets a Resync in their place.
 func (s *Store) Subscribe(ctx context.Context, fn func(driver.Event)) error {
 	sb := &sub{events: make(chan driver.Event, 256), resync: make(chan struct{}, 1)}
 	s.subMu.Lock()

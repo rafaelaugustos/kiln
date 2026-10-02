@@ -32,7 +32,9 @@ func (s *Store) Promote(_ context.Context, limit int) (driver.Promoted, error) {
 	return p, nil
 }
 
-// Sweep repairs what other calls leave to it, as [driver.Coordinator.Sweep] describes.
+// Sweep repairs what other calls leave to it, as [driver.Coordinator.Sweep] describes, except
+// that limit caps only the awaiting jobs it repairs and the sealed batches it finishes: it then
+// recounts and admits every limit key, so the count it returns can exceed limit.
 func (s *Store) Sweep(_ context.Context, limit int) (int, error) {
 	limit = limitOr(limit, 1000)
 	s.begin()
@@ -77,8 +79,9 @@ func (s *Store) Sweep(_ context.Context, limit int) (int, error) {
 }
 
 // Prune deletes finished jobs past their retention, silent servers, old statistics, expired
-// unique keys, unused limit keys and finished batches with no members left, at most p.Limit of
-// each, as [driver.Coordinator.Prune] describes.
+// unique keys, unused limit keys and finished batches with no members left, as
+// [driver.Coordinator.Prune] describes. It deletes at most p.Limit of each kind, counting
+// succeeded and deleted jobs as one kind and failed jobs as another.
 func (s *Store) Prune(_ context.Context, p driver.PruneParams) (int, error) {
 	limit := limitOr(p.Limit, 1000)
 	servers := cmp.Or(p.Servers, time.Hour)

@@ -9,8 +9,9 @@ import (
 )
 
 // Finish applies outcomes as [driver.Worker.Finish] describes. It never fails and never reports
-// [driver.Busy]. An outcome is [driver.Rejected] when its State is not Succeeded, Failed,
-// Deleted, Scheduled or Enqueued, or when its Output is not valid JSON.
+// [driver.Busy]. An outcome whose job is still processing under its claim is [driver.Rejected]
+// when its State is not Succeeded, Failed, Deleted, Scheduled or Enqueued, or when its Output is
+// neither empty nor valid JSON.
 func (s *Store) Finish(_ context.Context, server string, outs []driver.Outcome) ([]driver.Result, error) {
 	res := make([]driver.Result, len(outs))
 	s.begin()

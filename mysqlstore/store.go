@@ -17,8 +17,8 @@ var (
 	_ driver.TxWriter   = (*TxWriter)(nil)
 )
 
-// Store is a [driver.Store] on MySQL, which also implements [driver.Notifier], through the bus
-// given with [Bus], and [driver.Transactor]. It is safe for concurrent use.
+// Store is a [driver.Store] on MySQL. It also implements [driver.Transactor], and
+// [driver.Notifier] through the bus given with [Bus]. It is safe for concurrent use.
 type Store struct {
 	db     *sql.DB
 	prefix string
@@ -38,11 +38,11 @@ type Store struct {
 	}
 }
 
-// New returns a store on db, whose DSN must name the database. New first creates the tables or
-// brings them up to date, as [Migrate] does, unless [NoMigrate] is given, in which case it fails
-// when a migration or change of this release is missing; either way it fails when the tables are
-// newer than this release knows. The store keeps one of db's connections for itself, so New fails
-// with [driver.ErrInvalid] when db allows a single open connection.
+// New returns a store on db, whose DSN must name the database. Unless [NoMigrate] is given, New
+// first migrates the tables as [Migrate] does; with NoMigrate it only checks them and fails when a
+// migration or change of this release is missing. Either way it fails when the tables' migration
+// number is newer than this release knows. The store keeps one of db's connections for itself, so
+// New fails with [driver.ErrInvalid] when db allows a single open connection.
 func New(ctx context.Context, db *sql.DB, opts ...Option) (*Store, error) {
 	c := newConfig(opts)
 	if !validPrefix(c.prefix) {
@@ -86,8 +86,8 @@ func New(ctx context.Context, db *sql.DB, opts ...Option) (*Store, error) {
 }
 
 // Close publishes the events still pending, when the store has a bus, and gives back the
-// connection the store kept. It closes neither db nor the bus. Call it once the servers that use
-// the store have stopped.
+// connection the store kept. It closes neither db nor the bus. Call it after nothing uses the
+// store any more.
 func (s *Store) Close() {
 	s.nt.close()
 	s.side.close()

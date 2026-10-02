@@ -56,8 +56,9 @@ func (s *Store) Due(ctx context.Context, limit int) ([]driver.Recurring, time.Ti
 	return out, now, nil
 }
 
-// Fire applies f in one transaction, as [driver.Coordinator.Fire] describes, admitting the
-// throttled jobs it inserts. After the commit it tells the servers which queues received jobs.
+// Fire applies f in one transaction, as [driver.Coordinator.Fire] describes, and admits the
+// throttled jobs of the limit keys it used there too. After the commit it tells the servers which
+// queues received jobs.
 func (s *Store) Fire(ctx context.Context, f driver.Fire) ([]driver.Inserted, error) {
 	if err := driver.CheckInsert(f.Jobs); err != nil {
 		return nil, err
@@ -133,8 +134,8 @@ func (s *Store) Recurrings(ctx context.Context) ([]driver.Recurring, error) {
 }
 
 // PutRecurring creates r when r.Version is 0 and no recurring job has its ID, or replaces the
-// stored one when r.Version matches it, and fails with [driver.ErrConflict] otherwise. r must
-// have an ID and a Spec, or PutRecurring fails with [driver.ErrInvalid].
+// stored one when r.Version equals its Version, and fails with [driver.ErrConflict] otherwise. r
+// must have an ID and a Spec, or PutRecurring fails with [driver.ErrInvalid].
 func (s *Store) PutRecurring(ctx context.Context, r driver.Recurring) error {
 	if r.ID == "" || r.Spec == "" {
 		return fmt.Errorf("%w: recurring needs an id and a spec", driver.ErrInvalid)

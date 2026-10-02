@@ -34,9 +34,10 @@ type running struct {
 }
 
 // Finish applies outcomes in one write transaction, as [driver.Worker.Finish] describes. Writes
-// take turns, so it never reports [driver.Busy]. An Output that is not valid JSON is
-// [driver.Rejected], and so is an outcome SQLite refuses, which Finish finds by retrying the
-// outcomes in halves.
+// take turns, so it never reports [driver.Busy]. An outcome with a State Finish cannot apply, or
+// with an Output that is neither empty nor valid JSON, is [driver.Rejected] at once. When SQLite
+// refuses a value, Finish retries the outcomes in halves, each in a transaction of its own, until
+// every outcome at fault is alone, and reports those [driver.Rejected].
 func (s *Store) Finish(ctx context.Context, server string, outs []driver.Outcome) ([]driver.Result, error) {
 	res := make([]driver.Result, len(outs))
 	idx := make([]int, 0, len(outs))

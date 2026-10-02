@@ -45,9 +45,11 @@ const sqlActive = `SELECT limit_key, count(*) FROM {p}jobs
 WHERE limit_key IN (SELECT value FROM json_each(?)) AND state IN ('enqueued', 'processing')
 GROUP BY limit_key`
 
-// Sweep repairs what other methods leave to it, as [driver.Coordinator.Sweep] describes, in a few
-// short transactions rather than one. It keeps its place in the dependencies and the limit keys
-// between calls, so successive calls on the same Store go through all of them.
+// Sweep repairs what other methods leave to it, as [driver.Coordinator.Sweep] describes, except
+// that limit caps what each of its steps takes on rather than the rows they change in all, so the
+// count it returns can exceed limit. Each step writes in a short transaction of its own, and Sweep
+// keeps its place among the parents of unresolved dependencies, the awaiting jobs and the limit
+// keys between calls, so successive calls on the same Store go through all of them.
 func (s *Store) Sweep(ctx context.Context, limit int) (int, error) {
 	limit = max(limit, 1)
 	total := 0

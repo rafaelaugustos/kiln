@@ -103,8 +103,9 @@ const sqlPruneBatches = `WITH d AS (
 )
 SELECT count(*) FROM d`
 
-// Prune deletes old rows as [driver.Coordinator.Prune] describes, one table at a time, and stops
-// at the first error, returning how many rows it deleted before it.
+// Prune deletes old rows as [driver.Coordinator.Prune] describes, in short steps that each commit
+// on their own, one kind of row at a time. It stops at the first error and returns the number of
+// rows deleted until then.
 func (s *Store) Prune(ctx context.Context, p driver.PruneParams) (int, error) {
 	limit := p.Limit
 	if limit <= 0 {

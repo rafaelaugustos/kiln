@@ -11,8 +11,8 @@ import (
 // TxWriter is a [driver.TxWriter] bound to an application's transaction, made by [Store.Tx]. Its
 // writes, the admission of throttled jobs included, happen inside the transaction, each under a
 // savepoint, so one that fails is undone and leaves the transaction usable, unless SQLite has
-// rolled back the whole transaction; every later write then fails. [TxWriter.Notify] wakes the
-// servers after the commit. A TxWriter is not safe for concurrent use.
+// rolled back the whole transaction; every later write then fails. Call [TxWriter.Notify] after
+// the commit to wake the servers. A TxWriter is not safe for concurrent use.
 type TxWriter struct {
 	s      *Store
 	q      querier
@@ -21,7 +21,7 @@ type TxWriter struct {
 }
 
 // Insert inserts jobs inside the transaction, as [driver.Writer.Insert] describes, and admits the
-// throttled jobs of the limit keys they use there too.
+// throttled jobs of the limit keys they use, also inside the transaction.
 func (w *TxWriter) Insert(ctx context.Context, jobs []driver.InsertParams) ([]driver.Inserted, error) {
 	if len(jobs) == 0 {
 		return nil, nil
@@ -50,8 +50,9 @@ func (w *TxWriter) OpenBatch(ctx context.Context, nb driver.NewBatch) (int64, er
 	return id, nil
 }
 
-// SealBatch seals the batch id inside the transaction, finishing it when none of its members is
-// live, or fails with [driver.ErrNotFound].
+// SealBatch seals the batch id inside the transaction and, when none of its members is live,
+// finishes it and releases the jobs that wait for it. It fails with [driver.ErrNotFound] when
+// there is no such batch.
 func (w *TxWriter) SealBatch(ctx context.Context, id int64) error {
 	var f *fallout
 	err := w.atomic(ctx, func() (err error) {
@@ -68,7 +69,8 @@ func (w *TxWriter) SealBatch(ctx context.Context, id int64) error {
 // Notify tells the servers subscribed to the Store, and the bus when the store has one, which
 // queues received jobs to run. Call it after the transaction commits. Its error, which only the
 // bus can cause, is advisory: the jobs are committed either way, and without Notify servers find
-// them at their next poll. Calling it twice, or after a rollback, does no harm.
+// them at their next poll. Calling it twice, or after a rollback, does no harm, but a second call
+// does nothing, even after the first failed.
 func (w *TxWriter) Notify(ctx context.Context) error {
 	queues := w.queues
 	w.queues = nil
@@ -101,9 +103,11 @@ func (w *TxWriter) atomic(ctx context.Context, fn func() error) error {
 }
 
 // InTx runs fn in a transaction begun with BEGIN IMMEDIATE on the connection kept for writes, and
-// commits it if fn returns nil; otherwise it rolls back and returns fn's error. The store's other
-// writes wait until it ends, so fn must write only through the Writer it is given. After the
-// commit InTx tells the servers which queues received jobs, as [TxWriter.Notify] would.
+// commits it if fn returns nil; otherwise it rolls back and returns fn's error. Every other write
+// on the file waits until it ends, so fn must write only through the Writer it is given: a write
+// method of the Store called from fn would wait for InTx, and so for fn, until its ctx is done.
+// After the commit InTx tells the servers which queues received jobs, publishing to the bus in the
+// background.
 func (s *Store) InTx(ctx context.Context, fn func(w driver.Writer) error) error {
 	var w *TxWriter
 	err := s.write(ctx, func(_ context.Context, q querier) error {

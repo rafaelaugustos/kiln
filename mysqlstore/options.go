@@ -27,9 +27,9 @@ func Prefix(p string) Option {
 	return func(c *config) { c.prefix = p }
 }
 
-// NoMigrate makes New check the tables instead of migrating them: New fails, naming what is
-// missing, when a migration or change of this release has not been applied. Run [Migrate] from a
-// deploy step instead.
+// NoMigrate makes New check the tables instead of migrating them: New fails, naming the version
+// it found or the first change it lacks, when a migration or change of this release has not been
+// applied. Run [Migrate] from a deploy step instead.
 func NoMigrate() Option {
 	return func(c *config) { c.noMigrate = true }
 }
