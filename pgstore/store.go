@@ -2,6 +2,7 @@ package pgstore
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"sync"
@@ -15,7 +16,7 @@ var (
 	_ driver.Store      = (*Store)(nil)
 	_ driver.Notifier   = (*Store)(nil)
 	_ driver.Transactor = (*Store)(nil)
-	_ driver.Writer     = (*TxWriter)(nil)
+	_ driver.TxWriter   = (*TxWriter)(nil)
 )
 
 type Store struct {
@@ -85,7 +86,20 @@ func (s *Store) Close() {
 }
 
 func (s *Store) Tx(tx pgx.Tx) *TxWriter {
+	if tx == nil {
+		return &TxWriter{s: s}
+	}
 	return &TxWriter{s: s, tx: tx}
+}
+
+// SQLTx is [Store.Tx] for an application on database/sql: tx must come from a [sql.DB] opened
+// with pgx's stdlib driver (github.com/jackc/pgx/v5/stdlib), which sqlx, bun and GORM can use.
+// The writer works like one from Tx, except that each statement is a round trip of its own.
+func (s *Store) SQLTx(tx *sql.Tx) *TxWriter {
+	if tx == nil {
+		return &TxWriter{s: s}
+	}
+	return &TxWriter{s: s, tx: &sqlTx{tx: tx}}
 }
 
 func (s *Store) channel(name string) string {

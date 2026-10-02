@@ -36,6 +36,10 @@ The job becomes visible when your transaction commits. kiln never sends `NOTIFY`
 transaction, because PostgreSQL serializes the commits of notifying transactions; `Notify` wakes the
 servers afterwards, and without it they pick the job up on their next poll.
 
+On `database/sql` (sqlx, bun, GORM) use `store.SQLTx(tx)` with a `*sql.Tx` instead. The `sql.DB` has to
+use pgx's stdlib driver (`github.com/jackc/pgx/v5/stdlib`), and every statement kiln runs in your
+transaction is then a round trip of its own, where `Tx` sends them together.
+
 ## Schema
 
 Migrations run under a transaction-scoped advisory lock with a short `lock_timeout`, so servers that start

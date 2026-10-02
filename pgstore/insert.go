@@ -154,7 +154,7 @@ type holder struct {
 
 type inserter struct {
 	s       *Store
-	tx      pgx.Tx
+	tx      sender
 	conn    *pgxpool.Conn
 	jobs    []driver.InsertParams
 	res     []driver.Inserted
@@ -177,7 +177,7 @@ func (s *Store) Insert(ctx context.Context, jobs []driver.InsertParams) ([]drive
 	return res, nil
 }
 
-func (s *Store) insert(ctx context.Context, tx pgx.Tx, jobs []driver.InsertParams) ([]driver.Inserted, wake, error) {
+func (s *Store) insert(ctx context.Context, tx sender, jobs []driver.InsertParams) ([]driver.Inserted, wake, error) {
 	if len(jobs) == 0 {
 		return nil, wake{}, nil
 	}

@@ -143,6 +143,10 @@ func (t *Tx) Commit() error {
 	return nil
 }
 
+func (t *Tx) Notify(context.Context) error {
+	return nil
+}
+
 func (t *Tx) Rollback() error {
 	s := t.s
 	s.begin()

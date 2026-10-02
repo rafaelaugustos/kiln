@@ -10,7 +10,7 @@ import (
 
 type TxWriter struct {
 	s  *Store
-	tx pgx.Tx
+	tx sender
 	w  wake
 }
 
