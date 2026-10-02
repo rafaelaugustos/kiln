@@ -111,20 +111,17 @@ func TestTxBatch(t *testing.T) {
 	}
 }
 
-func TestTxDoesNotAdmit(t *testing.T) {
+func TestTxCommitAdmits(t *testing.T) {
 	t.Parallel()
 	s, _ := open(t)
 	tx := s.Begin()
-	res := insert(t, tx, params("a", limited("k", 1)))
-	if res[0].State != driver.Throttled {
-		t.Fatalf("tx insert state = %s", res[0].State)
+	res := insert(t, tx, params("a", limited("k", 1)), params("a", limited("k", 1)))
+	if res[0].State != driver.Throttled || res[1].State != driver.Throttled {
+		t.Fatalf("tx insert states = %s, %s", res[0].State, res[1].State)
 	}
 	if err := tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	expectState(t, s, res[0].ID, driver.Throttled)
-	if n, err := s.Sweep(ctx, 100); err != nil || n == 0 {
-		t.Fatalf("sweep = %d, %v", n, err)
-	}
 	expectState(t, s, res[0].ID, driver.Enqueued)
+	expectState(t, s, res[1].ID, driver.Throttled)
 }
