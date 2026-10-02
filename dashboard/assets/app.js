@@ -50,8 +50,8 @@ function every(ms, fn, fail) {
   return run;
 }
 
-function count(v, capped) {
-  return fmt.format(v) + (capped && v >= 100000 ? '+' : '');
+function count(v, capped, short) {
+  return (short && v >= 100000 ? compact(v) : fmt.format(v)) + (capped && v >= 100000 ? '+' : '');
 }
 
 function compact(v) {
@@ -122,7 +122,7 @@ function live() {
     for (const n of document.querySelectorAll('[data-count]')) {
       const v = values[n.dataset.count];
       if (v === undefined) continue;
-      const t = count(v, o.counts.capped);
+      const t = count(v, o.counts.capped, n.classList.contains('stat-value'));
       if (n.textContent !== t) {
         n.textContent = t;
         bump(n);

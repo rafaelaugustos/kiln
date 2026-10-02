@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"html/template"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -36,6 +37,20 @@ func num(v any) string {
 		b.WriteRune(c)
 	}
 	return b.String()
+}
+
+func short(n int64) string {
+	switch {
+	case n >= 1e6:
+		return decimal(float64(n)/1e6) + "M"
+	case n >= 1e5:
+		return decimal(float64(n)/1e3) + "k"
+	}
+	return num(n)
+}
+
+func decimal(x float64) string {
+	return strconv.FormatFloat(math.Round(x*10)/10, 'f', -1, 64)
 }
 
 func ago(t time.Time) string {

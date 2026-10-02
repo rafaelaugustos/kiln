@@ -5,70 +5,108 @@
   </picture>
 </p>
 
-kiln is a background job library for Go, modelled on Hangfire for .NET. Jobs are rows in a
-database rather than an in-memory queue, so they survive restarts and crashes.
+<p align="center">
+  Background jobs for Go, kept in PostgreSQL, MySQL or SQLite.
+</p>
 
-## Install
+<p align="center">
+  <a href="https://pkg.go.dev/github.com/rafaelaugustos/kiln"><img src="https://pkg.go.dev/badge/github.com/rafaelaugustos/kiln.svg" alt="Go Reference"></a>
+  <a href="https://github.com/rafaelaugustos/kiln/actions/workflows/ci.yml"><img src="https://github.com/rafaelaugustos/kiln/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/rafaelaugustos/kiln/releases"><img src="https://img.shields.io/github/v/release/rafaelaugustos/kiln" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+</p>
 
-```
-go get github.com/rafaelaugustos/kiln
-go get github.com/rafaelaugustos/kiln/pgstore
-go get github.com/rafaelaugustos/kiln/mysqlstore
-go get github.com/rafaelaugustos/kiln/sqlitestore
-```
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/dashboard-dark.png">
+    <img src=".github/dashboard-light.png" alt="The kiln dashboard: jobs by state, throughput over the last hour, queues and servers">
+  </picture>
+</p>
 
-Optional: `kilnotel` for OpenTelemetry and `redisbus` to wake MySQL and SQLite servers through Redis.
+kiln runs background jobs for Go programs, the way Hangfire does for .NET. Jobs are rows in the database
+you already have, so they survive restarts and crashes, they can be enqueued in the same transaction as the
+data that produced them, and you can watch and retry them from a dashboard that comes with the library.
 
-Requires Go 1.27. `kiln` itself has no external dependencies; each store module pulls in only what its
-database needs (`pgstore` uses `pgx/v5`, the others take a `*sql.DB` from the driver you already use).
+- **Retries** with exponential or custom backoff, snoozes, timeouts and permanent failures
+- **Workflows**: jobs that wait for one or many other jobs, and batches with a job that runs when the
+  whole batch is done
+- **Limits** per key, across every server: how many jobs run at once and how many start per second
+- **Recurring jobs** from cron specs, with time zones and a policy for runs missed while nothing was up
+- **Unique jobs**, while a job is live or for a window of time
+- **Transactional enqueue**: the job exists only if your transaction commits
+- **Cancellation** of a running job from any process
+- **Dashboard** and JSON API, mounted on your own HTTP server
+- **OpenTelemetry** traces from the request that enqueued a job to the handler that ran it
+- **PostgreSQL, MySQL and SQLite**, plus an in-memory store for tests, all held to one conformance suite
+
+Everything above is in this repository, under the MIT license. There is no paid edition.
+
+## Contents
+
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Concepts](#concepts)
+- [Behaviour worth knowing](#behaviour-worth-knowing)
+- [Dashboard](#dashboard)
+- [How kiln compares](#how-kiln-compares)
+- [Performance](#performance)
+- [Documentation](#documentation)
+- [Status](#status)
+- [Contributing](#contributing)
 
 ## Quick start
+
+kiln needs Go 1.27 or later.
+
+### With SQLite, nothing to install
+
+```
+go get github.com/rafaelaugustos/kiln github.com/rafaelaugustos/kiln/sqlitestore modernc.org/sqlite
+```
 
 ```go
 package main
 
 import (
 	"context"
+	"database/sql"
 	"log"
 	"os"
 	"os/signal"
-	"syscall"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rafaelaugustos/kiln"
-	"github.com/rafaelaugustos/kiln/pgstore"
+	"github.com/rafaelaugustos/kiln/sqlitestore"
+	_ "modernc.org/sqlite"
 )
 
-type SendEmail struct{ To string }
+type SendEmail struct {
+	To string
+}
 
 func (SendEmail) Kind() string { return "send_email" }
 
 func sendEmail(ctx context.Context, j *kiln.Job[SendEmail]) error {
-	log.Printf("sending email to %s", j.Args.To)
+	log.Printf("sending email to %s (attempt %d)", j.Args.To, j.Attempt)
 	return nil
 }
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	pool, err := pgxpool.New(ctx, os.Getenv("KILN_DATABASE_URL"))
+	db, err := sql.Open("sqlite", "file:jobs.db?_pragma=busy_timeout(5000)")
 	if err != nil {
 		log.Fatal(err)
 	}
-	store, err := pgstore.New(ctx, pool)
+	store, err := sqlitestore.New(ctx, db)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer store.Close()
 	client := kiln.NewClient(store)
 
 	mux := kiln.NewMux()
 	kiln.Handle(mux, sendEmail)
-
-	server, err := kiln.NewServer(client, mux, kiln.ServerConfig{
-		Queues: map[string]int{kiln.DefaultQueue: 10},
-	})
+	server, err := kiln.NewServer(client, mux, kiln.ServerConfig{})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -82,21 +120,98 @@ func main() {
 }
 ```
 
-`Handle` registers a typed handler for one `Args` kind; `Job[T]` gives you `Args`, `Attempt`,
-`Meta`, `Tags` and the rest without a type assertion. `Args` implementations can supply their own
-`InsertOptions() []InsertOption` (queue, retry policy, ...) so callers don't repeat them at every
-`Enqueue` site.
+`go run .` creates `jobs.db`, enqueues the job and runs it right away. A job type is any struct with a
+`Kind()`; `kiln.Handle` registers the function that runs it, and `Job[T]` hands it the decoded args along
+with `Attempt`, `Meta`, `Tags` and the rest. Ctrl+C stops the server; anything not done yet stays in the
+file for the next run.
 
-Runnable, complete versions of this and the examples below live under `examples/`.
+### With PostgreSQL
+
+```
+docker run -d --name kiln-postgres -p 5432:5432 -e POSTGRES_PASSWORD=kiln postgres:17
+go get github.com/rafaelaugustos/kiln/pgstore
+```
+
+Swap the store and keep the rest of the program, importing `github.com/jackc/pgx/v5/pgxpool` and
+`github.com/rafaelaugustos/kiln/pgstore` in place of the SQLite packages:
+
+```go
+pool, err := pgxpool.New(ctx, "postgres://postgres:kiln@localhost:5432/postgres")
+if err != nil {
+	log.Fatal(err)
+}
+store, err := pgstore.New(ctx, pool)
+if err != nil {
+	log.Fatal(err)
+}
+defer store.Close()
+```
+
+`New` creates its tables in a `kiln` schema the first time. MySQL works the same way through
+`mysqlstore`; [Storage backends](docs/backends.md) covers what each database needs.
+
+Complete, runnable programs for each topic below live in [examples/](examples/): [basic](examples/basic),
+[workflow](examples/workflow), [recurring](examples/recurring), [throttling](examples/throttling),
+[transactional](examples/transactional) and [dashboard](examples/dashboard).
+
+## How it works
+
+```mermaid
+flowchart LR
+    app["Your code<br>client.Enqueue"] -- insert --> db[("Your database<br>PostgreSQL, MySQL or SQLite")]
+    db -- claim --> s1["kiln server<br>runs handlers"]
+    db -- claim --> s2["kiln server<br>runs handlers"]
+    s1 -- results, heartbeats --> db
+    s2 -- results, heartbeats --> db
+    dash["Dashboard"] -- reads, requeues --> db
+```
+
+A `Client` writes jobs to the store. Any number of `Server`s, in the same process or in others, claim the
+jobs of their queues, run the handler registered for each job's kind and write the outcome back. They
+learn about new work from the database's notifications (`LISTEN`/`NOTIFY` on PostgreSQL, an optional
+Redis bus on MySQL and SQLite) and by polling. One server at a time is also the leader: it fires recurring
+jobs, rescues the jobs of servers that stopped heartbeating, and prunes old jobs. There is no broker and
+no extra service to run.
 
 ## Concepts
 
 ### States
 
-`awaiting → scheduled → throttled → enqueued → processing → succeeded | failed | deleted`. A job
-starts in `awaiting` if it has unresolved dependencies, `scheduled` if it runs in the future,
-`throttled` if it's waiting on a `Limit` slot, otherwise `enqueued`. As in Hangfire, `failed` is
-not a final state: the job sits there until an operator requeues or deletes it.
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> enqueued
+    [*] --> scheduled: runs later
+    [*] --> awaiting: waits for other jobs
+    [*] --> throttled: held by a limit
+    awaiting --> enqueued
+    scheduled --> enqueued
+    throttled --> enqueued
+    enqueued --> processing
+    processing --> succeeded
+    processing --> scheduled: retry
+    processing --> failed: out of attempts
+    processing --> deleted: canceled
+    failed --> enqueued: requeue
+```
+
+A job starts in `awaiting` if it has unresolved dependencies, `scheduled` if it runs in the future,
+`throttled` if it's waiting on a `Limit` slot, otherwise `enqueued`. As in Hangfire, `failed` is not a
+final state: the job sits there until an operator requeues or deletes it.
+
+### Enqueue options
+
+Options go after the args, and an args type can supply its own defaults with an
+`InsertOptions() []kiln.InsertOption` method, so callers don't repeat them:
+
+```go
+client.Enqueue(ctx, SendEmail{To: to},
+	kiln.Queue("emails"),
+	kiln.Delay(10*time.Minute),
+	kiln.MaxAttempts(5),
+	kiln.Tags{"welcome"},
+)
+```
 
 ### Retries
 
@@ -241,194 +356,7 @@ implementation must pass.
 - **History.** A job's history records transitions that have a reason (retries, snoozes, cancellations,
   requeues, rescues). A plain success adds no entry; its timestamps are on the job.
 - **Dead workers.** Jobs of a server that stops heartbeating are retried once it has been silent for
-  `DeadAfter`. See [Operating kiln](#operating-kiln) for the timings.
-
-## kiln vs. Hangfire
-
-| Feature                         | Hangfire                     | kiln                               |
-|---------------------------------|------------------------------|------------------------------------|
-| Retries with backoff            | built-in                     | built-in                           |
-| Continuations                   | built-in                     | built-in (`After`, `Needs`/`Flow`) |
-| Batches + batch continuations   | Pro                          | built-in                           |
-| Concurrency limits / semaphores | Ace (Hangfire.Throttling)    | built-in (`Limit{Max}`)            |
-| Rate limiting                   | Ace (window counters)        | built-in (`Limit{Rate, Per}`)      |
-| Continuation with many parents  | Pro (batch continuations)    | built-in (`After{a, b}`, `Needs`)  |
-| Pause and resume a queue        | third-party                  | built-in (`PauseQueue`)            |
-| Unique / idempotent jobs        | third-party / manual         | built-in (`Unique`)                |
-| Recurring (cron)                | built-in                     | built-in, with `TZ` + `Misfire`    |
-| Transactional enqueue           | built-in (ambient tx)        | explicit (`EnqueueTx`, `Tx`)       |
-| Job cancellation                | built-in (CancellationToken) | built-in (`Delete`)                |
-| Dashboard                       | built-in                     | built-in                           |
-| OpenTelemetry                   | contrib package              | `kilnotel` (traces and metrics)    |
-| Storage                         | SQL Server/Redis/others      | PostgreSQL, MySQL, SQLite          |
-| Language                        | .NET                         | Go                                 |
-
-## Coming from Hangfire
-
-Hangfire serializes a method call; kiln enqueues a typed value and routes it to a handler registered
-for its `Kind()`. Most calls map one to one:
-
-| Hangfire | kiln |
-|---|---|
-| `BackgroundJob.Enqueue(() => mailer.Send(to))` | `client.Enqueue(ctx, SendEmail{To: to})` |
-| `BackgroundJob.Schedule(() => ..., TimeSpan.FromMinutes(30))` | `client.Enqueue(ctx, args, kiln.Delay(30*time.Minute))` |
-| `BackgroundJob.Schedule(() => ..., runAt)` | `client.Enqueue(ctx, args, kiln.At(runAt))` |
-| `BackgroundJob.ContinueJobWith(parentId, () => ...)` | `client.Enqueue(ctx, args, kiln.After{parentID})` |
-| `ContinueJobWith(..., JobContinuationOptions.OnAnyFinishedState)` | `kiln.AfterFinished{parentID}` |
-| `BackgroundJob.Delete(id)` / `BackgroundJob.Requeue(id)` | `client.Delete(ctx, id)` / `client.Requeue(ctx, id)` |
-| `RecurringJob.AddOrUpdate("report", () => ..., Cron.Daily())` | `client.SetRecurring(ctx, "report", "@daily", Report{})` |
-| `new RecurringJobOptions { TimeZone = tz }` | `kiln.TZ("America/Sao_Paulo")` |
-| `RecurringJob.TriggerJob("report")` / `RemoveIfExists("report")` | `client.TriggerRecurring(ctx, "report")` / `client.RemoveRecurring(ctx, "report")` |
-| `[Queue("critical")]` | `kiln.Queue("critical")`, or `InsertOptions()` on the args type |
-| `[AutomaticRetry(Attempts = 5)]` | `kiln.MaxAttempts(5)` |
-| `[AutomaticRetry(DelaysInSeconds = new[] { 60, 300 })]` | `kiln.Handle(mux, h, kiln.Delays(time.Minute, 5*time.Minute))` |
-| `[DisableConcurrentExecution(60)]` | `kiln.Limit{Key: "reports", Max: 1}` |
-| Ace semaphore / rate limiter | `kiln.Limit{Key: k, Max: n}` / `kiln.Limit{Key: k, Rate: n, Per: time.Second}` |
-| Pro `BatchJob.StartNew(x => x.Enqueue(...))` | `b := &kiln.Batch{}; b.Add(args); client.StartBatch(ctx, b)` |
-| Pro `BatchJob.ContinueBatchWith(batchId, ...)` | `b.Then(args)`, or `client.Enqueue(ctx, args, kiln.AfterBatch(batchID))` |
-| `CancellationToken` parameter | the handler's `ctx`, cancelled with cause `kiln.ErrCanceled` on `Delete` |
-| `context.SetJobParameter("cursor", c)` | `j.SetParam(ctx, "cursor", c)` / `j.Param("cursor", &c)` |
-| `IClientFilter` / `IServerFilter` | `kiln.NewClient(store, mw...)` / `mux.Use(mw...)` |
-| `Enqueue<IMailer>(x => x.Send(...))` resolved from DI | a method value with its dependencies: `kiln.Handle(mux, mailer.Send)` |
-| `AddHangfireServer(o => { o.WorkerCount = 20; o.Queues = ... })` | `kiln.ServerConfig{Pools: []kiln.Pool{{Queues: []string{"critical", "default"}, Workers: 20}}}` |
-| `UseSqlServerStorage(conn)` | `pgstore.New(ctx, pool)`, `mysqlstore.New(ctx, db)` or `sqlitestore.New(ctx, db)` |
-| `app.UseHangfireDashboard("/hangfire")` | `http.Handle("/kiln/", dashboard.New(client, dashboard.Options{Prefix: "/kiln", Authorize: auth}))` |
-
-## Storage backends
-
-| Backend | Package | Notes |
-|---|---|---|
-| PostgreSQL (CI runs 17) | `pgstore` | `LISTEN`/`NOTIFY` wakeups, pgx v5, schema option |
-| MySQL 8.0.19+ (CI runs 8.4) | `mysqlstore` | any `*sql.DB`, table prefix option; servers are woken through a `Bus`, or poll without one |
-| SQLite 3.35+ | `sqlitestore` | any `database/sql` driver, WAL; servers in the same process are woken directly, other processes through a `Bus` |
-| in memory | `memstore` | tests and single-process tools; everything is lost when the process exits |
-
-Every backend passes the same conformance suite, `drivertest.Run`, so the semantics (retries,
-continuations, batches, uniqueness, limits, fencing) do not change when the database does. Writing a
-new backend means implementing `driver.Store` (and optionally `driver.Notifier` and
-`driver.Transactor`) and making that suite pass.
-
-PostgreSQL wakes servers with `LISTEN`/`NOTIFY`. MySQL has nothing equivalent, and SQLite can only wake
-servers in its own process, so both accept a `driver.Bus`. `redisbus` is one over Redis Pub/Sub:
-
-```go
-rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", ContextTimeoutEnabled: true})
-store, err := mysqlstore.New(ctx, db, mysqlstore.Bus(redisbus.New(rdb)))
-```
-
-With a bus, new jobs, released continuations and cancellations reach every server within milliseconds.
-Without one, servers find new work on their next poll (`PollInterval`) and check for due jobs every
-100ms. Events are only hints: a lost one delays a job until the next poll, it never loses the job.
-
-With `mysqlstore`, begin your own transactions with `sql.LevelReadCommitted` before handing them to
-`store.Tx`. At `REPEATABLE READ` InnoDB takes gap locks that can make concurrent enqueues wait for
-your commit.
-
-```go
-db, _ := sql.Open("mysql", "user:pass@tcp(localhost:3306)/app")
-store, err := mysqlstore.New(ctx, db)
-```
-
-`sqlitestore` is tested with `modernc.org/sqlite` (no cgo), `mattn/go-sqlite3` and
-`ncruces/go-sqlite3`. SQLite allows one writer at a time, so the store keeps one pooled connection
-for its writes and starts every write transaction with `BEGIN IMMEDIATE`; reads run alongside it in
-WAL mode.
-
-```go
-db, _ := sql.Open("sqlite", "file:app.db?_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)&_txlock=immediate")
-store, err := sqlitestore.New(ctx, db)
-```
-
-- `busy_timeout` has to be in the DSN: it is set per connection, and `New` rejects a pool without it.
-- `New` switches the file to WAL. In-memory databases cannot use WAL; use `memstore` for those.
-- Use `_txlock=immediate` for transactions you pass to `store.Tx`, and keep them short: while one is
-  open, every other writer on the file waits, kiln's servers included.
-- Leave `SetMaxOpenConns` at 2 or more.
-
-## Upgrading
-
-Every release is tested against the previous one on the same database: the `compat` module runs the
-published version and the new code side by side while jobs move between them. Schema changes only ever
-add things, so servers on two consecutive versions can run together during a rolling deploy.
-
-v0.3 adds the rate limit columns. During a rolling deploy from v0.2, jobs on a key with a `Rate` and no
-`Max` are released only by servers already running v0.3, at the pace the rate allows; once released, any
-server may run them. On a key with both, v0.2 servers still enforce `Max` but not the rate until they are
-upgraded. Everything else is processed by both versions.
-
-Additive changes are recorded in a `schema_changes` table next to the jobs tables. If the database role
-kiln runs with was granted privileges table by table, grant it the same on `schema_changes` after the
-upgrade.
-
-v0.4 adds a nullable `admit_tat` column to the limits table. Until every server runs v0.4, the ones
-still on v0.3 release jobs whose start time has come without the check that keeps them from starting
-together after a stall.
-
-## Operating kiln
-
-| `ServerConfig` | Default | What it controls |
-|---|---|---|
-| `PollInterval` | 1s | How often an idle pool looks for work when no notification arrives |
-| `HeartbeatInterval` | 5s | How often a server reports that it is alive |
-| `DeadAfter` | 60s | Silence after which a server's running jobs are retried elsewhere |
-| `LeaderTTL` | 15s | Lease of the leader that runs recurring jobs, rescue, sweep and pruning |
-| `ShutdownTimeout` | 30s | How long `Run` waits for running jobs after its context is cancelled |
-| `KillGrace` | 5s | Extra wait after cancelling jobs that ignored the shutdown |
-| `Timeout` | 30m | Default per-job timeout |
-
-**Recovering from a dead worker.** A server that exits cleanly finishes its running jobs, or hands them
-back, before `Run` returns. A server that dies is noticed after `DeadAfter`, and within one more
-`HeartbeatInterval` its jobs are rescued: they go straight back to their queues, and the rescued attempt
-counts toward `MaxAttempts`. With the defaults, a job whose worker was killed starts again after roughly
-60 to 70 seconds. A job rescued twice in a row waits for its backoff before the next attempt, so a job that
-takes down the process running it is not handed from worker to worker without a pause. If the dead server
-was also the leader, a new leader takes over after `LeaderTTL` and waits `DeadAfter + HeartbeatInterval`
-before rescuing anything, which adds about 20 seconds. Lower `DeadAfter` (it must stay above `3*HeartbeatInterval + KillGrace + 5s`) to
-notice dead workers sooner, and keep long jobs resumable with `SetParam` checkpoints.
-
-**Connections.** `pgstore` opens its own pool (`MaxConns`, 8 by default) plus one connection for
-`LISTEN`, on top of your application's pool: budget up to 9 connections per process that opens a store.
-`mysqlstore` and `sqlitestore` use the `*sql.DB` you pass, keeping one of its connections for their own
-writes, so leave `SetMaxOpenConns` at 2 or more.
-
-**Polling.** An idle server runs one indexed query per pool every `PollInterval`, and, when it gets no
-notifications (MySQL without a `Bus`), one more every 100ms to release delayed jobs on time, besides its
-heartbeat and the leader's periodic work. Each query is cheap, but they add up: an API process and two
-idle workers on MySQL ran about 70 queries per second with the default `PollInterval` and 200 with
-200ms. A `Bus` removes the 100ms check and lets `PollInterval` stay long.
-
-**Health.** `Server.Healthy()` fails when the server has fenced itself off, its heartbeat is stale or its
-results are piling up; use it for readiness and liveness probes. `Server.Stats()` has the counters.
-
-## Performance
-
-Apple M4 Max. PostgreSQL and MySQL run in Docker on the same machine; SQLite writes to the local SSD
-with `synchronous=NORMAL`. Medians; see the benchmark code for ranges.
-
-| | PostgreSQL | MySQL 8.4 | SQLite (modernc) |
-|---|---|---|---|
-| Bulk insert, 10k jobs per call | ~250k jobs/s | ~77k jobs/s | ~300k jobs/s |
-| Claim + finish, 50 per fetch | ~45k jobs/s | ~15k jobs/s | ~80k jobs/s |
-| One server, 100 workers, no-op handler | ~21k jobs/s | ~6k jobs/s | ~70k jobs/s |
-| Enqueue to handler start | p50 3.3ms, p99 6.6ms | ~5–20ms with `redisbus`, `PollInterval` without | p50 0.16ms in the same process |
-
-The MySQL numbers are dominated by commit latency on this setup (binlog with `sync_binlog=1`,
-4-6ms per commit); a server with a faster disk will do noticeably better.
-
-Compared with [River](https://github.com/riverqueue/river) v0.47 on the same PostgreSQL, alternating
-rounds between the two libraries ([bench/](bench/README.md)):
-
-| Scenario | kiln | River (defaults) | River (1ms fetch cooldown) |
-|---|---|---|---|
-| Bulk insert | 251k jobs/s | 134k (`InsertMany`), 222k (`InsertManyFast`) | |
-| 8 goroutines inserting one job at a time | 5.1k jobs/s | 4.4k jobs/s | |
-| Drain 50k no-op jobs, 100 workers | 21.2k jobs/s | 1.0k jobs/s | 20.3k jobs/s |
-| Drain 20k jobs with a 1ms handler | 19.9k jobs/s | 1.0k jobs/s | 13.7k jobs/s |
-| Enqueue to handler start, p50 | 3.3ms | 55ms | 4.7ms |
-
-River's defaults fetch at most once every 100ms, which is what caps it around 1k jobs/s; with that
-cooldown lowered the no-op drain is a tie, and the p99 latency of the two was too noisy on this
-machine to call either way.
+  `DeadAfter`. See [Operating kiln](docs/operating.md) for the timings.
 
 ## Dashboard
 
@@ -446,6 +374,68 @@ IP, and denies everything else. The dashboard shows live counts and a succeeded/
 state with filtering and bulk actions, job detail with redactable args/meta/output, retries,
 recurring schedules, queues, servers and batches, and mirrors all of it under a JSON API at
 `<prefix>/api/...` for scripting. It's server-rendered with no external assets and a strict CSP.
+
+## How kiln compares
+
+kiln takes its model from Hangfire. In Go, the libraries people usually weigh it against are
+[River](https://github.com/riverqueue/river) and [Asynq](https://github.com/hibiken/asynq), both mature and
+with larger communities. This table only compares features, as each project documented them in
+October 2026:
+
+| | kiln | Hangfire | River | Asynq |
+|---|---|---|---|---|
+| Storage | PostgreSQL, MySQL, SQLite | SQL Server; Redis with Pro; others from the community | PostgreSQL; SQLite (experimental) | Redis |
+| License | MIT | LGPL-3.0, paid Pro and Ace | MPL-2.0, paid Pro | MIT |
+| Retries with backoff | yes | yes | yes | yes |
+| Job waits for other jobs | yes | yes, several parents with Pro | Pro (workflows) | no |
+| Batches with a continuation | yes | Pro | Pro, as a workflow | no |
+| Concurrency limit per key | yes | a mutex; Ace for more | Pro | in the handler, with `x/rate` |
+| Rate limit per key | yes | Ace | no | no |
+| Unique jobs | yes | third party | yes | yes |
+| Cron with time zones | yes, with a misfire policy | yes | yes; durable schedule with Pro | yes |
+| Transactional enqueue | yes | yes | yes | no |
+| Cancel a running job | yes | yes | yes | yes, best effort |
+| Pause a queue | yes | third party | yes | yes |
+| Dashboard | in the module | in the package | separate app (River UI) | separate app (Asynqmon) |
+| OpenTelemetry | `kilnotel` | contrib package | `rivercontrib` | Prometheus metrics |
+
+Moving a Hangfire application over? [Coming from Hangfire](docs/hangfire.md) maps its calls and attributes
+to kiln's, one by one.
+
+## Performance
+
+On an Apple M4 Max, with PostgreSQL and MySQL in Docker on the same machine:
+
+| | PostgreSQL | MySQL 8.4 | SQLite |
+|---|---|---|---|
+| Bulk insert | ~250k jobs/s | ~77k jobs/s | ~300k jobs/s |
+| One server, 100 workers, no-op handler | ~21k jobs/s | ~6k jobs/s | ~70k jobs/s |
+| Enqueue to handler start | p50 3.3ms | ~5–20ms with `redisbus` | p50 0.16ms in the same process |
+
+Against [River](https://github.com/riverqueue/river) on the same PostgreSQL, kiln drains no-op jobs about
+as fast as River tuned to a 1ms fetch cooldown, and 20 times faster than River's defaults.
+[Performance](docs/performance.md) has the full numbers and how they were measured.
+
+## Documentation
+
+- [API reference](https://pkg.go.dev/github.com/rafaelaugustos/kiln) on pkg.go.dev
+- [Storage backends](docs/backends.md): what each database needs, wakeups and the Redis bus
+- [Operating kiln](docs/operating.md): timings, dead workers, connections, polling and health checks
+- [Upgrading](docs/upgrading.md): rolling deploys and what each release changes in the schema
+- [Coming from Hangfire](docs/hangfire.md): Hangfire calls and their kiln equivalents
+- [Performance](docs/performance.md): benchmarks, and the comparison with River
+- [Changelog](CHANGELOG.md)
+
+## Status
+
+kiln is young, and its API can still change between minor versions before 1.0. Every change is listed in
+the [changelog](CHANGELOG.md), and each release is tested against the previous one running on the same
+database, so a rolling upgrade from one version to the next keeps working.
+
+## Contributing
+
+Bug reports, questions and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) explains how to
+run the tests against each database; security issues go through [SECURITY.md](SECURITY.md).
 
 ## License
 
