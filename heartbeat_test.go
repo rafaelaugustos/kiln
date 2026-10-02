@@ -63,7 +63,7 @@ func TestServerRequeuesLostClaim(t *testing.T) {
 		t.Fatalf("claim: %v %v", jobs, err)
 	}
 	r := waitState(t, c, id, Enqueued)
-	if !slices.Equal(reasons(r), []string{"lost"}) || r.Attempt != 1 {
+	if !slices.Equal(reasons(r), []string{"lost"}) || r.Attempt != 0 {
 		t.Fatalf("reasons %v attempt %d", reasons(r), r.Attempt)
 	}
 }

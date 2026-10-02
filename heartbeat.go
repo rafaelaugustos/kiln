@@ -84,7 +84,7 @@ func (s *Server) reconcile(leases []driver.Lease, seq uint64) {
 				t.cancel(ErrCanceled)
 			}
 		case l.Age > 2*s.cfg.HeartbeatInterval && l.Age > claiming:
-			lost = append(lost, pending{Ref: l.Ref, State: driver.Enqueued, Reason: "lost", Error: ErrLost.Error()})
+			lost = append(lost, pending{Ref: l.Ref, State: driver.Enqueued, Refund: true, Reason: "lost", Error: ErrLost.Error()})
 		}
 	}
 	for id, t := range s.tasks {
