@@ -189,7 +189,8 @@ type Orphan struct {
 	Attempt     int
 	MaxAttempts int
 	Server      string
-	Cancel      bool // deletion was requested
+	Cancel      bool   // deletion was requested
+	LastReason  string // the reason of the latest entry in its history, "" if it has none
 }
 
 // Promoted is what [Coordinator.Promote] did.

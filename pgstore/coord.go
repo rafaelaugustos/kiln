@@ -45,7 +45,8 @@ FROM u`
 
 const sqlNextDue = `SELECT (extract(epoch FROM min(run_at) - now()) * 1000000)::bigint FROM {s}.jobs WHERE state = 'scheduled'`
 
-const sqlOrphans = `SELECT j.id, j.claim, j.kind, j.queue, j.attempt, j.max_attempts, coalesce(j.server, ''), j.cancel_requested
+const sqlOrphans = `SELECT j.id, j.claim, j.kind, j.queue, j.attempt, j.max_attempts, coalesce(j.server, ''), j.cancel_requested,
+	coalesce(j.history -> -1 ->> 'reason', '')
 FROM {s}.jobs j
 WHERE j.state = 'processing' AND NOT EXISTS (
 	SELECT 1 FROM {s}.servers s
@@ -125,7 +126,7 @@ func (s *Store) Orphans(ctx context.Context, deadAfter time.Duration, limit int)
 	var out []driver.Orphan
 	for rows.Next() {
 		var o driver.Orphan
-		if err := rows.Scan(&o.ID, &o.Claim, &o.Kind, &o.Queue, &o.Attempt, &o.MaxAttempts, &o.Server, &o.Cancel); err != nil {
+		if err := rows.Scan(&o.ID, &o.Claim, &o.Kind, &o.Queue, &o.Attempt, &o.MaxAttempts, &o.Server, &o.Cancel, &o.LastReason); err != nil {
 			return nil, fmt.Errorf("kiln: orphans: %w", err)
 		}
 		out = append(out, o)

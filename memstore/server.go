@@ -82,6 +82,7 @@ func (s *Store) Orphans(_ context.Context, deadAfter time.Duration, limit int) (
 				MaxAttempts: j.maxAttempts,
 				Server:      j.server,
 				Cancel:      j.cancel,
+				LastReason:  j.lastReason(),
 			})
 		}
 	}

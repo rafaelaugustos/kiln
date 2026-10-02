@@ -36,7 +36,8 @@ ORDER BY run_at LIMIT ? FOR UPDATE SKIP LOCKED`
 
 const sqlPromote = `UPDATE {p}jobs SET state = IF(limit_key IS NULL, 'enqueued', 'throttled') WHERE id IN (?)`
 
-const sqlOrphans = `SELECT j.id, j.claim, j.kind, j.queue, j.attempt, j.max_attempts, COALESCE(j.server, ''), j.cancel_requested
+const sqlOrphans = `SELECT j.id, j.claim, j.kind, j.queue, j.attempt, j.max_attempts, COALESCE(j.server, ''), j.cancel_requested,
+	COALESCE(j.history ->> '$[last].reason', '')
 FROM {p}jobs j
 WHERE j.state = 'processing' AND NOT EXISTS (
 	SELECT 1 FROM {p}servers s WHERE s.id = j.server AND s.heartbeat_at > UTC_TIMESTAMP(6) - INTERVAL ? MICROSECOND)
@@ -198,7 +199,7 @@ func (s *Store) Orphans(ctx context.Context, deadAfter time.Duration, limit int)
 	var out []driver.Orphan
 	for rows.Next() {
 		var o driver.Orphan
-		if err := rows.Scan(&o.ID, &o.Claim, &o.Kind, &o.Queue, &o.Attempt, &o.MaxAttempts, &o.Server, &o.Cancel); err != nil {
+		if err := rows.Scan(&o.ID, &o.Claim, &o.Kind, &o.Queue, &o.Attempt, &o.MaxAttempts, &o.Server, &o.Cancel, &o.LastReason); err != nil {
 			return nil, fmt.Errorf("kiln: orphans: %w", err)
 		}
 		out = append(out, o)

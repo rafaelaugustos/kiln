@@ -102,6 +102,13 @@ func (j *job) dep(parent int64, batch bool) *dep {
 	return nil
 }
 
+func (j *job) lastReason() string {
+	if len(j.history) == 0 {
+		return ""
+	}
+	return j.history[len(j.history)-1].Reason
+}
+
 func (j *job) parents() []int64 {
 	var ids []int64
 	for _, d := range j.deps {

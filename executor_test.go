@@ -210,7 +210,9 @@ func TestOrphanOutcome(t *testing.T) {
 		state State
 		delay time.Duration
 	}{
-		{driver.Orphan{Kind: "slow", Attempt: 1, MaxAttempts: 3}, Scheduled, time.Minute},
+		{driver.Orphan{Kind: "slow", Attempt: 1, MaxAttempts: 3}, Enqueued, 0},
+		{driver.Orphan{Kind: "slow", Attempt: 1, MaxAttempts: 3, LastReason: "retry"}, Enqueued, 0},
+		{driver.Orphan{Kind: "slow", Attempt: 2, MaxAttempts: 3, LastReason: "orphaned"}, Scheduled, time.Minute},
 		{driver.Orphan{Kind: "slow", Attempt: 3, MaxAttempts: 3}, Failed, 0},
 		{driver.Orphan{Kind: "slow", Attempt: 1, MaxAttempts: 3, Cancel: true}, Deleted, 0},
 	}
@@ -248,7 +250,7 @@ func TestOutcomeRecoversPanics(t *testing.T) {
 		}
 	}
 	s := &Server{mux: m, log: slog.New(slog.DiscardHandler), logged: make(map[string]time.Time)}
-	if o := s.orphaned(driver.Orphan{Kind: "backoff", Attempt: 1, MaxAttempts: 3}); o.State != Scheduled || o.Delay <= 0 {
+	if o := s.orphaned(driver.Orphan{Kind: "backoff", Attempt: 1, MaxAttempts: 3, LastReason: "orphaned"}); o.State != Scheduled || o.Delay <= 0 {
 		t.Errorf("orphaned outcome %+v", o)
 	}
 }
