@@ -100,8 +100,7 @@ SELECT CONCAT('key', n), n % 3, 0, n % 2 * 10, 1000000, 1, IF(n % 4 = 0, UTC_TIM
 		{"declared limits", "PRIMARY", render(s.q.declared, []string{"key48", "key7"})},
 		{"limit page", "PRIMARY", render(s.q.limitPage, "key10", 100)},
 		{"enqueue", "PRIMARY", render(s.q.enqueue, []int64{1048, 2048})},
-		{"account", "PRIMARY", render("UPDATE kiln_limits SET active = CASE limit_key WHEN ? THEN 1 END, "+
-			"tat = CASE limit_key WHEN ? THEN ? ELSE tat END WHERE limit_key IN (?)", "key48", "key48", time.Now(), []string{"key48"})},
+		{"account", "PRIMARY", s.accountSQL(map[string]*slot{"key48": {active: 1, tat: time.Now(), admitTat: time.Now(), dirty: true, paced: true}})},
 		{"throttled keys", "jobs_throttled", render(s.q.throttledKeys, 100)},
 		{"stuck", "jobs_state", render(s.q.awaiting, 0, 100)},
 		{"delete by state", "jobs_state", render(s.q.lockTargets, raw("jobs_state"), raw("j.state = 'enqueued'"), 0)},
