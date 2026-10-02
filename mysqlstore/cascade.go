@@ -111,6 +111,16 @@ func (s *Store) settle(ctx context.Context, q querier, f *fallout) error {
 			return err
 		}
 	}
+	if len(f.parents) > 0 {
+		if err := s.resolve(ctx, q, f); err != nil {
+			return err
+		}
+	}
+	if len(f.batches) > 0 {
+		if err := s.complete(ctx, q, f); err != nil {
+			return err
+		}
+	}
 	var slots map[string]*slot
 	if len(f.release) > 0 {
 		var err error
@@ -122,16 +132,6 @@ func (s *Store) settle(ctx context.Context, q querier, f *fallout) error {
 				sl.active = max(sl.active-n, 0)
 				sl.dirty = true
 			}
-		}
-	}
-	if len(f.parents) > 0 {
-		if err := s.resolve(ctx, q, f); err != nil {
-			return err
-		}
-	}
-	if len(f.batches) > 0 {
-		if err := s.complete(ctx, q, f); err != nil {
-			return err
 		}
 	}
 	var extra []string

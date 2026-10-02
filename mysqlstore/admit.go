@@ -263,6 +263,15 @@ func (s *Store) place(ctx context.Context, q querier, a admitted) error {
 }
 
 func (s *Store) account(ctx context.Context, q querier, slots map[string]*slot) error {
+	stmt := s.accountSQL(slots)
+	if stmt == "" {
+		return nil
+	}
+	_, err := q.ExecContext(ctx, stmt)
+	return err
+}
+
+func (s *Store) accountSQL(slots map[string]*slot) string {
 	var (
 		dirty []string
 		paced bool
@@ -274,7 +283,7 @@ func (s *Store) account(ctx context.Context, q querier, slots map[string]*slot) 
 		}
 	}
 	if len(dirty) == 0 {
-		return nil
+		return ""
 	}
 	b := make([]byte, 0, 176+136*len(dirty))
 	b = append(b, "UPDATE "...)
@@ -300,6 +309,5 @@ func (s *Store) account(ctx context.Context, q querier, slots map[string]*slot) 
 		b = append(b, " ELSE admit_tat END"...)
 	}
 	b = appendSQL(b, " WHERE limit_key IN (?)", dirty)
-	_, err := q.ExecContext(ctx, string(b))
-	return err
+	return string(b)
 }

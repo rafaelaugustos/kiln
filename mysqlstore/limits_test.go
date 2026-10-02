@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"testing"
+	"time"
 
 	"github.com/rafaelaugustos/kiln/driver"
 )
@@ -59,5 +60,45 @@ func TestInsertRestoresVanishedLimit(t *testing.T) {
 	}
 	if in.res[0].State != driver.Enqueued || len(in.late) != 0 {
 		t.Fatalf("inserted %+v, late %v", in.res, in.late)
+	}
+}
+
+func TestDeleteBesideFinishingParent(t *testing.T) {
+	t.Parallel()
+	s := open(t)
+	ctx := context.Background()
+	res := insert(t, s, job("p", limited("k", 5)), job("e", limited("k", 5)))
+	child := insert(t, s, job("c", after(driver.OnSucceeded, res[0].ID)))[0].ID
+	j := claim(t, s, 1)[0]
+	held := begin(t, s)
+	var id int64
+	if err := held.QueryRow(render("SELECT job_id FROM kiln_deps WHERE batch = FALSE AND parent_id = ? FOR UPDATE", j.ID)).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	finished := make(chan error, 1)
+	go func() {
+		_, err := s.Finish(ctx, "srv", []driver.Outcome{{Ref: j.Ref, State: driver.Succeeded}})
+		finished <- err
+	}()
+	time.Sleep(200 * time.Millisecond)
+	soon, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if n, err := s.Delete(soon, driver.Filter{IDs: []int64{child, res[1].ID}}); err != nil || n != 2 {
+		t.Fatalf("delete while the parent's finish waits for its children: %d %v", n, err)
+	}
+	if err := held.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-finished; err != nil {
+		t.Fatal(err)
+	}
+	want := map[int64]driver.State{j.ID: driver.Succeeded, child: driver.Deleted, res[1].ID: driver.Deleted}
+	for id, st := range want {
+		if r := record(t, s, id); r.State != st {
+			t.Fatalf("job %d is %s, want %s", id, r.State, st)
+		}
+	}
+	if n := count(t, s, "SELECT active FROM kiln_limits WHERE limit_key = 'k'"); n != 0 {
+		t.Fatalf("%d slots still taken", n)
 	}
 }

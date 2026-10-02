@@ -14,26 +14,15 @@ import (
 
 const chunk = 1000
 
-const sqlDelete = `WITH t AS MATERIALIZED (
-	SELECT j.id, j.state, j.unique_key, j.limit_key, j.batch_id, j.cancel_requested
-	FROM {s}.jobs j WHERE %s AND j.id > $1
+const sqlDelete = `WITH w AS MATERIALIZED (
+	SELECT j.id, j.state = 'awaiting' AS late FROM {s}.jobs j WHERE %s AND j.id > $1
 	ORDER BY j.id
 	LIMIT 1000
+), t AS MATERIALIZED (
+	SELECT j.id, j.state, j.unique_key, j.limit_key, j.batch_id, j.cancel_requested
+	FROM {s}.jobs j WHERE j.id = ANY(ARRAY(SELECT id FROM w WHERE NOT late)) AND %s
+	ORDER BY j.id
 	FOR NO KEY UPDATE OF j
-), c AS (
-	UPDATE {s}.jobs j SET cancel_requested = true
-	WHERE j.id = ANY(ARRAY(SELECT id FROM t WHERE state = 'processing' AND NOT cancel_requested))
-	RETURNING j.id
-), a AS (
-	DELETE FROM {s}.jobs j WHERE j.id = ANY(ARRAY(SELECT id FROM t WHERE state <> 'processing'))
-	RETURNING ` + movedColumns + `
-), ar AS (
-	INSERT INTO {s}.archive (` + archiveColumns + `)
-	SELECT a.id, 'deleted', a.queue, a.kind, a.priority, a.attempt, a.max_attempts, a.claim, a.timeout_ms, a.run_at,
-		a.created_at, a.attempted_at, now(), a.server, a.batch_id, a.after_batch, a.parents, a.recurring_id,
-		a.unique_key, a.limit_key, a.args, a.meta, a.tags,
-		{s}.push(a.history, {s}.entry('deleted', a.attempt, 'deleted', '', '', NULL)), NULL
-	FROM a
 ), r AS (
 	DELETE FROM {s}.uniques q WHERE q.key = ANY(ARRAY(
 		SELECT h.key FROM {s}.uniques h JOIN t ON h.key = t.unique_key AND h.job_id = t.id
@@ -55,8 +44,38 @@ const sqlDelete = `WITH t AS MATERIALIZED (
 	UPDATE {s}.limits l SET active = greatest(l.active - n.n, 0)
 	FROM (SELECT limit_key, count(*) AS n FROM t WHERE state = 'enqueued' AND limit_key IS NOT NULL GROUP BY limit_key) n
 	WHERE l.key = n.limit_key AND l.key IN (SELECT key FROM k)
+), v AS MATERIALIZED (
+	SELECT j.id, j.state, j.unique_key, j.limit_key, j.batch_id, j.cancel_requested
+	FROM {s}.jobs j WHERE j.id = ANY(ARRAY(SELECT id FROM w WHERE late)) AND %s
+		AND (j.state <> 'enqueued' OR j.limit_key IS NULL) AND (SELECT count(*) FROM k) >= 0
+	ORDER BY j.id
+	FOR NO KEY UPDATE OF j
+), rv AS (
+	DELETE FROM {s}.uniques q WHERE q.key = ANY(ARRAY(
+		SELECT h.key FROM {s}.uniques h JOIN v ON h.key = v.unique_key AND h.job_id = v.id
+		WHERE v.state <> 'processing'
+		ORDER BY h.key
+		FOR UPDATE OF h))
+), x AS (
+	SELECT id, state, batch_id, cancel_requested FROM t
+	UNION ALL SELECT id, state, batch_id, cancel_requested FROM v
+), c AS (
+	UPDATE {s}.jobs j SET cancel_requested = true
+	WHERE j.id = ANY(ARRAY(SELECT id FROM x WHERE state = 'processing' AND NOT cancel_requested))
+	RETURNING j.id
+), a AS (
+	DELETE FROM {s}.jobs j WHERE j.id = ANY(ARRAY(SELECT id FROM x WHERE state <> 'processing'))
+	RETURNING ` + movedColumns + `
+), ar AS (
+	INSERT INTO {s}.archive (` + archiveColumns + `)
+	SELECT a.id, 'deleted', a.queue, a.kind, a.priority, a.attempt, a.max_attempts, a.claim, a.timeout_ms, a.run_at,
+		a.created_at, a.attempted_at, now(), a.server, a.batch_id, a.after_batch, a.parents, a.recurring_id,
+		a.unique_key, a.limit_key, a.args, a.meta, a.tags,
+		{s}.push(a.history, {s}.entry('deleted', a.attempt, 'deleted', '', '', NULL)), NULL
+	FROM a
 )
-SELECT t.id, t.state::text, coalesce(t.batch_id, 0), t.id IN (SELECT id FROM c) FROM t ORDER BY t.id`
+SELECT w.id, coalesce(x.state::text, ''), coalesce(x.batch_id, 0), w.id IN (SELECT id FROM c)
+FROM w LEFT JOIN x ON x.id = w.id ORDER BY w.id`
 
 const sqlLockBatches = `SELECT id FROM {s}.batches WHERE id = ANY($1) AND finished_at IS NULL ORDER BY id FOR NO KEY UPDATE`
 
@@ -164,7 +183,7 @@ func (s *Store) Delete(ctx context.Context, f driver.Filter) (int, error) {
 		return 0, nil
 	}
 	cond, args := filterSQL(f, []any{int64(0)})
-	q := fmt.Sprintf(s.q.delete, cond)
+	q := fmt.Sprintf(s.q.delete, cond, cond, cond)
 	total := 0
 	for {
 		n, last, err := s.deleteChunk(ctx, q, args)
@@ -202,6 +221,7 @@ func (s *Store) deleteChunk(ctx context.Context, q string, args []any) (int, int
 				rows++
 				last = id
 				switch {
+				case state == "":
 				case state != string(driver.Processing):
 					deleted = append(deleted, id)
 					if batch != 0 && !slices.Contains(batches, batch) {

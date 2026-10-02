@@ -308,3 +308,47 @@ func TestPromoteAdmitsThrottledGrant(t *testing.T) {
 		t.Fatalf("sweep changed %d rows, %v, want nothing to repair", n, err)
 	}
 }
+
+func TestDeleteBesideFinishingParent(t *testing.T) {
+	t.Parallel()
+	s := open(t)
+	ctx := context.Background()
+	res := insert(t, s, job("p", limited("k", 5)), job("e", limited("k", 5)))
+	child := insert(t, s, job("c", after(driver.OnSucceeded, res[0].ID)))[0].ID
+	j := claim(t, s, 1)[0]
+	held, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Rollback(ctx)
+	if _, err := held.Exec(ctx, "SELECT 1 FROM "+s.schema+".deps WHERE NOT batch AND parent_id = $1 FOR UPDATE", j.ID); err != nil {
+		t.Fatal(err)
+	}
+	finished, deleted := make(chan error, 1), make(chan error, 1)
+	go func() {
+		_, err := s.Finish(ctx, "srv", []driver.Outcome{{Ref: j.Ref, State: driver.Succeeded}})
+		finished <- err
+	}()
+	time.Sleep(200 * time.Millisecond)
+	go func() {
+		_, err := s.Delete(ctx, driver.Filter{IDs: []int64{child, res[1].ID}})
+		deleted <- err
+	}()
+	time.Sleep(200 * time.Millisecond)
+	if err := held.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-finished; err != nil {
+		t.Fatalf("finish: %v", err)
+	}
+	if err := <-deleted; err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	want := map[int64]driver.State{j.ID: driver.Succeeded, child: driver.Deleted, res[1].ID: driver.Deleted}
+	for id, st := range want {
+		if r := record(t, s, id); r.State != st {
+			t.Fatalf("job %d is %s, want %s", id, r.State, st)
+		}
+	}
+	wantLimit(t, s, "k", 5, 0)
+}

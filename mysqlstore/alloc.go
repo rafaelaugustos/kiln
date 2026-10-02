@@ -20,22 +20,31 @@ type side struct {
 }
 
 func (c *side) exec(ctx context.Context, query string) (sql.Result, error) {
+	var r sql.Result
+	err := c.run(ctx, func(conn *sql.Conn) (err error) {
+		r, err = conn.ExecContext(ctx, query)
+		return err
+	})
+	return r, err
+}
+
+func (c *side) run(ctx context.Context, fn func(conn *sql.Conn) error) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for try := 0; ; try++ {
 		if c.closed {
-			return nil, sql.ErrConnDone
+			return sql.ErrConnDone
 		}
 		if c.conn == nil {
 			conn, err := c.db.Conn(ctx)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			c.conn = conn
 		}
-		r, err := c.conn.ExecContext(ctx, query)
+		err := fn(c.conn)
 		if err == nil || try > 0 || !broken(err) {
-			return r, err
+			return err
 		}
 		c.conn.Close()
 		c.conn = nil
