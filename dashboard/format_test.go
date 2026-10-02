@@ -19,6 +19,15 @@ func TestNum(t *testing.T) {
 	}
 }
 
+func TestShort(t *testing.T) {
+	t.Parallel()
+	for in, want := range map[int64]string{42: "42", 99999: "99,999", 100000: "100k", 167412: "167.4k", 1234567: "1.2M", 12345678: "12.3M"} {
+		if got := short(in); got != want {
+			t.Errorf("short(%d) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestAgo(t *testing.T) {
 	t.Parallel()
 	now := time.Now()

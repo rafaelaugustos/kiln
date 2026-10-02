@@ -55,6 +55,13 @@ func (c *counts) text(n int64) string {
 	return num(n)
 }
 
+func (c *counts) short(n int64) string {
+	if c.Capped && n >= countCap {
+		return short(n) + "+"
+	}
+	return short(n)
+}
+
 type snapshot struct {
 	Counts    counts `json:"counts"`
 	Servers   int    `json:"servers"`
@@ -135,6 +142,7 @@ type stat struct {
 	State driver.State
 	N     int64
 	Value string
+	Short string
 	URL   string
 	Sub   *stat
 }
@@ -208,14 +216,14 @@ func (h *handler) overview(w http.ResponseWriter, r *http.Request) {
 	c := &s.Counts
 	state := func(st driver.State, note string) stat {
 		n := c.of(st)
-		return stat{Key: string(st), Label: label(st), Note: note, State: st, N: n, Value: c.text(n), URL: h.link("/jobs/", st)}
+		return stat{Key: string(st), Label: label(st), Note: note, State: st, N: n, Value: c.text(n), Short: c.short(n), URL: h.link("/jobs/", st)}
 	}
 	scheduled := state(driver.Scheduled, "")
 	scheduled.Sub = &stat{Key: "retries", Label: "retrying", N: c.Retries, Value: c.text(c.Retries), URL: h.link("/retries")}
 	succeeded := state(driver.Succeeded, "all time")
-	succeeded.Value = num(c.Succeeded)
+	succeeded.Value, succeeded.Short = num(c.Succeeded), short(c.Succeeded)
 	deleted := state(driver.Deleted, "all time")
-	deleted.Value = num(c.Deleted)
+	deleted.Value, deleted.Short = num(c.Deleted), short(c.Deleted)
 	p := &overviewPage{
 		snapshot: s,
 		Mood:     mood(s),
