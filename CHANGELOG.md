@@ -3,6 +3,19 @@
 Every module in this repository (`kiln`, `pgstore`, `mysqlstore`, `sqlitestore`, `kilnotel`, `redisbus`) is
 released together under the same version. The GitHub releases have the full notes.
 
+## v0.4.1 (2026-10-02)
+
+### Fixed
+- mysqlstore: an insert no longer waits behind a limits row that another transaction holds. Only an insert
+  that changes that key's rule does. A held row used to stall every insert in the process, with or without
+  a limit.
+- Delete and `Finish` no longer deadlock over a limits row when a job is deleted while its parent finishes
+  (pgstore and mysqlstore).
+
+### Documentation
+- Doc comments on the store packages: `memstore`, `drivertest`, `pgstore`, `mysqlstore` and `sqlitestore`.
+- `sqlitestore` needs SQLite 3.38 or later; it was documented as 3.35.
+
 ## v0.4.0 (2026-10-02)
 
 ### Added
