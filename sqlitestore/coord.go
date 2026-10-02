@@ -33,7 +33,7 @@ WHERE id IN (SELECT id FROM {p}jobs WHERE state = 'scheduled' AND run_at <= {now
 RETURNING {now}, queue, COALESCE(limit_key, '')`
 
 const sqlOrphans = `SELECT j.id, j.claim, j.kind, j.queue, j.attempt, j.max_attempts, COALESCE(j.server, ''),
-	j.cancel_requested
+	j.cancel_requested, COALESCE(j.history ->> '$[#-1].reason', '')
 FROM {p}jobs j
 WHERE j.state = 'processing' AND NOT EXISTS (
 	SELECT 1 FROM {p}servers s WHERE s.id = j.server AND s.heartbeat_at > {now} - ?)
@@ -168,7 +168,7 @@ func (s *Store) Orphans(ctx context.Context, deadAfter time.Duration, limit int)
 	rows, err := s.db.QueryContext(ctx, s.q.orphans, micros(deadAfter), max(limit, 1))
 	err = each(rows, err, func() error {
 		var o driver.Orphan
-		if err := rows.Scan(&o.ID, &o.Claim, &o.Kind, &o.Queue, &o.Attempt, &o.MaxAttempts, &o.Server, &o.Cancel); err != nil {
+		if err := rows.Scan(&o.ID, &o.Claim, &o.Kind, &o.Queue, &o.Attempt, &o.MaxAttempts, &o.Server, &o.Cancel, &o.LastReason); err != nil {
 			return err
 		}
 		out = append(out, o)

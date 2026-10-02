@@ -161,6 +161,8 @@ func (s *Server) orphaned(o driver.Orphan) driver.Outcome {
 		out.State = driver.Deleted
 	case o.Attempt >= o.MaxAttempts:
 		out.State = driver.Failed
+	case o.LastReason != "orphaned":
+		out.State = driver.Enqueued
 	default:
 		out.State = driver.Scheduled
 		out.Delay = s.retryDelay(o.Kind, o.Attempt, err)

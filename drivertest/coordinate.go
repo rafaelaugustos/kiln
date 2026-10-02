@@ -21,6 +21,7 @@ var coordinateTests = []test{
 	{"HeartbeatStarted", testHeartbeatStarted},
 	{"Unregister", testUnregister},
 	{"Orphans", testOrphans},
+	{"OrphanReason", testOrphanReason},
 	{"Sweep", testSweep},
 	{"Prune", testPrune},
 	{"PruneLimit", testPruneLimit},
@@ -384,6 +385,23 @@ func testUnregister(t *testing.T, s driver.Store) {
 	}
 	if got := orphanIDs(orphans(t, s, time.Hour, 10)); !slices.Equal(got, []int64{j.ID}) {
 		t.Fatalf("orphans %v, want [%d]", got, j.ID)
+	}
+}
+
+func testOrphanReason(t *testing.T, s driver.Store) {
+	add(t, s, task("r"))
+	j := claimAs(t, s, "ghost", 1, "r")[0]
+	o := outcome(j, driver.Enqueued)
+	o.Reason = "orphaned"
+	apply(t, s, o)
+	j = claimAs(t, s, "ghost", 1, "r")[0]
+	for _, o := range orphans(t, s, time.Hour, 10) {
+		if o.ID == j.ID && o.LastReason != "orphaned" {
+			t.Fatalf("orphan %+v, want LastReason orphaned", o)
+		}
+	}
+	if os := orphans(t, s, time.Hour, 10); !slices.ContainsFunc(os, func(o driver.Orphan) bool { return o.ID == j.ID }) {
+		t.Fatalf("orphans %v, want job %d", orphanIDs(os), j.ID)
 	}
 }
 

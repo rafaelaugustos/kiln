@@ -378,11 +378,12 @@ together after a stall.
 
 **Recovering from a dead worker.** A server that exits cleanly finishes its running jobs, or hands them
 back, before `Run` returns. A server that dies is noticed after `DeadAfter`, and within one more
-`HeartbeatInterval` its jobs are rescued and retried with the job's backoff, like a failed attempt: 15 to
-45 seconds for a first retry with the default backoff. With the defaults, a job whose worker was killed
-starts again after roughly 75 to 110 seconds. If the dead server was also the leader, a new leader takes
-over after `LeaderTTL` and waits `DeadAfter + HeartbeatInterval` before rescuing anything, which adds
-about 20 seconds. Lower `DeadAfter` (it must stay above `3*HeartbeatInterval + KillGrace + 5s`) to
+`HeartbeatInterval` its jobs are rescued: they go straight back to their queues, and the rescued attempt
+counts toward `MaxAttempts`. With the defaults, a job whose worker was killed starts again after roughly
+60 to 70 seconds. A job rescued twice in a row waits for its backoff before the next attempt, so a job that
+takes down the process running it is not handed from worker to worker without a pause. If the dead server
+was also the leader, a new leader takes over after `LeaderTTL` and waits `DeadAfter + HeartbeatInterval`
+before rescuing anything, which adds about 20 seconds. Lower `DeadAfter` (it must stay above `3*HeartbeatInterval + KillGrace + 5s`) to
 notice dead workers sooner, and keep long jobs resumable with `SetParam` checkpoints.
 
 **Connections.** `pgstore` opens its own pool (`MaxConns`, 8 by default) plus one connection for
