@@ -414,7 +414,8 @@ On an Apple M4 Max, with PostgreSQL and MySQL in Docker on the same machine:
 
 Against [River](https://github.com/riverqueue/river) on the same PostgreSQL, kiln drains no-op jobs about
 as fast as River tuned to a 1ms fetch cooldown, and 20 times faster than River's defaults.
-[Performance](docs/performance.md) has the full numbers and how they were measured.
+[Performance](docs/performance.md) has the full numbers and how they were measured, along with a run under a
+production-like load: a shop backend whose payment jobs share a 20-per-second gateway, on all four stores.
 
 ## Documentation
 
