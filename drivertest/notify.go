@@ -2,6 +2,7 @@ package drivertest
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"sync"
 	"testing"
@@ -80,7 +81,20 @@ func subscribe(t *testing.T, s driver.Store) *events {
 			t.Error("subscribe did not return after its context was canceled")
 		}
 	})
-	e.wait(t, driver.Event{Kind: driver.Resync})
+	deadline := time.Now().Add(2 * time.Second)
+	for !e.has(driver.Event{Kind: driver.Resync}) {
+		select {
+		case <-done:
+			if errors.Is(err, errors.ErrUnsupported) {
+				t.Skip("store is not configured to notify")
+			}
+			t.Fatalf("subscribe returned before its context was canceled: %v", err)
+		case <-time.After(5 * time.Millisecond):
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no resync after subscribe")
+		}
+	}
 	select {
 	case <-done:
 		t.Fatalf("subscribe returned before its context was canceled: %v", err)

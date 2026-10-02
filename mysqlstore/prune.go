@@ -54,6 +54,7 @@ FROM {p}uniques WHERE unique_key > ? ORDER BY unique_key LIMIT ?`
 const sqlUnusedLimits = `SELECT l.limit_key FROM {p}limits l
 WHERE l.active = 0 AND (l.declared_at IS NULL OR l.declared_at < UTC_TIMESTAMP(6) - INTERVAL 1 HOUR)
 	AND (l.tat IS NULL OR l.tat <= UTC_TIMESTAMP(6))
+	AND (l.admit_tat IS NULL OR l.admit_tat <= UTC_TIMESTAMP(6))
 	AND NOT EXISTS (SELECT 1 FROM {p}jobs j WHERE j.limit_key = l.limit_key)
 	AND NOT EXISTS (SELECT 1 FROM {p}archive a WHERE a.limit_key = l.limit_key)
 LIMIT ?
@@ -229,14 +230,16 @@ func (s *Store) pruneArchive(ctx context.Context, state driver.State, keep time.
 }
 
 func (s *Store) pruneFailed(ctx context.Context, keep time.Duration, limit int) (int, error) {
-	n := 0
+	var (
+		n int
+		f *fallout
+	)
 	err := s.txn(ctx, func(tx *sql.Tx) error {
-		n = 0
+		n, f = 0, &fallout{}
 		rows, err := tx.QueryContext(ctx, render(s.q.expiredFailed, micros(keep), limit))
 		if err != nil {
 			return err
 		}
-		f := &fallout{}
 		var ids []int64
 		for rows.Next() {
 			var (
@@ -269,7 +272,11 @@ func (s *Store) pruneFailed(ctx context.Context, keep time.Duration, limit int) 
 		n = len(ids)
 		return s.settle(ctx, tx, f)
 	})
-	return n, err
+	if err != nil {
+		return 0, err
+	}
+	s.nt.ready(f.queues)
+	return n, nil
 }
 
 func (s *Store) pruneStats(ctx context.Context, keep time.Duration, limit int) (int, error) {

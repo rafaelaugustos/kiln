@@ -3,8 +3,8 @@ package mysqlstore
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
-	"maps"
 	"math/rand/v2"
 	"slices"
 	"time"
@@ -52,25 +52,25 @@ func (s *Store) once(ctx context.Context, fn func(tx *sql.Tx) error) error {
 }
 
 type TxWriter struct {
-	s      *Store
-	tx     *sql.Tx
-	limits map[string]rule
-	lost   error
+	s    *Store
+	tx   *sql.Tx
+	wake wake
+	lost error
 }
 
 func (w *TxWriter) Insert(ctx context.Context, jobs []driver.InsertParams) ([]driver.Inserted, error) {
 	var (
-		res    []driver.Inserted
-		limits map[string]rule
+		res []driver.Inserted
+		wk  wake
 	)
 	err := w.atomic(ctx, func() (err error) {
-		res, limits, err = w.s.insert(ctx, w.tx, jobs)
+		res, wk, err = w.s.insert(ctx, w.tx, jobs)
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	w.remember(limits)
+	w.wake.merge(wk)
 	return res, nil
 }
 
@@ -84,7 +84,23 @@ func (w *TxWriter) OpenBatch(ctx context.Context, nb driver.NewBatch) (int64, er
 }
 
 func (w *TxWriter) SealBatch(ctx context.Context, id int64) error {
-	return w.atomic(ctx, func() error { return w.s.sealBatch(ctx, w.tx, id) })
+	var f *fallout
+	err := w.atomic(ctx, func() (err error) {
+		f, err = w.s.seal(ctx, w.tx, id)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	w.wake.queues = merge(w.wake.queues, f.queues...)
+	return nil
+}
+
+func (w *TxWriter) Notify(ctx context.Context) error {
+	wk := w.wake
+	w.wake = wake{}
+	err := w.s.admitLate(ctx, &wk)
+	return errors.Join(err, w.s.publish(ctx, wk.queues))
 }
 
 func (w *TxWriter) atomic(ctx context.Context, fn func() error) error {
@@ -117,23 +133,12 @@ func (s *Store) InTx(ctx context.Context, fn func(w driver.Writer) error) error 
 	if err != nil {
 		return err
 	}
-	if len(w.limits) > 0 {
-		s.admitKeys(ctx, w.limits)
-	}
+	s.admitLate(ctx, &w.wake)
+	s.nt.ready(w.wake.queues)
 	return nil
 }
 
-func (w *TxWriter) remember(limits map[string]rule) {
-	if len(limits) == 0 {
-		return
-	}
-	if w.limits == nil {
-		w.limits = make(map[string]rule, len(limits))
-	}
-	maps.Copy(w.limits, limits)
-}
-
-func merge(dst, src []string) []string {
+func merge(dst []string, src ...string) []string {
 	for _, k := range src {
 		if !slices.Contains(dst, k) {
 			dst = append(dst, k)

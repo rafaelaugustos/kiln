@@ -59,11 +59,11 @@ func (s *Store) Due(ctx context.Context, limit int) ([]driver.Recurring, time.Ti
 
 func (s *Store) Fire(ctx context.Context, f driver.Fire) ([]driver.Inserted, error) {
 	var (
-		res    []driver.Inserted
-		limits map[string]rule
+		res []driver.Inserted
+		wk  wake
 	)
 	err := s.txn(ctx, func(tx *sql.Tx) error {
-		res, limits = nil, nil
+		res, wk = nil, wake{}
 		r, err := tx.ExecContext(ctx, render(s.q.fire, f.NextRunAt, f.LastRunAt, f.ID, f.Version))
 		if err != nil {
 			return wrap("fire", err)
@@ -81,7 +81,7 @@ func (s *Store) Fire(ctx context.Context, f driver.Fire) ([]driver.Inserted, err
 		if len(f.Jobs) == 0 {
 			return nil
 		}
-		if res, limits, err = s.insert(ctx, tx, f.Jobs); err != nil {
+		if res, wk, err = s.insert(ctx, tx, f.Jobs); err != nil {
 			return err
 		}
 		var last int64
@@ -101,9 +101,8 @@ func (s *Store) Fire(ctx context.Context, f driver.Fire) ([]driver.Inserted, err
 	if err != nil {
 		return nil, err
 	}
-	if len(limits) > 0 {
-		s.admitKeys(ctx, limits)
-	}
+	s.admitLate(ctx, &wk)
+	s.nt.ready(wk.queues)
 	return res, nil
 }
 

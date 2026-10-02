@@ -172,6 +172,7 @@ func (s *Store) Insert(ctx context.Context, jobs []driver.InsertParams) ([]drive
 	if err != nil {
 		return nil, err
 	}
+	s.readmit(ctx, &w)
 	s.nt.jobs(w.queues...)
 	return res, nil
 }
@@ -368,7 +369,7 @@ func (in *inserter) queueLimits(b *pgx.Batch, items []int) {
 	}
 	b.Queue(in.s.q.limits, r.args()...)
 	if in.tx == nil {
-		b.Queue(in.s.q.admit, r.args()...).Query(in.w.scanAdmitted)
+		b.Queue(in.s.q.admit, r.args()...).QueryRow(in.w.admitted(r))
 		return
 	}
 	in.w.rules = r

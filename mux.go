@@ -17,10 +17,22 @@ func init() {
 	testhook.Dispatch = (*Mux).dispatch
 }
 
+// HandlerFunc runs one attempt of a job. Returning nil marks the job succeeded. An error made by
+// [Permanent] fails it, one made by [Snooze] reschedules it and one made by [Cancel] deletes it;
+// any other error schedules a retry, or fails the job when no attempts are left. A panic is
+// recovered and counts as a [*PanicError].
+//
+// ctx is canceled when the job is deleted, when the attempt times out, and when the server stops
+// and its ShutdownTimeout has passed, with [ErrCanceled], [ErrTimeout] or [ErrShutdown] as the
+// cause. It is also canceled when the server finds that it no longer holds the job.
 type HandlerFunc func(ctx context.Context, j *RawJob) error
 
+// Middleware wraps the handler of every kind in a [Mux]; see [Mux.Use]. It sees each attempt as a
+// [RawJob], and the handler's error, a [*PanicError] after a panic.
 type Middleware func(next HandlerFunc) HandlerFunc
 
+// Mux maps job kinds to their handlers. Register handlers with [Handle] or [Mux.HandleFunc] and
+// middleware with [Mux.Use], then give the mux to [NewServer], which freezes it.
 type Mux struct {
 	mu     sync.Mutex
 	mw     []Middleware
@@ -36,10 +48,13 @@ type route struct {
 	backoff Backoff
 }
 
+// NewMux returns a Mux with no handlers. The zero Mux is ready to use as well.
 func NewMux() *Mux {
 	return &Mux{routes: make(map[string]*route)}
 }
 
+// Use adds middleware around every handler of the mux, including handlers registered later. The
+// first middleware added is the outermost. Use panics once the mux is frozen.
 func (m *Mux) Use(mw ...Middleware) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -49,6 +64,10 @@ func (m *Mux) Use(mw ...Middleware) {
 	m.mw = append(m.mw, mw...)
 }
 
+// Handle registers h for the kind of T, the value its Kind method returns. h follows the rules of
+// [HandlerFunc], with the job's args decoded into a T; a job whose args do not decode fails
+// without retrying. Handle panics if T is a pointer or an interface type, if h is nil, if the kind
+// is invalid or already registered, or if the mux is frozen.
 func Handle[T Args](m *Mux, h func(context.Context, *Job[T]) error, opts ...HandleOption) {
 	t := reflect.TypeFor[T]()
 	if k := t.Kind(); k == reflect.Pointer || k == reflect.Interface {
@@ -67,6 +86,8 @@ func Handle[T Args](m *Mux, h func(context.Context, *Job[T]) error, opts ...Hand
 	}, opts)
 }
 
+// HandleFunc registers h for kind, leaving the job's args as JSON. It panics in the same cases as
+// [Handle].
 func (m *Mux) HandleFunc(kind string, h HandlerFunc, opts ...HandleOption) {
 	if h == nil {
 		panic("kiln: nil handler")

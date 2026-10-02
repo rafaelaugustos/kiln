@@ -1,10 +1,13 @@
 package sqlitestore
 
+import "github.com/rafaelaugustos/kiln/driver"
+
 type Option func(*config)
 
 type config struct {
 	prefix    string
 	noMigrate bool
+	bus       driver.Bus
 }
 
 func newConfig(opts []Option) config {
@@ -21,6 +24,10 @@ func Prefix(p string) Option {
 
 func NoMigrate() Option {
 	return func(c *config) { c.noMigrate = true }
+}
+
+func Bus(b driver.Bus) Option {
+	return func(c *config) { c.bus = b }
 }
 
 func validPrefix(p string) bool {

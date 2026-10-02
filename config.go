@@ -26,31 +26,97 @@ const (
 	minInterval           = time.Millisecond
 )
 
+// Forever, as a [Retention] duration, turns off pruning for the jobs of that state.
 const Forever time.Duration = -1
 
+// Pool is a set of workers shared by one or more queues. It takes jobs from Queues in order,
+// moving to a queue only when the ones before it have no job ready.
 type Pool struct {
 	Queues  []string
-	Workers int
+	Workers int // at least 1
 }
 
+// ServerConfig configures a [Server]. The zero value runs 10 workers on [DefaultQueue], with the
+// defaults given for each field. [NewServer] returns [ErrInvalid] when a field breaks its rules:
+// durations must not be negative unless the field says otherwise, and PollInterval,
+// HeartbeatInterval and LeaderTTL must be at least a millisecond.
 type ServerConfig struct {
-	Queues             map[string]int
-	Pools              []Pool
-	Name               string
-	PollInterval       time.Duration
-	FetchCooldown      time.Duration
-	FetchBatch         int
-	ShutdownTimeout    time.Duration
-	KillGrace          time.Duration
-	Timeout            Timeout
-	Backoff            Backoff
-	HeartbeatInterval  time.Duration
-	DeadAfter          time.Duration
-	LeaderTTL          time.Duration
-	Retention          Retention
+	// Queues maps queue names to worker counts; each entry becomes a pool of its own.
+	Queues map[string]int
+
+	// Pools lists pools of workers, each serving its queues in order. A queue can belong to one
+	// pool only, including the pools made from Queues.
+	Pools []Pool
+
+	// Name is reported as the host of the server and starts its ID. Empty means the machine's host
+	// name.
+	Name string
+
+	// PollInterval is how often an idle pool looks for jobs when nothing wakes it. Zero means 1s.
+	PollInterval time.Duration
+
+	// FetchCooldown is how long a pool waits after a fetch before the next one, so that a burst of
+	// wakeups ends in a single claim; a pool draining a backlog does not wait. Zero means 5ms and
+	// a negative value turns the wait off.
+	FetchCooldown time.Duration
+
+	// FetchBatch caps the jobs a pool claims in one call. Zero means the pool's worker count, and
+	// it is never more than that or 200.
+	FetchBatch int
+
+	// ShutdownTimeout is how long Run waits for running jobs once its context is canceled, before
+	// it cancels them with [ErrShutdown]. Zero means 30s.
+	ShutdownTimeout time.Duration
+
+	// KillGrace is how long Run then waits for handlers to return. Jobs still running after it go
+	// back to their queues without using up the attempt; their handlers keep running, but what
+	// they return is ignored. Zero means 5s.
+	KillGrace time.Duration
+
+	// Timeout is the time limit of an attempt when neither the job nor its kind sets one. Zero
+	// means 30m, and [NoTimeout] means none.
+	Timeout Timeout
+
+	// Backoff computes the retry delays of kinds registered without one. Nil means the formula of
+	// Hangfire: (attempt-1)^4 + 15 + rand(30)*attempt seconds, rand(30) being a random whole
+	// number below 30.
+	Backoff Backoff
+
+	// HeartbeatInterval is how often the server reports to the store. Heartbeats also bring
+	// cancellations and paused queues, and confirm that the server still holds its running jobs.
+	// Zero means 5s.
+	HeartbeatInterval time.Duration
+
+	// DeadAfter is how long a server can go without a heartbeat before its running jobs are
+	// rescued, and so retried elsewhere. It must be at least 3*HeartbeatInterval + KillGrace + 5s.
+	// A server that has not managed to heartbeat for DeadAfter - HeartbeatInterval - KillGrace
+	// fences itself: it stops fetching and cancels its running jobs until a heartbeat succeeds.
+	// Zero means 60s.
+	DeadAfter time.Duration
+
+	// LeaderTTL is the lease of the leader, the one server at a time that fires recurring jobs,
+	// rescues the jobs of dead servers, and sweeps and prunes the store. The leader renews it every
+	// LeaderTTL/3. Zero means 15s.
+	LeaderTTL time.Duration
+
+	// Retention is how long finished jobs are kept before the leader prunes them. A zero field
+	// means 24h for Succeeded and Deleted, and [Forever] for Failed; a negative one keeps the jobs
+	// forever.
+	Retention Retention
+
+	// DisableMaintenance keeps the server out of the leader election, so it never fires recurring
+	// jobs, rescues jobs, sweeps or prunes. At least one server sharing the store must leave it
+	// off.
 	DisableMaintenance bool
-	Logger             *slog.Logger
-	UnknownKindTTL     time.Duration
+
+	// Logger receives the server's errors and lifecycle events, and one record per job at debug
+	// level. Nil discards them.
+	Logger *slog.Logger
+
+	// UnknownKindTTL bounds how long a claimed job whose kind has no handler is put back, a minute
+	// later and without using up an attempt, before it fails instead. It counts from the job's
+	// creation. Zero means 24h.
+	UnknownKindTTL time.Duration
 }
 
 func (c ServerConfig) resolve() (ServerConfig, error) {

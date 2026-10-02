@@ -12,6 +12,7 @@ import (
 
 var (
 	_ driver.Store      = (*Store)(nil)
+	_ driver.Notifier   = (*Store)(nil)
 	_ driver.Transactor = (*Store)(nil)
 	_ driver.Writer     = (*TxWriter)(nil)
 )
@@ -23,6 +24,8 @@ type Store struct {
 	side   *side
 	seq    *allocator
 	budget int
+	bus    driver.Bus
+	nt     *notifier
 
 	mu      sync.Mutex
 	cursors struct {
@@ -60,17 +63,23 @@ func New(ctx context.Context, db *sql.DB, opts ...Option) (*Store, error) {
 	}
 	q := newStatements(c.prefix)
 	sc := &side{db: db, conn: conn}
-	return &Store{
+	s := &Store{
 		db:     db,
 		prefix: c.prefix,
 		q:      q,
 		side:   sc,
 		seq:    &allocator{side: sc, stmt: q.allocate},
 		budget: min(maxStatement, max(packet-4<<10, 64<<10)),
-	}, nil
+		bus:    c.bus,
+	}
+	if c.bus != nil {
+		s.nt = newNotifier(c.bus)
+	}
+	return s, nil
 }
 
 func (s *Store) Close() {
+	s.nt.close()
 	s.side.close()
 }
 

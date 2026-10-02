@@ -34,7 +34,7 @@ LIMIT ?`
 
 const sqlThrottledKeys = `SELECT DISTINCT limit_key FROM {p}jobs WHERE state = 'throttled' ORDER BY limit_key LIMIT ?`
 
-const sqlLimitPage = `SELECT limit_key, max, active, rate, per_us, burst, tat FROM {p}limits
+const sqlLimitPage = `SELECT limit_key, max, active, rate, per_us, burst, tat, admit_tat FROM {p}limits
 WHERE limit_key > ? ORDER BY limit_key LIMIT ?
 FOR UPDATE SKIP LOCKED`
 
@@ -104,14 +104,13 @@ func (s *Store) sweepDeps(ctx context.Context, limit int) (int, error) {
 		s.mu.Unlock()
 		return 0, nil
 	}
-	changed := 0
+	var f *fallout
 	err = s.txn(ctx, func(tx *sql.Tx) error {
-		changed = 0
+		f = &fallout{}
 		rows, err := tx.QueryContext(ctx, render(s.q.lockParents, stranded, stranded)+s.q.linkedNow)
 		if err != nil {
 			return err
 		}
-		f := &fallout{}
 		states := make(map[int64]driver.State, len(stranded))
 		for rows.Next() {
 			var (
@@ -145,13 +144,13 @@ func (s *Store) sweepDeps(ctx context.Context, limit int) (int, error) {
 		if len(f.parents) == 0 {
 			return nil
 		}
-		if err := s.settle(ctx, tx, f); err != nil {
-			return err
-		}
-		changed = f.changed + len(f.parents)
-		return nil
+		return s.settle(ctx, tx, f)
 	})
-	return changed, err
+	if err != nil {
+		return 0, err
+	}
+	s.nt.ready(f.queues)
+	return f.changed + len(f.parents), nil
 }
 
 func (s *Store) sweepStuck(ctx context.Context, limit int) (int, error) {
@@ -201,23 +200,23 @@ func (s *Store) sweepStuck(ctx context.Context, limit int) (int, error) {
 }
 
 func (s *Store) repair(ctx context.Context, fn func(tx *sql.Tx, f *fallout) error) (int, error) {
-	changed := 0
+	var f *fallout
 	err := s.txn(ctx, func(tx *sql.Tx) error {
 		var now stamp
 		if err := tx.QueryRowContext(ctx, sqlNow).Scan(&now); err != nil {
 			return err
 		}
-		f := &fallout{now: now.Time}
+		f = &fallout{now: now.Time}
 		if err := fn(tx, f); err != nil {
 			return err
 		}
-		if err := s.settle(ctx, tx, f); err != nil {
-			return err
-		}
-		changed = f.changed
-		return nil
+		return s.settle(ctx, tx, f)
 	})
-	return changed, err
+	if err != nil {
+		return 0, err
+	}
+	s.nt.ready(f.queues)
+	return f.changed, nil
 }
 
 func (s *Store) sweepBatches(ctx context.Context, limit int) (int, error) {
@@ -277,7 +276,7 @@ func (s *Store) sweepThrottled(ctx context.Context, limit int) (int, error) {
 	for _, key := range keys {
 		floor[key] = rule{max: 1}
 	}
-	n := 0
+	var a admitted
 	err = s.txn(ctx, func(tx *sql.Tx) error {
 		slots, err := s.lockLimits(ctx, tx, keys, true)
 		if err != nil {
@@ -286,20 +285,26 @@ func (s *Store) sweepThrottled(ctx context.Context, limit int) (int, error) {
 		if err := s.restore(ctx, tx, keys, floor, slots); err != nil {
 			return err
 		}
-		a, err := s.fill(ctx, tx, slots)
-		n = a.changed()
+		a, err = s.fill(ctx, tx, slots)
 		return err
 	})
-	return n, err
+	if err != nil {
+		return 0, err
+	}
+	s.nt.ready(a.queues)
+	return a.changed(), nil
 }
 
 func (s *Store) reconcile(ctx context.Context, limit int) (int, error) {
 	s.mu.Lock()
 	after := s.cursors.limit
 	s.mu.Unlock()
-	n := 0
+	var (
+		n      int
+		queues []string
+	)
 	err := s.txn(ctx, func(tx *sql.Tx) error {
-		n = 0
+		n, queues = 0, nil
 		rows, err := tx.QueryContext(ctx, render(s.q.limitPage, after, limit))
 		if err != nil {
 			return err
@@ -357,8 +362,16 @@ func (s *Store) reconcile(ctx context.Context, limit int) (int, error) {
 			}
 		}
 		a, err := s.fill(ctx, tx, slots)
+		if err != nil {
+			return err
+		}
 		n += a.changed()
-		return err
+		queues = a.queues
+		return nil
 	})
-	return n, err
+	if err != nil {
+		return 0, err
+	}
+	s.nt.ready(queues)
+	return n, nil
 }

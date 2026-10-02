@@ -32,7 +32,7 @@ type backend interface {
 	digest(ctx context.Context, table string, columns []string) (string, error)
 	versions(ctx context.Context) (map[int]string, error)
 	addVersion(ctx context.Context, v int) error
-	changes(ctx context.Context) ([]string, error)
+	changes(ctx context.Context) (map[string]string, error)
 	count(ctx context.Context, cond string) (int, error)
 }
 
@@ -133,20 +133,7 @@ FROM (SELECT md5(ROW("%s")::text) AS h FROM %s.%s) t`, strings.Join(columns, `",
 }
 
 func (b *pgBackend) versions(ctx context.Context) (map[int]string, error) {
-	rows, err := b.pool.Query(ctx, "SELECT version, applied_at::text FROM "+b.schema+".migrations")
-	if err != nil {
-		return nil, err
-	}
-	vs := make(map[int]string)
-	var (
-		v  int
-		at string
-	)
-	_, err = pgx.ForEachRow(rows, []any{&v, &at}, func() error {
-		vs[v] = at
-		return nil
-	})
-	return vs, err
+	return pgLedger[int](ctx, b.pool, "SELECT version, applied_at::text FROM "+b.schema+".migrations")
 }
 
 func (b *pgBackend) addVersion(ctx context.Context, v int) error {
@@ -154,9 +141,25 @@ func (b *pgBackend) addVersion(ctx context.Context, v int) error {
 	return err
 }
 
-func (b *pgBackend) changes(ctx context.Context) ([]string, error) {
-	rows, _ := b.pool.Query(ctx, "SELECT name FROM "+b.schema+".schema_changes")
-	return pgx.CollectRows(rows, pgx.RowTo[string])
+func (b *pgBackend) changes(ctx context.Context) (map[string]string, error) {
+	return pgLedger[string](ctx, b.pool, "SELECT name, applied_at::text FROM "+b.schema+".schema_changes")
+}
+
+func pgLedger[K comparable](ctx context.Context, pool *pgxpool.Pool, q string) (map[K]string, error) {
+	rows, err := pool.Query(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	m := make(map[K]string)
+	var (
+		k  K
+		at string
+	)
+	_, err = pgx.ForEachRow(rows, []any{&k, &at}, func() error {
+		m[k] = at
+		return nil
+	})
+	return m, err
 }
 
 func (b *pgBackend) count(ctx context.Context, cond string) (int, error) {
@@ -272,7 +275,7 @@ func (b *myBackend) digest(ctx context.Context, table string, columns []string) 
 }
 
 func (b *myBackend) versions(ctx context.Context) (map[int]string, error) {
-	return versions(ctx, b.db, "SELECT version, CAST(applied_at AS CHAR) FROM "+b.prefix+"migrations")
+	return ledger[int](ctx, b.db, "SELECT version, CAST(applied_at AS CHAR) FROM "+b.prefix+"migrations")
 }
 
 func (b *myBackend) addVersion(ctx context.Context, v int) error {
@@ -280,8 +283,8 @@ func (b *myBackend) addVersion(ctx context.Context, v int) error {
 	return err
 }
 
-func (b *myBackend) changes(ctx context.Context) ([]string, error) {
-	return names(ctx, b.db, "SELECT name FROM "+b.prefix+"schema_changes")
+func (b *myBackend) changes(ctx context.Context) (map[string]string, error) {
+	return ledger[string](ctx, b.db, "SELECT name, CAST(applied_at AS CHAR) FROM "+b.prefix+"schema_changes")
 }
 
 func (b *myBackend) count(ctx context.Context, cond string) (int, error) {
@@ -365,7 +368,7 @@ FROM (SELECT quote("%s") AS r FROM %s%s)`, strings.Join(columns, `") || ',' || q
 }
 
 func (b *liteBackend) versions(ctx context.Context) (map[int]string, error) {
-	return versions(ctx, b.db, "SELECT version, CAST(applied_at AS TEXT) FROM "+b.prefix+"migrations")
+	return ledger[int](ctx, b.db, "SELECT version, CAST(applied_at AS TEXT) FROM "+b.prefix+"migrations")
 }
 
 func (b *liteBackend) addVersion(ctx context.Context, v int) error {
@@ -373,8 +376,8 @@ func (b *liteBackend) addVersion(ctx context.Context, v int) error {
 	return err
 }
 
-func (b *liteBackend) changes(ctx context.Context) ([]string, error) {
-	return names(ctx, b.db, "SELECT name FROM "+b.prefix+"schema_changes")
+func (b *liteBackend) changes(ctx context.Context) (map[string]string, error) {
+	return ledger[string](ctx, b.db, "SELECT name, quote(applied_at) FROM "+b.prefix+"schema_changes")
 }
 
 func (b *liteBackend) count(ctx context.Context, cond string) (int, error) {
@@ -403,39 +406,22 @@ func collect(ctx context.Context, db *sql.DB, q, prefix string, objs map[string]
 	return rows.Err()
 }
 
-func versions(ctx context.Context, db *sql.DB, q string) (map[int]string, error) {
+func ledger[K comparable](ctx context.Context, db *sql.DB, q string) (map[K]string, error) {
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	vs := make(map[int]string)
+	m := make(map[K]string)
 	for rows.Next() {
 		var (
-			v  int
+			k  K
 			at string
 		)
-		if err := rows.Scan(&v, &at); err != nil {
+		if err := rows.Scan(&k, &at); err != nil {
 			return nil, err
 		}
-		vs[v] = at
+		m[k] = at
 	}
-	return vs, rows.Err()
-}
-
-func names(ctx context.Context, db *sql.DB, q string) ([]string, error) {
-	rows, err := db.QueryContext(ctx, q)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []string
-	for rows.Next() {
-		var s string
-		if err := rows.Scan(&s); err != nil {
-			return nil, err
-		}
-		out = append(out, s)
-	}
-	return out, rows.Err()
+	return m, rows.Err()
 }

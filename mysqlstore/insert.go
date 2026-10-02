@@ -71,6 +71,7 @@ type inserter struct {
 	limits  []string
 	rules   map[string]rule
 	late    []string
+	queues  []string
 	linked  bool
 	batched bool
 	timed   bool
@@ -79,32 +80,37 @@ type inserter struct {
 }
 
 func (s *Store) Insert(ctx context.Context, jobs []driver.InsertParams) ([]driver.Inserted, error) {
-	res, _, err := s.insert(ctx, nil, jobs)
-	return res, err
+	res, wk, err := s.insert(ctx, nil, jobs)
+	if err != nil {
+		return nil, err
+	}
+	s.admitLate(ctx, &wk)
+	s.nt.ready(wk.queues)
+	return res, nil
 }
 
-func (s *Store) insert(ctx context.Context, tx *sql.Tx, jobs []driver.InsertParams) ([]driver.Inserted, map[string]rule, error) {
+func (s *Store) insert(ctx context.Context, tx *sql.Tx, jobs []driver.InsertParams) ([]driver.Inserted, wake, error) {
 	if len(jobs) == 0 {
-		return nil, nil, nil
+		return nil, wake{}, nil
 	}
 	if err := driver.CheckInsert(jobs); err != nil {
-		return nil, nil, err
+		return nil, wake{}, err
 	}
 	in := &inserter{s: s, own: tx == nil, jobs: jobs}
 	in.plan()
 	if err := in.allocate(ctx); err != nil {
-		return nil, nil, err
+		return nil, wake{}, err
 	}
 	if len(in.limits) > 0 {
 		if err := s.declare(ctx, in.limits, in.rules, tx != nil); err != nil {
-			return nil, nil, wrap("insert", err)
+			return nil, wake{}, wrap("insert", err)
 		}
 	}
 	if tx != nil {
 		if err := in.write(ctx, tx); err != nil {
-			return nil, nil, err
+			return nil, wake{}, err
 		}
-		return in.res, in.rules, nil
+		return in.res, wake{queues: in.queues, late: in.rules}, nil
 	}
 	var err error
 	if in.linked || in.batched || len(in.keys) > 0 || len(in.limits) > 0 {
@@ -113,16 +119,16 @@ func (s *Store) insert(ctx context.Context, tx *sql.Tx, jobs []driver.InsertPara
 		err = in.writePlain(ctx)
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, wake{}, err
 	}
+	wk := wake{queues: in.queues}
 	if len(in.late) > 0 {
-		late := make(map[string]rule, len(in.late))
+		wk.late = make(map[string]rule, len(in.late))
 		for _, key := range in.late {
-			late[key] = in.rules[key]
+			wk.late[key] = in.rules[key]
 		}
-		s.admitKeys(ctx, late)
 	}
-	return in.res, nil, nil
+	return in.res, wk, nil
 }
 
 func (in *inserter) plan() {
@@ -188,6 +194,7 @@ func (in *inserter) reset() {
 	}
 	in.holders = nil
 	in.link = nil
+	in.queues = in.queues[:0]
 }
 
 func (in *inserter) writePlain(ctx context.Context) error {
@@ -448,6 +455,7 @@ func (in *inserter) admit(ctx context.Context, q querier) error {
 	for _, m := range a.reserved {
 		in.mark(m.id, driver.Scheduled)
 	}
+	in.queues = merge(in.queues, a.queues...)
 	return nil
 }
 
@@ -589,6 +597,9 @@ func (in *inserter) jobRows(items []int, pending []int, parents []jsonText) []st
 			list = parents[k]
 		}
 		st := in.state(p, n)
+		if st == driver.Enqueued {
+			in.queues = merge(in.queues, p.Queue)
+		}
 		r := in.pos[i]
 		in.res[i] = driver.Inserted{ID: in.ids[r], State: st}
 		c.row()

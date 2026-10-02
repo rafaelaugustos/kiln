@@ -2,6 +2,7 @@ package compat
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -21,9 +22,9 @@ import (
 )
 
 const (
-	oldVersion = "v0.2.0"
-	oldDir     = "v020"
-	oldName    = "compat-v020"
+	oldVersion = "v0.3.1"
+	oldDir     = "v031"
+	oldName    = "compat-v031"
 	newName    = "compat-current"
 	poll       = 20 * time.Millisecond
 )
@@ -54,7 +55,7 @@ func upgrade(t *testing.T, bin string, db backend) {
 	began := time.Now()
 	ctx := t.Context()
 
-	old := launch(t, bin, db, "-echo=10", "-fail=5", "-limited=4", "-flows=1", "-batches=1")
+	old := launch(t, bin, db, "-echo=10", "-fail=5", "-limited=4", "-rated=4", "-flows=1", "-batches=1")
 	alone := old.result()
 	if !eventually(30*time.Second, func() bool {
 		n, err := db.count(ctx, "TRUE")
@@ -64,7 +65,7 @@ func upgrade(t *testing.T, bin string, db backend) {
 	}
 
 	before := inspect(t, db, nil)
-	unmigrated(t, db)
+	unmigrated(t, db, before)
 	st, closeStore, err := db.open(ctx, true)
 	if err != nil {
 		t.Fatalf("the current code cannot open a database created by %s: %v", oldVersion, err)
@@ -114,7 +115,7 @@ func upgrade(t *testing.T, bin string, db backend) {
 	settle(t, st)
 	limit := peak()
 
-	paced := enqueue(ctx, client, plan{Rated: 20}, errs)
+	paced, from := pace(t, again, client, errs)
 	settle(t, st)
 	againSum, exit := again.stop()
 	if exit != nil {
@@ -126,7 +127,7 @@ func upgrade(t *testing.T, bin string, db backend) {
 	newSum.Server, newSum.Stats, newSum.Errors = srv.ID(), &stats, errs.all()
 
 	final := finished(t, client)
-	counted(t, st, final, alone, r1, n1, r2, r3, n3, paced)
+	counted(t, st, final, slices.Concat([]*result{alone, r1, n1, r2, r3, n3}, paced)...)
 	exactlyOnce(t, final, oldSum, againSum, newSum)
 	retried(t, client, slices.Concat(alone.Jobs["fail"], r1.Jobs["fail"], n1.Jobs["fail"], r3.Jobs["fail"], n3.Jobs["fail"]))
 	handedOff(t, client, oldVersion, slices.Concat(r1.Jobs["handoff"], r3.Jobs["handoff"]))
@@ -146,7 +147,7 @@ func upgrade(t *testing.T, bin string, db backend) {
 	if limit != 2 {
 		t.Errorf("compat.limited jobs peaked at %d enqueued or processing at once, want their limit of 2", limit)
 	}
-	rateHeld(t, final, paced.Jobs["rated"])
+	rateHeld(t, final, from)
 	clean(t, oldSum, againSum, newSum)
 
 	refuse(t, bin, db)
@@ -210,6 +211,29 @@ func watch(t *testing.T, db backend) func() int {
 	})
 	t.Cleanup(func() { stop() })
 	return stop
+}
+
+func pace(t *testing.T, old *proc, c *kiln.Client, errs *errlog) ([]*result, map[int64]string) {
+	t.Helper()
+	const rounds, jobs = 3, 4
+	for range rounds {
+		old.post(plan{Rated: jobs})
+	}
+	var rs []*result
+	from := make(map[int64]string)
+	add := func(client string, r *result) {
+		rs = append(rs, r)
+		for _, id := range r.Jobs["rated"] {
+			from[id] = client
+		}
+	}
+	for range rounds {
+		add(version, enqueue(t.Context(), c, plan{Rated: jobs}, errs))
+	}
+	for range rounds {
+		add(oldVersion, old.result())
+	}
+	return rs, from
 }
 
 func settle(t *testing.T, st driver.Store) {
@@ -443,7 +467,7 @@ func duplicates(t *testing.T, r1, n1, r2 *result) {
 	}
 }
 
-func rateHeld(t *testing.T, done map[int64]kiln.Record, ids []int64) {
+func rateHeld(t *testing.T, done map[int64]kiln.Record, from map[int64]string) {
 	t.Helper()
 	const (
 		window = 200 * time.Millisecond
@@ -453,7 +477,7 @@ func rateHeld(t *testing.T, done map[int64]kiln.Record, ids []int64) {
 	gap := time.Second / rate
 	allowed := int(rate*window/time.Second) + 1
 	var rs []kiln.Record
-	for _, id := range ids {
+	for id := range from {
 		if r, ok := done[id]; ok {
 			rs = append(rs, r)
 		}
@@ -462,29 +486,41 @@ func rateHeld(t *testing.T, done map[int64]kiln.Record, ids []int64) {
 		t.Error("no compat.rated job succeeded")
 		return
 	}
-	slices.SortFunc(rs, func(a, b kiln.Record) int { return a.RunAt.Compare(b.RunAt) })
+	ran := make(map[string]int)
+	for _, r := range rs {
+		ran[from[r.ID]+" -> "+side(r.Server)]++
+	}
+	t.Logf("compat.rated jobs, enqueued by -> run by: %v", ran)
+	slices.SortFunc(rs, func(a, b kiln.Record) int { return cmp.Or(a.RunAt.Compare(b.RunAt), cmp.Compare(a.ID, b.ID)) })
 	for i, r := range rs {
 		if r.AttemptedAt.Before(r.RunAt.Add(-slack)) {
-			t.Errorf("compat.rated job %d started %v before its slot", r.ID, r.RunAt.Sub(r.AttemptedAt))
+			t.Errorf("compat.rated job %d of the %s client started on %s %v before its slot",
+				r.ID, from[r.ID], side(r.Server), r.RunAt.Sub(r.AttemptedAt))
 		}
-		if i > 0 && r.RunAt.Sub(rs[i-1].RunAt) < gap-slack {
-			t.Errorf("slots of compat.rated jobs %d and %d are %v apart, want at least %v", rs[i-1].ID, r.ID, r.RunAt.Sub(rs[i-1].RunAt), gap)
+		if i == 0 {
+			continue
+		}
+		if p := rs[i-1]; r.RunAt.Sub(p.RunAt) < gap-slack {
+			t.Errorf("slots of compat.rated jobs %d of the %s client and %d of the %s client are %v apart, want at least %v",
+				p.ID, from[p.ID], r.ID, from[r.ID], r.RunAt.Sub(p.RunAt), gap)
 		}
 	}
-	slices.SortFunc(rs, func(a, b kiln.Record) int { return a.AttemptedAt.Compare(b.AttemptedAt) })
-	most, from := 0, 0
+	slices.SortFunc(rs, func(a, b kiln.Record) int {
+		return cmp.Or(a.AttemptedAt.Compare(b.AttemptedAt), cmp.Compare(a.ID, b.ID))
+	})
+	most, dense := 0, 0
 	for i, j := 0, 0; i < len(rs); i++ {
 		for j < len(rs) && rs[j].AttemptedAt.Sub(rs[i].AttemptedAt) <= window {
 			j++
 		}
 		if j-i > most {
-			most, from = j-i, i
+			most, dense = j-i, i
 		}
 	}
 	first := rs[0].AttemptedAt
 	if most > allowed {
 		var late time.Duration
-		for _, r := range rs[from : from+most] {
+		for _, r := range rs[dense : dense+most] {
 			late = max(late, r.AttemptedAt.Sub(r.RunAt))
 		}
 		if late >= stall {
@@ -493,8 +529,8 @@ func rateHeld(t *testing.T, done map[int64]kiln.Record, ids []int64) {
 		}
 		var b strings.Builder
 		for _, r := range rs {
-			fmt.Fprintf(&b, "\n\tjob %d: slot %+dms, started %+dms on %s",
-				r.ID, r.RunAt.Sub(first).Milliseconds(), r.AttemptedAt.Sub(first).Milliseconds(), side(r.Server))
+			fmt.Fprintf(&b, "\n\tjob %d of the %s client: slot %+dms, started %+dms on %s",
+				r.ID, from[r.ID], r.RunAt.Sub(first).Milliseconds(), r.AttemptedAt.Sub(first).Milliseconds(), side(r.Server))
 		}
 		t.Errorf("%d compat.rated jobs started within %s; %d per second allows %d:%s", most, window, rate, allowed, b.String())
 	}
@@ -517,6 +553,7 @@ func clean(t *testing.T, sums ...*summary) {
 
 type snapshot struct {
 	versions map[int]string
+	changes  map[string]string
 	objects  map[string]string
 	data     map[string]string
 }
@@ -528,6 +565,9 @@ func inspect(t *testing.T, db backend, like *snapshot) *snapshot {
 	var err error
 	if s.versions, err = db.versions(ctx); err != nil {
 		t.Fatalf("read migrations: %v", err)
+	}
+	if s.changes, err = db.changes(ctx); err != nil {
+		t.Fatalf("read schema_changes: %v", err)
 	}
 	if s.objects, err = db.objects(ctx); err != nil {
 		t.Fatalf("read schema: %v", err)
@@ -564,17 +604,20 @@ func additive(t *testing.T, db backend, before, after *snapshot) {
 		t.Errorf("the versioned migrations went from %v to %v; %s refuses to start above version %d, so additive changes go in changes/",
 			before.versions, after.versions, oldVersion, highest(before.versions))
 	}
+	for name, at := range before.changes {
+		if after.changes[name] != at {
+			t.Errorf("the current code rewrote change %s recorded by %s", name, oldVersion)
+		}
+	}
+	if applied, want := slices.Sorted(maps.Keys(after.changes)), changeNames(t, db.module()); !slices.Equal(applied, want) {
+		t.Errorf("schema_changes lists %v, %s/changes has %v", applied, db.module(), want)
+	}
 	for k, v := range before.objects {
 		switch got, ok := after.objects[k]; {
 		case !ok:
 			t.Errorf("the current code dropped %s", k)
 		case got != v:
 			t.Errorf("the current code changed %s\n%s: %s\ncurrent: %s", k, oldVersion, v, got)
-		}
-	}
-	for table, d := range before.data {
-		if after.data[table] != d {
-			t.Errorf("the current code rewrote rows of %s", table)
 		}
 	}
 	var added []string
@@ -590,29 +633,29 @@ func additive(t *testing.T, db backend, before, after *snapshot) {
 		}
 	}
 	slices.Sort(added)
-	applied, err := db.changes(t.Context())
-	if err != nil {
-		t.Fatalf("read schema_changes: %v", err)
+	for table, d := range before.data {
+		if after.data[table] != d {
+			t.Errorf("the current code rewrote rows of %s", table)
+		}
 	}
-	slices.Sort(applied)
-	if want := changeNames(t, db.module()); !slices.Equal(applied, want) {
-		t.Errorf("schema_changes lists %v, %s/changes has %v", applied, db.module(), want)
-	}
-	t.Logf("%s wrote schema version %d, the current code left it at %d, recorded changes %v and added %s",
-		oldVersion, highest(before.versions), highest(after.versions), applied, strings.Join(added, ", "))
+	t.Logf("%s wrote schema version %d and changes %v; the current code kept version %d, recorded %v and added [%s]; compared %d schema objects and the rows of %d tables",
+		oldVersion, highest(before.versions), slices.Sorted(maps.Keys(before.changes)), highest(after.versions),
+		slices.Sorted(maps.Keys(after.changes)), strings.Join(added, ", "), len(before.objects), len(before.data))
 }
 
-func highest(versions map[int]string) int {
-	return slices.Max(slices.Collect(maps.Keys(versions)))
-}
-
-func unmigrated(t *testing.T, db backend) {
+func unmigrated(t *testing.T, db backend, before *snapshot) {
 	t.Helper()
-	pending := changeNames(t, db.module())
-	if len(pending) == 0 {
-		return
+	var pending []string
+	for _, name := range changeNames(t, db.module()) {
+		if _, ok := before.changes[name]; !ok {
+			pending = append(pending, name)
+		}
 	}
-	if err := opened(db.open(t.Context(), false)); err == nil || !strings.Contains(err.Error(), pending[0]) {
+	err := opened(db.open(t.Context(), false))
+	switch {
+	case len(pending) == 0 && err != nil:
+		t.Errorf("New with NoMigrate refused a database created by %s: %v", oldVersion, err)
+	case len(pending) > 0 && (err == nil || !strings.Contains(err.Error(), pending[0])):
 		t.Errorf("New with NoMigrate on the schema of %s returned %v, want an error naming change %s", oldVersion, err, pending[0])
 	}
 }
@@ -623,11 +666,15 @@ func changeNames(t *testing.T, store string) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := make([]string, len(files))
+	names := make([]string, len(files))
 	for i, f := range files {
-		out[i] = strings.TrimSuffix(filepath.Base(f), ".sql")
+		names[i] = strings.TrimSuffix(filepath.Base(f), ".sql")
 	}
-	return out
+	return names
+}
+
+func highest(versions map[int]string) int {
+	return slices.Max(slices.Collect(maps.Keys(versions)))
 }
 
 func refuse(t *testing.T, bin string, db backend) {
@@ -680,7 +727,8 @@ func frozen(t *testing.T, mods map[string]string) {
 		if len(shipped) == 0 {
 			t.Fatalf("no migrations shipped with %s %s in %s", store, oldVersion, released)
 		}
-		unchanged(t, store, released, "changes")
+		changes := unchanged(t, store, released, "changes")
+		t.Logf("%s %s shipped migrations %v and changes %v, compared byte for byte", store, oldVersion, shipped, changes)
 		top := 0
 		for _, name := range shipped {
 			top = max(top, number(t, name))

@@ -1,3 +1,6 @@
 package mysqlstore
 
-var Database = database
+var (
+	Database = database
+	NewBus   = newBus
+)

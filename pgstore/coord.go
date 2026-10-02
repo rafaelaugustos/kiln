@@ -97,10 +97,13 @@ func (s *Store) Promote(ctx context.Context, limit int) (driver.Promoted, error)
 	}
 	var err error
 	if len(keys) > 0 {
+		r := rules{keys: keys}
 		b = &pgx.Batch{}
-		b.Queue(s.q.admit, rules{keys: keys}.args()...).Query(w.scanAdmitted)
+		b.Queue(s.q.admit, r.args()...).QueryRow(w.admitted(r))
 		b.Queue(s.q.nextDue).QueryRow(due)
-		err = s.pool.SendBatch(ctx, b).Close()
+		if err = s.pool.SendBatch(ctx, b).Close(); err == nil {
+			err = s.readmit(ctx, &w)
+		}
 	}
 	if next != nil {
 		p.Next = max(time.Duration(*next)*time.Microsecond, time.Microsecond)

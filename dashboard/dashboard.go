@@ -14,23 +14,26 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
+// Access is what a request may do, as decided by [Options.Authorize].
 type Access uint8
 
 const (
-	Denied Access = iota
-	ReadOnly
-	ReadWrite
+	Denied    Access = iota // nothing: the request gets a 403
+	ReadOnly                // pages and API reads
+	ReadWrite               // also requeue, delete, trigger, pause and resume
 )
 
+// Part says what [Options.Redact] is given.
 type Part uint8
 
 const (
-	PartArgs Part = iota
-	PartMeta
-	PartOutput
-	PartError
+	PartArgs   Part = iota // the args of a job, or of a recurring job's template
+	PartMeta               // the meta of a job or a batch, as a JSON object
+	PartOutput             // the output of a job
+	PartError              // an error or a stack trace from a job's history, as plain text
 )
 
+// String returns "args", "meta", "output" or "error".
 func (p Part) String() string {
 	switch p {
 	case PartArgs:
@@ -45,14 +48,31 @@ func (p Part) String() string {
 	return "unknown"
 }
 
+// Options configures the handler returned by [New].
 type Options struct {
-	Prefix    string
+	// Prefix is the path the dashboard is served under, such as "/kiln". Links in the pages start
+	// with it, and it is removed from request paths, so the handler needs no http.StripPrefix.
+	Prefix string
+
+	// Authorize decides the access of each request. It is required; [AllowAll] is enough for
+	// local development.
 	Authorize func(*http.Request) Access
-	Redact    func(kind string, part Part, v []byte) []byte
-	Actor     func(*http.Request) string
-	Title     string
+
+	// Redact, when set, rewrites what the dashboard shows of a job's args, meta, output and
+	// history, in pages and API alike. kind is the job's kind, empty for the meta of a batch. A
+	// result for args, meta or output that is not valid JSON is shown as a JSON string.
+	Redact func(kind string, part Part, v []byte) []byte
+
+	// Actor, when set, returns the name of the user behind a request, shown in the page header.
+	Actor func(*http.Request) string
+
+	// Title names the application in the header and in page titles. Empty means "kiln".
+	Title string
 }
 
+// AllowAll grants [ReadWrite] access to requests addressed to localhost or to a loopback address,
+// and denies the others. It is meant for local development: it trusts the Host header, which the
+// client sets, so it protects nothing on a listener that other machines can reach.
 func AllowAll(r *http.Request) Access {
 	if loopback(r.Host) {
 		return ReadWrite
@@ -84,6 +104,7 @@ type handler struct {
 	day   *memo[*chart]
 }
 
+// New returns a handler that serves the dashboard for c's store. It panics if o.Authorize is nil.
 func New(c *kiln.Client, o Options) http.Handler {
 	if o.Authorize == nil {
 		panic("dashboard: Options.Authorize is nil")

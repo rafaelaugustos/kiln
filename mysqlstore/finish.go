@@ -91,8 +91,10 @@ func (s *Store) finishOnce(ctx context.Context, server string, outs []driver.Out
 	var (
 		locked  map[int64]*running
 		applied map[int64]int
+		queues  []string
 	)
 	err := s.txn(ctx, func(tx *sql.Tx) error {
+		applied, queues = nil, nil
 		var (
 			now time.Time
 			err error
@@ -109,11 +111,17 @@ func (s *Store) finishOnce(ctx context.Context, server string, outs []driver.Out
 				}
 			}
 		}
-		return s.apply(ctx, tx, &fallout{now: now, server: server}, outs, applied, locked)
+		f := &fallout{now: now, server: server}
+		if err := s.apply(ctx, tx, f, outs, applied, locked); err != nil {
+			return err
+		}
+		queues = f.queues
+		return nil
 	})
 	if err != nil {
 		return err
 	}
+	s.nt.ready(queues)
 	var missing []int64
 	for _, id := range ids {
 		if locked[id] == nil {
@@ -230,6 +238,8 @@ func (s *Store) apply(ctx context.Context, q querier, f *fallout, outs []driver.
 			f.stats.failed++
 		case driver.Deleted:
 			f.stats.deleted++
+		case driver.Enqueued:
+			f.queue(r.queue)
 		}
 		if want == driver.Scheduled && !o.Refund && !canceled {
 			f.stats.retried++

@@ -5,6 +5,13 @@ import (
 	"fmt"
 )
 
+// CheckInsert makes the checks on a call to [Writer.Insert] that need no database; stores run it
+// before anything else. Every job must have a kind, a queue, MaxAttempts of at least 1 and args
+// that are valid JSON. Limit fields must not be negative, a limit key needs LimitMax or LimitRate
+// of at least 1, and a rate needs a positive LimitPer and a LimitBurst of at least 1. Batch ids
+// must not be negative, and a job cannot wait for the batch it joins. A parent needs a non-empty
+// On and either a positive ID or the Index of another job in the call, with no cycle among them.
+// The error wraps [ErrInvalid] and names the job.
 func CheckInsert(jobs []InsertParams) error {
 	refs := false
 	for i := range jobs {
@@ -47,6 +54,8 @@ func CheckInsert(jobs []InsertParams) error {
 	return nil
 }
 
+// CheckFilter returns an error wrapping [ErrInvalid] unless f names ids or a valid state, as
+// [Admin.Delete] and [Admin.Requeue] require.
 func CheckFilter(f Filter) error {
 	if len(f.IDs) == 0 && f.State == "" {
 		return fmt.Errorf("%w: filter needs ids or a state", ErrInvalid)

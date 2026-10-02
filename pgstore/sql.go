@@ -3,7 +3,6 @@ package pgstore
 type statements struct {
 	admit               string
 	admitFinished       string
-	admitSkip           string
 	afterBatches        string
 	allocate            string
 	archivedParents     string
@@ -39,6 +38,7 @@ type statements struct {
 	lockFinishedBatches string
 	lockLimits          string
 	lockParents         string
+	lockRules           string
 	missingLinks        string
 	nextDue             string
 	notify              string
@@ -70,6 +70,7 @@ type statements struct {
 	series              string
 	servers             string
 	setMeta             string
+	setRules            string
 	strandedParents     string
 	stuck               string
 	throttledKeys       string
@@ -81,7 +82,6 @@ type statements struct {
 func (q *statements) each(fn func(p *string, text string)) {
 	fn(&q.admit, sqlAdmit)
 	fn(&q.admitFinished, sqlAdmitFinished)
-	fn(&q.admitSkip, sqlAdmitSkip)
 	fn(&q.afterBatches, sqlAfterBatches)
 	fn(&q.allocate, sqlAllocate)
 	fn(&q.archivedParents, sqlArchivedParents)
@@ -117,6 +117,7 @@ func (q *statements) each(fn func(p *string, text string)) {
 	fn(&q.lockFinishedBatches, sqlLockFinishedBatches)
 	fn(&q.lockLimits, sqlLockLimits)
 	fn(&q.lockParents, sqlLockParents)
+	fn(&q.lockRules, sqlLockRules)
 	fn(&q.missingLinks, sqlMissingLinks)
 	fn(&q.nextDue, sqlNextDue)
 	fn(&q.notify, sqlNotify)
@@ -148,6 +149,7 @@ func (q *statements) each(fn func(p *string, text string)) {
 	fn(&q.series, sqlSeries)
 	fn(&q.servers, sqlServers)
 	fn(&q.setMeta, sqlSetMeta)
+	fn(&q.setRules, sqlSetRules)
 	fn(&q.strandedParents, sqlStrandedParents)
 	fn(&q.stuck, sqlStuck)
 	fn(&q.throttledKeys, sqlThrottledKeys)

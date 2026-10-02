@@ -29,18 +29,19 @@ func (r rule) interval() time.Duration {
 
 type slot struct {
 	rule
-	active int
-	tat    time.Time
-	dirty  bool
-	paced  bool
+	active   int
+	tat      time.Time
+	admitTat time.Time
+	dirty    bool
+	paced    bool
 }
 
 func (sl *slot) scan(rows *sql.Rows, key *string) error {
-	var tat stamp
-	if err := rows.Scan(key, &sl.max, &sl.active, &sl.rate, &sl.per, &sl.burst, &tat); err != nil {
+	var tat, admitTat stamp
+	if err := rows.Scan(key, &sl.max, &sl.active, &sl.rate, &sl.per, &sl.burst, &tat, &admitTat); err != nil {
 		return err
 	}
-	sl.tat = tat.Time
+	sl.tat, sl.admitTat = tat.Time, admitTat.Time
 	return nil
 }
 
@@ -63,11 +64,14 @@ const (
 )
 
 func (sl *slot) decide(now time.Time, granted bool) (verdict, time.Time) {
-	paced := sl.rate > 0 && !granted
+	full := sl.max > 0 && sl.active >= sl.max
+	if granted && full {
+		return hold, now
+	}
+	paced := sl.rate > 0 && (!granted || !sl.open(now))
 	at := now
 	if paced {
-		tau := time.Duration(max(sl.burst-1, 0)) * sl.interval()
-		if t := sl.tat.Add(-tau); t.After(at) {
+		if t := sl.tat.Add(-sl.tau()); t.After(at) {
 			at = t
 		}
 	}
@@ -75,15 +79,26 @@ func (sl *slot) decide(now time.Time, granted bool) (verdict, time.Time) {
 	case at.After(now):
 		sl.take(at)
 		return reserve, at
-	case sl.max > 0 && sl.active >= sl.max:
+	case full:
 		return hold, at
 	}
 	if paced {
 		sl.take(at)
 	}
+	if sl.rate > 0 {
+		sl.pass(now)
+	}
 	sl.active++
 	sl.dirty = true
 	return admit, at
+}
+
+func (sl *slot) tau() time.Duration {
+	return time.Duration(max(sl.burst-1, 0)) * sl.interval()
+}
+
+func (sl *slot) open(now time.Time) bool {
+	return !sl.admitTat.Add(-sl.tau() - sl.interval()/2).After(now)
 }
 
 func (sl *slot) take(at time.Time) {
@@ -91,6 +106,17 @@ func (sl *slot) take(at time.Time) {
 		sl.tat = at
 	}
 	sl.tat = sl.tat.Add(sl.interval())
+	sl.paced = true
+}
+
+func (sl *slot) pass(now time.Time) {
+	if now.After(sl.admitTat) {
+		sl.admitTat = now
+	}
+	sl.admitTat = sl.admitTat.Add(sl.interval())
+	if sl.admitTat.After(sl.tat) {
+		sl.tat = sl.admitTat
+	}
 	sl.paced = true
 }
 
@@ -150,10 +176,8 @@ func (s *Store) fill(ctx context.Context, q querier, slots map[string]*slot) (ad
 					a.reserved = append(a.reserved, move{id: j.id, at: at})
 				} else {
 					a.ids = append(a.ids, j.id)
-					if !slices.Contains(a.queues, j.queue) {
-						a.queues = append(a.queues, j.queue)
-					}
 				}
+				a.queues = merge(a.queues, j.queue)
 				w.seen++
 			}
 			if sl.rate > 0 && !held && len(js) == w.want && w.seen < admitBatch {
@@ -252,7 +276,7 @@ func (s *Store) account(ctx context.Context, q querier, slots map[string]*slot) 
 	if len(dirty) == 0 {
 		return nil
 	}
-	b := make([]byte, 0, 128+80*len(dirty))
+	b := make([]byte, 0, 176+136*len(dirty))
 	b = append(b, "UPDATE "...)
 	b = append(b, s.prefix...)
 	b = append(b, "limits SET active = CASE limit_key"...)
@@ -267,7 +291,13 @@ func (s *Store) account(ctx context.Context, q querier, slots map[string]*slot) 
 				b = appendSQL(b, " WHEN ? THEN ?", key, sl.tat)
 			}
 		}
-		b = append(b, " ELSE tat END"...)
+		b = append(b, " ELSE tat END, admit_tat = CASE limit_key"...)
+		for _, key := range dirty {
+			if sl := slots[key]; sl.paced {
+				b = appendSQL(b, " WHEN ? THEN ?", key, sl.admitTat)
+			}
+		}
+		b = append(b, " ELSE admit_tat END"...)
 	}
 	b = appendSQL(b, " WHERE limit_key IN (?)", dirty)
 	_, err := q.ExecContext(ctx, string(b))

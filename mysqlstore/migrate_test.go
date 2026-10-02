@@ -106,7 +106,7 @@ VALUES (1, 'throttled', 'default', 'old', 0, 3, 0, 0, UTC_TIMESTAMP(6), UTC_TIME
 	if n := count(t, s, "SELECT COUNT(*) FROM kiln_schema_changes WHERE name = '001_rate_limits'"); n != 1 {
 		t.Fatalf("change recorded %d times", n)
 	}
-	legacy := "SELECT COUNT(*) FROM kiln_limits WHERE limit_key = 'legacy' AND max = 1 AND active = 1 AND rate = 0 AND per_us = 0 AND burst = 0 AND tat IS NULL"
+	legacy := "SELECT COUNT(*) FROM kiln_limits WHERE limit_key = 'legacy' AND max = 1 AND active = 1 AND rate = 0 AND per_us = 0 AND burst = 0 AND tat IS NULL AND admit_tat IS NULL"
 	if n := count(t, s, legacy); n != 1 {
 		t.Fatal("the v0.2.0 limit row did not get the rate defaults")
 	}
@@ -146,11 +146,17 @@ VALUES (1000, 'enqueued', 'default', 'old', 0, 3, 0, 0, UTC_TIMESTAMP(6), UTC_TI
 		t.Fatal("a v0.2.0 declare lost the rate or the reservations of a key")
 	}
 
-	if _, err := db.ExecContext(ctx, "DELETE FROM kiln_schema_changes"); err != nil {
-		t.Fatal(err)
-	}
-	if err := Migrate(ctx, db); err != nil {
-		t.Fatalf("migrate over a change that was applied but not recorded: %v", err)
+	for _, c := range changes {
+		if _, err := db.ExecContext(ctx, render("DELETE FROM kiln_schema_changes WHERE name = ?", c.name)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := New(ctx, db, NoMigrate()); err == nil || !strings.Contains(err.Error(), c.name) ||
+			!strings.Contains(err.Error(), "run mysqlstore.Migrate") {
+			t.Fatalf("no-migrate without change %s: %v", c.name, err)
+		}
+		if err := Migrate(ctx, db); err != nil {
+			t.Fatalf("migrate over change %s, applied but not recorded: %v", c.name, err)
+		}
 	}
 	if _, err := New(ctx, db, NoMigrate()); err != nil {
 		t.Fatal(err)

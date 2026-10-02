@@ -36,7 +36,7 @@ const sqlOpenBatchDeps = `SELECT parent_id, job_id, mask FROM {p}deps FORCE INDE
 WHERE batch = TRUE AND resolved = FALSE AND parent_id IN (?)
 ORDER BY parent_id, job_id LIMIT 5000 FOR UPDATE`
 
-const sqlLockChildren = `SELECT id, deps_pending, attempt, run_at, COALESCE(limit_key, ''), COALESCE(batch_id, 0)
+const sqlLockChildren = `SELECT id, deps_pending, attempt, run_at, queue, COALESCE(limit_key, ''), COALESCE(batch_id, 0)
 FROM {p}jobs FORCE INDEX (PRIMARY) WHERE id IN (?) AND state = 'awaiting' ORDER BY id FOR UPDATE`
 
 const sqlAdvance = `UPDATE (VALUES `
@@ -76,6 +76,7 @@ type fallout struct {
 	parents  []parent
 	batches  []int64
 	throttle []string
+	queues   []string
 	stats    tally
 	changed  int
 }
@@ -97,6 +98,10 @@ func (f *fallout) throttled(key string) {
 	if !slices.Contains(f.throttle, key) {
 		f.throttle = append(f.throttle, key)
 	}
+}
+
+func (f *fallout) queue(names ...string) {
+	f.queues = merge(f.queues, names...)
 }
 
 func (s *Store) settle(ctx context.Context, q querier, f *fallout) error {
@@ -153,6 +158,7 @@ func (s *Store) settle(ctx context.Context, q querier, f *fallout) error {
 			return err
 		}
 		f.changed += a.changed()
+		f.queue(a.queues...)
 	}
 	if t := f.stats; t != (tally{}) {
 		bucket := f.now.Truncate(time.Minute)
@@ -259,13 +265,14 @@ func (s *Store) advance(ctx context.Context, q querier, f *fallout, children []i
 		pending int
 		attempt int
 		runAt   stamp
+		queue   string
 		limit   string
 		batch   int64
 	}
 	var locked []child
 	for rows.Next() {
 		var c child
-		if err := rows.Scan(&c.id, &c.pending, &c.attempt, &c.runAt, &c.limit, &c.batch); err != nil {
+		if err := rows.Scan(&c.id, &c.pending, &c.attempt, &c.runAt, &c.queue, &c.limit, &c.batch); err != nil {
 			rows.Close()
 			return err
 		}
@@ -304,6 +311,7 @@ func (s *Store) advance(ctx context.Context, q querier, f *fallout, children []i
 			f.throttled(c.limit)
 		default:
 			st = driver.Enqueued
+			f.queue(c.queue)
 		}
 		if upd == nil {
 			upd = append(upd, s.q.advance...)

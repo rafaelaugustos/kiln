@@ -41,9 +41,14 @@ const sqlDelete = `WITH t AS MATERIALIZED (
 		ORDER BY h.key
 		FOR UPDATE OF h))
 	RETURNING q.key
-), k AS MATERIALIZED (
+), ks AS MATERIALIZED (
 	SELECT l.key FROM {s}.limits l
 	WHERE l.key IN (SELECT limit_key FROM t WHERE state = 'enqueued') AND (SELECT count(*) FROM r) >= 0
+	ORDER BY l.key
+	FOR KEY SHARE
+), k AS MATERIALIZED (
+	SELECT l.key FROM {s}.limits l
+	WHERE l.key IN (SELECT key FROM ks)
 	ORDER BY l.key
 	FOR NO KEY UPDATE
 ), m AS (

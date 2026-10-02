@@ -18,10 +18,11 @@ type rule struct {
 
 type throttle struct {
 	rule
-	active  int
-	refs    int
-	tat     time.Time
-	waiting jobHeap
+	active   int
+	refs     int
+	tat      time.Time
+	admitTat time.Time
+	waiting  jobHeap
 }
 
 func ruleOf(p *driver.InsertParams) rule {
@@ -45,13 +46,25 @@ func (l *throttle) interval() time.Duration {
 	return l.per / time.Duration(l.rate)
 }
 
+func (l *throttle) tau() time.Duration {
+	return time.Duration(l.burst-1) * l.interval()
+}
+
 func (l *throttle) slot(now time.Time) time.Time {
-	tau := time.Duration(l.burst-1) * l.interval()
-	return later(now, l.tat.Add(-tau))
+	return later(now, l.tat.Add(-l.tau()))
 }
 
 func (l *throttle) take(at time.Time) {
 	l.tat = later(l.tat, at).Add(l.interval())
+}
+
+func (l *throttle) open(now time.Time) bool {
+	return !l.admitTat.Add(-l.tau() - l.interval()/2).After(now)
+}
+
+func (l *throttle) admit(now time.Time) {
+	l.admitTat = later(l.admitTat, now).Add(l.interval())
+	l.tat = later(l.tat, l.admitTat)
 }
 
 func later(a, b time.Time) time.Time {
@@ -72,10 +85,10 @@ func (s *Store) admitKey(key string) int {
 	n := 0
 	for ; l.rate == 0 || n < admitBatch; n++ {
 		j := l.waiting.peek()
-		if j == nil {
+		if j == nil || j.granted && l.full() {
 			break
 		}
-		rated := l.rate > 0 && !j.granted
+		rated := l.rate > 0 && (!j.granted || !l.open(s.now))
 		at := s.now
 		if rated {
 			at = l.slot(s.now)
@@ -91,6 +104,9 @@ func (s *Store) admitKey(key string) int {
 		}
 		if rated {
 			l.take(at)
+		}
+		if l.rate > 0 {
+			l.admit(s.now)
 		}
 		j.granted = false
 		s.move(j, driver.Enqueued)

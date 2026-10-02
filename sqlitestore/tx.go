@@ -55,11 +55,10 @@ func (w *TxWriter) SealBatch(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (w *TxWriter) Notify(context.Context) error {
+func (w *TxWriter) Notify(ctx context.Context) error {
 	queues := w.queues
 	w.queues = nil
-	w.s.hub.ready(queues)
-	return nil
+	return w.s.hub.notify(ctx, queues)
 }
 
 func (w *TxWriter) atomic(ctx context.Context, fn func() error) error {

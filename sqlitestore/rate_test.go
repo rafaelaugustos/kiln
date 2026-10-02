@@ -108,6 +108,7 @@ func TestPromoteAdmitsThrottledGrant(t *testing.T) {
 	}
 
 	exec("UPDATE {p}jobs SET run_at = {now} WHERE id = ?", due)
+	exec("UPDATE {p}limits SET admit_tat = {now} WHERE limit_key = 'k'")
 	exec("UPDATE {p}jobs SET state = 'throttled' WHERE state = 'scheduled' AND run_at <= {now}")
 	wantState(due, driver.Throttled)
 
