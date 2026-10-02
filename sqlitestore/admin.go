@@ -21,22 +21,25 @@ WHERE j.id > ?`
 
 const sqlCancel = `UPDATE {p}jobs SET cancel_requested = 1 WHERE id IN (SELECT value FROM json_each(?))`
 
-const sqlFailed = `SELECT {now}, j.id, j.attempt, j.queue, j.unique_key, COALESCE(j.limit_key, ''), 0
+const sqlFailed = `SELECT {now}, j.id, CASE WHEN j.state = 'scheduled' THEN j.attempt ELSE 0 END, j.queue, j.unique_key,
+	COALESCE(j.limit_key, ''), 0
 FROM {p}jobs j
 WHERE j.state IN ('failed', 'scheduled') AND j.id > ?`
 
-const sqlArchived = `SELECT {now}, j.id, j.attempt, j.queue, j.unique_key, COALESCE(j.limit_key, ''), j.finalized_at
+const sqlArchived = `SELECT {now}, j.id, 0, j.queue, j.unique_key, COALESCE(j.limit_key, ''), j.finalized_at
 FROM {p}archive j
 WHERE (j.finalized_at < ? OR j.finalized_at = ? AND j.id < ?)`
 
 const sqlRequeueLive = `UPDATE {p}jobs AS j SET state = ?, run_at = ?, finalized_at = NULL, cancel_requested = 0,
-	granted = 0, max_attempts = max(j.max_attempts, j.attempt + 1), history = ` + pushHistory + `
+	granted = 0, attempt = CASE WHEN j.state = 'scheduled' THEN j.attempt ELSE 0 END,
+	max_attempts = CASE WHEN j.state = 'scheduled' THEN max(j.max_attempts, j.attempt + 1) ELSE j.max_attempts END,
+	history = ` + pushHistory + `
 WHERE j.id = ?`
 
 const sqlRequeueArchived = `INSERT INTO {p}jobs (id, state, queue, kind, priority, attempt, max_attempts, claim,
 	timeout_ms, deps_pending, run_at, created_at, attempted_at, server, batch_id, after_batch, parents, recurring_id,
 	unique_key, limit_key, args, meta, tags, history)
-SELECT j.id, ?, j.queue, j.kind, j.priority, j.attempt, max(j.max_attempts, j.attempt + 1), j.claim,
+SELECT j.id, ?, j.queue, j.kind, j.priority, 0, j.max_attempts, j.claim,
 	j.timeout_ms, 0, ?, j.created_at, j.attempted_at, j.server, j.batch_id, j.after_batch, j.parents, j.recurring_id,
 	j.unique_key, j.limit_key, j.args, j.meta, j.tags, ` + pushHistory + `
 FROM {p}archive j WHERE j.id = ?`

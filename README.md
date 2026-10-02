@@ -104,6 +104,7 @@ Every kind gets `MaxAttempts` (default 10) and a `Backoff` that computes the del
 attempt from the attempt number and the error. `kiln.Exponential`, `kiln.Constant` and
 `kiln.Delays` cover the common cases; a handler can also return `kiln.Permanent(err)` to fail
 without retrying, or `kiln.Snooze(d)` to reschedule itself without counting as a failure.
+A failed job that you requeue gets all of its attempts again.
 
 ### Continuations and flows
 
@@ -231,8 +232,9 @@ implementation must pass.
   someone requeues or deletes it, as in Hangfire. Continuations that wait for its success (`After`,
   `Needs`) and batches that contain it wait too. Deleting the failed job deletes those continuations;
   `AfterFinished` continuations run either way.
-- **Requeue.** `Requeue` moves a job back to `enqueued` without resetting its attempt count. A job that
-  had exhausted its attempts gets one more.
+- **Requeue starts over.** Requeueing a `failed`, `succeeded` or `deleted` job resets its attempt count,
+  so it gets all of `MaxAttempts` again and its retries back off from the first delay, as if it had just
+  been enqueued. Requeueing a `scheduled` job only runs it now; it keeps the attempts it has used.
 - **At least once.** A job can run more than once: a worker can crash after the handler's side effect
   and before its result is stored, and a stalled worker's jobs are retried elsewhere. Make handlers
   idempotent; `SetParam` keeps checkpoints and idempotency keys across attempts.

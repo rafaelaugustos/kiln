@@ -148,9 +148,10 @@ type Admin interface {
 
 	// Requeue moves the failed, scheduled, succeeded and deleted jobs that match f to enqueued, or
 	// to throttled when they have a limit key, and returns how many it moved. Archived jobs become
-	// live again and RunAt becomes now. Attempt is kept, MaxAttempts is raised to Attempt+1 if it
-	// is lower, the cancel request and any grant are cleared, and a "requeued" history entry is
-	// added. Jobs in other states are skipped, and so is a job whose unique key, held without
+	// live again and RunAt becomes now. A failed, succeeded or deleted job starts over: Attempt goes
+	// back to 0, so it has all of MaxAttempts again. A scheduled job keeps its Attempt, and
+	// MaxAttempts is raised to Attempt+1 if it is lower. The cancel request and any grant are
+	// cleared, and a "requeued" history entry is added. Jobs in other states are skipped, and so is a job whose unique key, held without
 	// UniqueFor, now belongs to another job. f must name ids or a state.
 	Requeue(ctx context.Context, f Filter) (int, error)
 

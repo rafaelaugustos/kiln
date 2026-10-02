@@ -88,8 +88,10 @@ const sqlRequeueLive = `WITH t AS MATERIALIZED (
 	FOR NO KEY UPDATE OF j
 )` + requeueClaim + `, u AS (
 	UPDATE {s}.jobs j SET state = {s}.ready(now(), j.limit_key), run_at = now(), finalized_at = NULL,
-		cancel_requested = false, granted = false, max_attempts = greatest(j.max_attempts, j.attempt + 1),
-		history = {s}.push(j.history, {s}.entry({s}.ready(now(), j.limit_key), j.attempt, 'requeued', '', '', NULL))
+		cancel_requested = false, granted = false, attempt = CASE WHEN j.state = 'scheduled' THEN j.attempt ELSE 0 END,
+		max_attempts = CASE WHEN j.state = 'scheduled' THEN greatest(j.max_attempts, j.attempt + 1) ELSE j.max_attempts END,
+		history = {s}.push(j.history, {s}.entry({s}.ready(now(), j.limit_key),
+			CASE WHEN j.state = 'scheduled' THEN j.attempt ELSE 0 END, 'requeued', '', '', NULL))
 	WHERE j.id = ANY(ARRAY(SELECT id FROM t WHERE unique_key IS NULL UNION ALL SELECT job_id FROM c))
 	RETURNING j.queue, j.state, j.limit_key
 )` + requeueResult
@@ -110,10 +112,10 @@ const sqlRequeueArchived = `WITH t AS MATERIALIZED (
 	INSERT INTO {s}.jobs (id, state, queue, kind, priority, attempt, max_attempts, claim, timeout_ms, run_at,
 		created_at, attempted_at, server, batch_id, after_batch, parents, recurring_id, unique_key, limit_key,
 		args, meta, tags, history)
-	SELECT m.id, {s}.ready(now(), m.limit_key), m.queue, m.kind, m.priority, m.attempt, greatest(m.max_attempts, m.attempt + 1), m.claim,
+	SELECT m.id, {s}.ready(now(), m.limit_key), m.queue, m.kind, m.priority, 0, m.max_attempts, m.claim,
 		m.timeout_ms, now(), m.created_at, m.attempted_at, m.server, m.batch_id, m.after_batch, m.parents,
 		m.recurring_id, m.unique_key, m.limit_key, m.args, m.meta, m.tags,
-		{s}.push(m.history, {s}.entry({s}.ready(now(), m.limit_key), m.attempt, 'requeued', '', '', NULL))
+		{s}.push(m.history, {s}.entry({s}.ready(now(), m.limit_key), 0, 'requeued', '', '', NULL))
 	FROM m
 	RETURNING queue, state, limit_key
 )` + requeueResult
