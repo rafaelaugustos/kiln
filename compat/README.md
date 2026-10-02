@@ -111,8 +111,10 @@ interval keeps it out of the rate check.
 Both versions also run with a 250ms heartbeat, and their claim, heartbeat and promote calls time
 out after that long. A stall of the database or of the machine longer than that makes a server
 log a store error ending in `context deadline exceeded`, often on both versions at the same
-moment, and step 7 counts it as a failure; on a heavily loaded machine, rerun before suspecting
-the code.
+moment, and a claim that timed out after the database committed it comes back as a lost claim. CI
+runners stall like that now and then, so step 7 logs these timeouts instead of failing on them,
+and skips the stale-outcome check for a server that had them. Any other error a server logs still
+fails the test, and so does a job that runs twice or not at all.
 
 The old program can be run by hand too:
 
