@@ -1,8 +1,7 @@
 # sqlitestore
 
-SQLite 3.35+ storage for [kiln](https://github.com/rafaelaugustos/kiln), on any `*sql.DB` from a
-`database/sql` SQLite driver. It is tested with `modernc.org/sqlite` (no cgo), `mattn/go-sqlite3` and
-`ncruces/go-sqlite3`.
+SQLite 3.38+ storage for [kiln](https://github.com/rafaelaugustos/kiln), on any `*sql.DB` from a
+`database/sql` SQLite driver. Its tests and CI use `modernc.org/sqlite`, which needs no cgo.
 
 ```go
 db, err := sql.Open("sqlite", "file:app.db?_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)&_txlock=immediate")
