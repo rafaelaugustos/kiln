@@ -11,16 +11,17 @@ import (
 )
 
 type producer struct {
-	s       *Server
-	queues  []string
-	workers int
-	batch   int
-	eager   int
-	running atomic.Int64
-	dirty   atomic.Bool
-	wake    chan struct{}
-	open    []string
-	tasks   []*task
+	s        *Server
+	queues   []string
+	workers  int
+	batch    int
+	eager    int
+	running  atomic.Int64
+	claiming atomic.Int64
+	dirty    atomic.Bool
+	wake     chan struct{}
+	open     []string
+	tasks    []*task
 }
 
 func newProducer(s *Server, p Pool) *producer {
@@ -116,6 +117,8 @@ func (p *producer) fetch() bool {
 		return false
 	}
 	n := min(free, p.batch)
+	p.claiming.Store(int64(time.Since(s.startedAt)) + 1)
+	defer p.claiming.Store(0)
 	ctx, cancel := context.WithTimeout(s.base, s.cfg.HeartbeatInterval)
 	jobs, err := s.store.Claim(ctx, driver.ClaimQuery{Queues: queues, Kinds: s.mux.kinds, Limit: n, Server: s.id})
 	cancel()

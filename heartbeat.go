@@ -74,6 +74,7 @@ func (s *Server) reconcile(leases []driver.Lease, seq uint64) {
 	var lost []pending
 	held := make(map[int64]int32, len(leases))
 	s.mu.Lock()
+	claiming := s.claiming()
 	for _, l := range leases {
 		held[l.ID] = l.Claim
 		t := s.tasks[l.ID]
@@ -82,7 +83,7 @@ func (s *Server) reconcile(leases []driver.Lease, seq uint64) {
 			if l.Cancel && t.ref.Claim == l.Claim && !t.settled.Load() {
 				t.cancel(ErrCanceled)
 			}
-		case l.Age > 2*s.cfg.HeartbeatInterval:
+		case l.Age > 2*s.cfg.HeartbeatInterval && l.Age > claiming:
 			lost = append(lost, pending{Ref: l.Ref, State: driver.Enqueued, Reason: "lost", Error: ErrLost.Error()})
 		}
 	}
@@ -98,6 +99,17 @@ func (s *Server) reconcile(leases []driver.Lease, seq uint64) {
 	if len(lost) > 0 {
 		s.log.Warn("kiln: requeued lost claims", "id", s.id, "count", len(lost))
 	}
+}
+
+func (s *Server) claiming() time.Duration {
+	now := time.Since(s.startedAt)
+	age := time.Duration(-1)
+	for _, p := range s.prods {
+		if at := p.claiming.Load(); at > 0 {
+			age = max(age, now-time.Duration(at-1))
+		}
+	}
+	return age
 }
 
 func (s *Server) fenceAfter() time.Duration {
