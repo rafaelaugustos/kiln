@@ -35,9 +35,9 @@ func MaxConns(n int32) Option {
 	return func(c *config) { c.maxConns = n }
 }
 
-// NoMigrate makes New check the schema instead of migrating it: New fails, naming what is
-// missing, when a migration or change of this release has not been applied. Run [Migrate] from a
-// deploy step instead.
+// NoMigrate makes New check the schema instead of migrating it: New fails, naming the version it
+// found or the first change it lacks, when a migration or change of this release has not been
+// applied. Run [Migrate] from a deploy step instead.
 func NoMigrate() Option {
 	return func(c *config) { c.noMigrate = true }
 }
@@ -50,9 +50,9 @@ func ListenConn(connString string) Option {
 }
 
 // ExecMode sets how the store's pool sends statements, [pgx.QueryExecModeCacheStatement] by
-// default, which prepares each statement once per connection. Poolers that do not support
-// prepared statements need [pgx.QueryExecModeExec]. The mode does not reach the transactions
-// given to [Store.Tx], which keep that of their connection.
+// default, which prepares each statement once per connection, whatever mode the pool given to New
+// uses. Poolers that do not support prepared statements need [pgx.QueryExecModeExec]. The mode
+// does not reach the transactions given to [Store.Tx], which keep that of their connection.
 func ExecMode(m pgx.QueryExecMode) Option {
 	return func(c *config) { c.mode = m }
 }

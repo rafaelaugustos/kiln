@@ -59,8 +59,8 @@ func order(st driver.State) func(*job) pos {
 	return func(j *job) pos { return pos{0, -j.id} }
 }
 
-// Jobs returns a page of the jobs in q.State, in the order [driver.Inspector.Jobs] gives. Its
-// records leave out History, Output and Children.
+// Jobs returns a page of the jobs in q.State that match the rest of q, in the order
+// [driver.Inspector.Jobs] specifies. Its records leave out History, Output and Children.
 func (s *Store) Jobs(_ context.Context, q driver.JobQuery) (driver.Page, error) {
 	if !q.State.Valid() {
 		return driver.Page{}, fmt.Errorf("%w: state %q", driver.ErrInvalid, q.State)
@@ -100,8 +100,8 @@ func (s *Store) Jobs(_ context.Context, q driver.JobQuery) (driver.Page, error) 
 	return p, nil
 }
 
-// Counts returns the number of jobs in each live state, at most 100000, how many scheduled jobs
-// are retries, and the all-time totals of succeeded and deleted jobs.
+// Counts returns the number of jobs in each live state and of scheduled jobs that are retries,
+// each counted up to 100000, and the all-time totals of succeeded and deleted jobs.
 func (s *Store) Counts(context.Context) (driver.Counts, error) {
 	s.begin()
 	defer s.end()

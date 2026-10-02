@@ -427,8 +427,10 @@ func (s *Store) reclaim(ctx context.Context, tx *sql.Tx, jobs []requeued) ([]req
 	}), nil
 }
 
-// PauseQueue pauses or resumes queue and publishes the change, when the store has a bus. Servers
-// without one see it at their next heartbeat. An empty queue name is [driver.ErrInvalid].
+// PauseQueue pauses or resumes queue. Claim skips a paused queue as soon as PauseQueue returns,
+// whoever calls it; servers learn of the change, and start claiming from a resumed queue again,
+// when the store's bus tells them or at their next heartbeat. An empty queue name is
+// [driver.ErrInvalid].
 func (s *Store) PauseQueue(ctx context.Context, queue string, paused bool) error {
 	if queue == "" {
 		return fmt.Errorf("%w: empty queue", driver.ErrInvalid)

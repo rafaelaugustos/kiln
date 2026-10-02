@@ -70,8 +70,8 @@ func (s *Store) Recurring(_ context.Context, id string) (driver.Recurring, error
 }
 
 // PutRecurring creates r when r.Version is 0 and no recurring job has its ID, or replaces the
-// stored one when r.Version matches it, and fails with [driver.ErrConflict] otherwise. An empty ID
-// is [driver.ErrInvalid].
+// stored one when r.Version equals its Version, and fails with [driver.ErrConflict] otherwise. An
+// empty ID is [driver.ErrInvalid].
 func (s *Store) PutRecurring(_ context.Context, r driver.Recurring) error {
 	if r.ID == "" {
 		return fmt.Errorf("%w: empty recurring id", driver.ErrInvalid)

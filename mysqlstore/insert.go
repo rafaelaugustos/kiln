@@ -81,9 +81,9 @@ type inserter struct {
 
 // Insert inserts jobs in one transaction, as [driver.Writer.Insert] describes, and admits the
 // throttled jobs of the limit keys they use. After the commit it publishes the queues that
-// received jobs to run, when the store has a bus. A call too large for one statement is split into
-// several, sized from the max_allowed_packet New read from the server; a single job too large for
-// that packet fails the call with [driver.ErrTooLarge].
+// received jobs to run, when the store has a bus. The rows of a large call are sent in statements
+// of at most 8 MiB, less when the max_allowed_packet that New read from the server is lower; a job
+// too large to send on its own fails the call with [driver.ErrTooLarge].
 func (s *Store) Insert(ctx context.Context, jobs []driver.InsertParams) ([]driver.Inserted, error) {
 	res, wk, err := s.insert(ctx, nil, jobs)
 	if err != nil {

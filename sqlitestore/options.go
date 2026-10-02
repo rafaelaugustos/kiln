@@ -27,15 +27,15 @@ func Prefix(p string) Option {
 	return func(c *config) { c.prefix = p }
 }
 
-// NoMigrate makes New check the tables instead of migrating them: New fails, naming what is
-// missing, when a migration or change of this release has not been applied. Run [Migrate] from a
-// deploy step instead.
+// NoMigrate makes New check the tables instead of migrating them: New fails, naming the version
+// it found or the first change it lacks, when a migration or change of this release has not been
+// applied. Run [Migrate] from a deploy step instead.
 func NoMigrate() Option {
 	return func(c *config) { c.noMigrate = true }
 }
 
-// Bus makes the store publish its events on b after each commit, and [Store.Subscribe] deliver
-// the events b carries along with those of the store's own writes, so that servers in other
+// Bus makes the store publish its events on b after each commit, and makes [Store.Subscribe]
+// deliver the events from b as well as those of the store's own writes, so that servers in other
 // processes are woken too. Give the same bus to every process that uses the file.
 func Bus(b driver.Bus) Option {
 	return func(c *config) { c.bus = b }

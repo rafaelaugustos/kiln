@@ -66,12 +66,12 @@ func latest() int {
 	return migrations[len(migrations)-1].version
 }
 
-// Migrate creates the store's tables, or brings them up to date, in the database db's DSN names,
-// and fails with [driver.ErrInvalid] when it names none; [New] does the same unless [NoMigrate] is
-// given. Of the options it reads only [Prefix]. It holds a lock taken with GET_LOCK, waiting up to
-// 30s for it, so that callers running at the same time migrate once, and applies the additive
-// changes with lock_wait_timeout set to 5s. Migrate changes nothing when the tables are newer than
-// this release knows, and returns an error saying so.
+// Migrate creates the store's tables, or brings them up to date, in the database named in db's
+// DSN, and fails with [driver.ErrInvalid] when it names none; [New] does the same unless
+// [NoMigrate] is given. Of the options it reads only [Prefix]. It holds a lock taken with
+// GET_LOCK, waiting up to 30s for it, so that callers running at the same time migrate once, and
+// applies the additive changes with lock_wait_timeout set to 5s. Migrate changes nothing when the
+// tables' migration number is newer than this release knows, and returns an error saying so.
 func Migrate(ctx context.Context, db *sql.DB, opts ...Option) error {
 	c := newConfig(opts)
 	if !validPrefix(c.prefix) {

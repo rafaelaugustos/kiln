@@ -7,7 +7,7 @@ later means changing the line that builds the store, not the code that enqueues 
 |---|---|---|
 | PostgreSQL (CI runs 17) | `pgstore` | `LISTEN`/`NOTIFY` wakeups, pgx v5, schema option |
 | MySQL 8.0.19+ (CI runs 8.4) | `mysqlstore` | any `*sql.DB`, table prefix option; servers are woken through a `Bus`, or poll without one |
-| SQLite 3.35+ | `sqlitestore` | any `database/sql` driver, WAL; servers in the same process are woken directly, other processes through a `Bus` |
+| SQLite 3.38+ | `sqlitestore` | any `database/sql` driver, WAL; servers in the same process are woken directly, other processes through a `Bus` |
 | in memory | `memstore` | tests and single-process tools; everything is lost when the process exits |
 
 Every backend passes the same conformance suite, `drivertest.Run`, so the semantics (retries,
@@ -36,8 +36,8 @@ db, _ := sql.Open("mysql", "user:pass@tcp(localhost:3306)/app")
 store, err := mysqlstore.New(ctx, db)
 ```
 
-`sqlitestore` is tested with `modernc.org/sqlite` (no cgo), `mattn/go-sqlite3` and
-`ncruces/go-sqlite3`. SQLite allows one writer at a time, so the store keeps one pooled connection
+`sqlitestore` takes a `*sql.DB` from any `database/sql` SQLite driver; its tests and CI use
+`modernc.org/sqlite`, which needs no cgo. SQLite allows one writer at a time, so the store keeps one pooled connection
 for its writes and starts every write transaction with `BEGIN IMMEDIATE`; reads run alongside it in
 WAL mode.
 

@@ -213,9 +213,11 @@ JOIN {s}.jobs j ON j.id = o.id AND j.claim = o.claim AND j.state = 'processing'`
 
 // Finish applies outcomes in one transaction and one round trip, as [driver.Worker.Finish]
 // describes. An outcome whose job row another transaction has locked is [driver.Busy] while the
-// job is still processing under its claim. When PostgreSQL refuses a value, such as an Output
-// that is not valid JSON, Finish retries the outcomes in halves until it finds the one at fault,
-// which it reports [driver.Rejected], as it does an Output holding a NUL byte.
+// job is still processing under its claim. An outcome with a State Finish cannot apply, or with an
+// Output holding a NUL byte, is [driver.Rejected] at once. When PostgreSQL refuses a value, such
+// as an Output that is not valid JSON, Finish retries the outcomes in halves, each in a
+// transaction of its own, until every outcome at fault is alone, and reports those
+// [driver.Rejected].
 func (s *Store) Finish(ctx context.Context, server string, outs []driver.Outcome) ([]driver.Result, error) {
 	res := make([]driver.Result, len(outs))
 	idx := make([]int, 0, len(outs))

@@ -13,9 +13,10 @@ import (
 
 // Subscribe listens on the store's notification channels over a connection of its own, outside
 // the pool, opened with the pool's configuration or the connection string given to [ListenConn].
-// It calls fn with each event until ctx is done, then returns nil, and with a [driver.Resync]
-// after every LISTEN. A lost connection is replaced after a jittered backoff that grows from 50ms
-// to 5s and starts over once LISTEN succeeds.
+// After every LISTEN it calls fn with a [driver.Resync], then with each event, until ctx is done;
+// then it returns nil. When the connection fails or is lost, it waits a random time between half
+// and all of a backoff that doubles from 50ms to 5s, and the backoff starts over once LISTEN
+// succeeds.
 func (s *Store) Subscribe(ctx context.Context, fn func(driver.Event)) error {
 	backoff := 50 * time.Millisecond
 	for {
