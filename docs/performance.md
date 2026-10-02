@@ -27,3 +27,28 @@ rounds between the two libraries ([bench/](bench/README.md)):
 River's defaults fetch at most once every 100ms, which is what caps it around 1k jobs/s; with that
 cooldown lowered the no-op drain is a tie, and the p99 latency of the two was too noisy on this
 machine to call either way.
+
+## Under a production-like load
+
+The numbers above are single-purpose benchmarks. To see kiln in something closer to production, a small
+shop backend runs the same code on all four stores: PostgreSQL and MySQL with an API process and two
+workers, SQLite and memstore in one process. Placing an order writes it and, in the same transaction,
+enqueues a flow: a payment job under `Limit{Max: 4, Rate: 20, Per: time.Second, Burst: 5}`, then a
+confirmation e-mail and an invoice that wait for it. The payment gateway is a fake that rejects more than 20
+requests per second or 4 at a time, fails 15% of charges and leaves PIX payments pending. Servers run with
+a 2s heartbeat, `DeadAfter` 15s and `LeaderTTL` 6s; MySQL polls every 200ms and has no bus.
+
+| | v0.3.1 | v0.4.0 |
+|---|---|---|
+| Busiest second at the gateway, 150 orders from 15 clients | up to 40 requests (429s) | 24–25 on every store, no 429 |
+| Same, with the limits row held for 1s mid-run (PostgreSQL) | 40 | 25 |
+| Payment job, enqueue to start, MySQL p50 | 684ms | 72ms |
+| Continuation, parent done to child start, MySQL p50 | 61ms | 46ms |
+| Same two on PostgreSQL | 6ms / 5ms | 7ms / 6ms |
+| Export resumed after its worker got `kill -9`, MySQL | 41s | 14s |
+| Same with SQLite, where the one process restarts | 38s | 24s |
+
+Rescued jobs now restart within 100ms of being rescued; the rest of those times is noticing that the
+worker is gone (`DeadAfter`, plus `LeaderTTL` when the dead server was the leader). Across the runs, 25
+buyers racing for 5 units of stock always ended with 5 orders, 20 rejections and no job left behind for a
+rolled-back order, and every charge reached the gateway exactly once.
