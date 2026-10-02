@@ -70,7 +70,7 @@ reference, and then into each SQL store. Schema changes only add things: a new f
 - Doc comments follow the usual Go style: a full sentence that starts with the name, and says what the
   signature can't, such as defaults, units, errors and edge cases.
 - When a change affects behaviour that the README or `docs/` describe, update them in the same pull
-  request, and add a line to the `Unreleased` section of the [changelog](CHANGELOG.md).
+  request, and add a line to the [changelog](CHANGELOG.md) under an `Unreleased` heading at the top.
 
 ## Pull requests
 
