@@ -68,6 +68,38 @@ func TestServerRequeuesLostClaim(t *testing.T) {
 	}
 }
 
+type slowClaim struct {
+	driver.Store
+	delay time.Duration
+	slow  atomic.Bool
+}
+
+func (s *slowClaim) Claim(ctx context.Context, q driver.ClaimQuery) ([]driver.Job, error) {
+	jobs, err := s.Store.Claim(ctx, q)
+	if len(jobs) > 0 && s.slow.CompareAndSwap(false, true) {
+		time.Sleep(s.delay)
+	}
+	return jobs, err
+}
+
+func TestServerWaitsForSlowClaim(t *testing.T) {
+	t.Parallel()
+	store := &slowClaim{Store: memstore.New(), delay: 8 * fastConfig().HeartbeatInterval}
+	c := NewClient(store)
+	var calls atomic.Int32
+	m := NewMux()
+	m.HandleFunc("slow", func(context.Context, *RawJob) error {
+		calls.Add(1)
+		return nil
+	})
+	runServer(t, c, m, fastConfig())
+	id := mustEnqueue(t, c, testArgs{K: "slow"})
+	r := waitState(t, c, id, Succeeded)
+	if slices.Contains(reasons(r), "lost") || r.Attempt != 1 || calls.Load() != 1 {
+		t.Fatalf("reasons %v attempt %d calls %d, want one run and no lost claim", reasons(r), r.Attempt, calls.Load())
+	}
+}
+
 func TestServerFencesStolenJob(t *testing.T) {
 	t.Parallel()
 	store := memstore.New()

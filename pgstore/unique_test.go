@@ -49,15 +49,18 @@ func TestUniqueLive(t *testing.T) {
 func TestUniqueWindow(t *testing.T) {
 	t.Parallel()
 	s := open(t)
-	first := insert(t, s, job("a", unique("w", 300*time.Millisecond)))[0]
+	first := insert(t, s, job("a", unique("w", time.Minute)))[0]
 	j := claim(t, s, 1)[0]
 	finish(t, s, driver.Outcome{Ref: j.Ref, State: driver.Succeeded})
-	dup := insert(t, s, job("a", unique("w", 300*time.Millisecond)))[0]
+	dup := insert(t, s, job("a", unique("w", time.Minute)))[0]
 	if !dup.Duplicate || dup.ID != first.ID || dup.State != driver.Succeeded {
 		t.Fatalf("window duplicate %+v", dup)
 	}
-	time.Sleep(350 * time.Millisecond)
-	if next := insert(t, s, job("a", unique("w", 300*time.Millisecond)))[0]; next.Duplicate {
+	ctx := context.Background()
+	if _, err := s.pool.Exec(ctx, "UPDATE "+s.schema+".uniques SET expires_at = now() - interval '1 ms' WHERE key = 'w'"); err != nil {
+		t.Fatal(err)
+	}
+	if next := insert(t, s, job("a", unique("w", time.Minute)))[0]; next.Duplicate {
 		t.Fatalf("window not expired: %+v", next)
 	}
 }
