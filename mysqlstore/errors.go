@@ -15,6 +15,7 @@ const (
 	errNoTable     = 1146
 	errLockTimeout = 1205
 	errDeadlock    = 1213
+	errNoWait      = 3572
 	errPacket      = 1153
 	errKilled      = 1927
 	errIdle        = 4031
@@ -34,7 +35,7 @@ func redundant(err error) bool {
 
 func retryable(err error) bool {
 	me := mysqlError(err)
-	return me != nil && (me.Number == errDeadlock || me.Number == errLockTimeout)
+	return me != nil && (me.Number == errDeadlock || me.Number == errLockTimeout || me.Number == errNoWait)
 }
 
 func dataError(err error) bool {

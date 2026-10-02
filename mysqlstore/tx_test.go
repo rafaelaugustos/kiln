@@ -213,6 +213,64 @@ func TestTxInsertLeavesLimitsUnlocked(t *testing.T) {
 	}
 }
 
+func TestHeldLimitLeavesInsertsUnblocked(t *testing.T) {
+	t.Parallel()
+	s := open(t)
+	ctx := context.Background()
+	tx := begin(t, s)
+	if _, err := s.Tx(tx).Insert(ctx, []driver.InsertParams{job("a", limited("held", 1))}); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	other := begin(t, s)
+	var key string
+	if err := other.QueryRow("SELECT limit_key FROM kiln_limits WHERE limit_key = 'held' FOR UPDATE").Scan(&key); err != nil {
+		t.Fatal(err)
+	}
+	waiting := begin(t, s)
+	changed := make(chan error, 1)
+	go func() {
+		_, err := s.Tx(waiting).Insert(ctx, []driver.InsertParams{job("a", limited("held", 2))})
+		changed <- err
+	}()
+	time.Sleep(100 * time.Millisecond)
+	soon, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	for _, p := range []driver.InsertParams{job("b"), job("b", limited("free", 1))} {
+		if _, err := s.Insert(soon, []driver.InsertParams{p}); err != nil {
+			t.Fatalf("insert beside a held limit: %v", err)
+		}
+	}
+	tx = begin(t, s)
+	for _, p := range []driver.InsertParams{job("b"), job("b", limited("other", 1)), job("b", limited("held", 1))} {
+		if _, err := s.Tx(tx).Insert(soon, []driver.InsertParams{p}); err != nil {
+			t.Fatalf("insert in a transaction beside a held limit: %v", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-changed:
+		t.Fatalf("rule change returned while its limit was held: %v", err)
+	default:
+	}
+	if err := other.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-changed; err != nil {
+		t.Fatal(err)
+	}
+	if err := waiting.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, s, "SELECT max FROM kiln_limits WHERE limit_key = 'held'"); n != 2 {
+		t.Fatalf("limit max %d after the rule change, want 2", n)
+	}
+}
+
 func TestTxAttachLeavesFinishUnblocked(t *testing.T) {
 	t.Parallel()
 	s := open(t)

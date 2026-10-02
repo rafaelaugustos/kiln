@@ -183,6 +183,7 @@ type statements struct {
 	pruneServers        string
 	pruneUniques        string
 	queues              string
+	recent              string
 	reclaimTail         string
 	recurring           string
 	recurrings          string
@@ -203,6 +204,8 @@ type statements struct {
 	stranded            string
 	take                string
 	throttledKeys       string
+	touch               string
+	touchTail           string
 	unregister          string
 	unusedLimits        string
 	updateLive          string
@@ -294,6 +297,7 @@ func newStatements(prefix string) statements {
 		pruneServers:        r.Replace(sqlPruneServers),
 		pruneUniques:        r.Replace(sqlPruneUniques),
 		queues:              r.Replace(sqlQueues),
+		recent:              r.Replace(sqlRecent),
 		reclaimTail:         r.Replace(sqlReclaimTail),
 		recurring:           r.Replace(sqlRecurring),
 		recurrings:          r.Replace(sqlRecurrings),
@@ -314,6 +318,8 @@ func newStatements(prefix string) statements {
 		stranded:            r.Replace(sqlStranded),
 		take:                r.Replace(sqlTake),
 		throttledKeys:       r.Replace(sqlThrottledKeys),
+		touch:               r.Replace(sqlTouch),
+		touchTail:           r.Replace(sqlTouchTail),
 		unregister:          r.Replace(sqlUnregister),
 		unusedLimits:        r.Replace(sqlUnusedLimits),
 		updateLive:          r.Replace(sqlUpdateLive),
