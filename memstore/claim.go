@@ -6,6 +6,8 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
+// Claim moves up to q.Limit enqueued jobs to processing for q.Server and returns them, as
+// [driver.Worker.Claim] describes.
 func (s *Store) Claim(_ context.Context, q driver.ClaimQuery) ([]driver.Job, error) {
 	if q.Limit <= 0 {
 		return nil, nil

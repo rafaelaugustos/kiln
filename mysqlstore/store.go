@@ -17,6 +17,8 @@ var (
 	_ driver.TxWriter   = (*TxWriter)(nil)
 )
 
+// Store is a [driver.Store] on MySQL, which also implements [driver.Notifier], through the bus
+// given with [Bus], and [driver.Transactor]. It is safe for concurrent use.
 type Store struct {
 	db     *sql.DB
 	prefix string
@@ -36,6 +38,11 @@ type Store struct {
 	}
 }
 
+// New returns a store on db, whose DSN must name the database. New first creates the tables or
+// brings them up to date, as [Migrate] does, unless [NoMigrate] is given, in which case it fails
+// when a migration or change of this release is missing; either way it fails when the tables are
+// newer than this release knows. The store keeps one of db's connections for itself, so New fails
+// with [driver.ErrInvalid] when db allows a single open connection.
 func New(ctx context.Context, db *sql.DB, opts ...Option) (*Store, error) {
 	c := newConfig(opts)
 	if !validPrefix(c.prefix) {
@@ -78,11 +85,19 @@ func New(ctx context.Context, db *sql.DB, opts ...Option) (*Store, error) {
 	return s, nil
 }
 
+// Close publishes the events still pending, when the store has a bus, and gives back the
+// connection the store kept. It closes neither db nor the bus. Call it once the servers that use
+// the store have stopped.
 func (s *Store) Close() {
 	s.nt.close()
 	s.side.close()
 }
 
+// Tx returns a writer that inserts jobs and opens and seals batches inside tx, so that they
+// commit or roll back with the application's work. tx must be open on the store's database. Begin
+// it with [sql.LevelReadCommitted]: at REPEATABLE READ, InnoDB takes gap locks that can make
+// concurrent enqueues wait for its commit. A nil tx gives a writer whose writes fail with
+// [driver.ErrNilTx].
 func (s *Store) Tx(tx *sql.Tx) *TxWriter {
 	return &TxWriter{s: s, tx: tx}
 }

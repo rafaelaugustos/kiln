@@ -29,6 +29,8 @@ WHERE id = ? AND claim = ? AND state = 'processing'`
 
 const sqlHeld = `SELECT 1 FROM {p}jobs WHERE id = ? AND claim = ? AND state = 'processing'`
 
+// Heartbeat records that the server si describes is alive and returns the leases of its
+// processing jobs and the paused queues; see [driver.Worker.Heartbeat].
 func (s *Store) Heartbeat(ctx context.Context, si driver.ServerInfo) (driver.Directives, error) {
 	stmt := render(s.q.heartbeat, si.ID, si.Host, si.PID, si.Version, encodeStrings(si.Queues), encodeStrings(si.Kinds),
 		si.Workers, si.Running, si.StartedAt, si.StartedAt)
@@ -64,6 +66,7 @@ func (s *Store) Heartbeat(ctx context.Context, si driver.ServerInfo) (driver.Dir
 	return d, nil
 }
 
+// Unregister deletes the server's row. Jobs it still has processing become orphans at once.
 func (s *Store) Unregister(ctx context.Context, server string) error {
 	if _, err := s.db.ExecContext(ctx, render(s.q.unregister, server)); err != nil {
 		return wrap("unregister", err)
@@ -71,6 +74,8 @@ func (s *Store) Unregister(ctx context.Context, server string) error {
 	return nil
 }
 
+// SetMeta merges meta into the job's metadata with JSON_MERGE_PATCH while the job is processing
+// under ref's claim, and fails with [driver.ErrLost] otherwise.
 func (s *Store) SetMeta(ctx context.Context, ref driver.Ref, meta map[string]string) error {
 	m := encodeMeta(meta)
 	if m == nil {

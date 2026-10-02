@@ -24,6 +24,8 @@ type plan struct {
 	order []int
 }
 
+// Insert inserts jobs as [driver.Writer.Insert] describes. The store sets no size limits of its
+// own, so it never fails with [driver.ErrTooLarge].
 func (s *Store) Insert(_ context.Context, jobs []driver.InsertParams) ([]driver.Inserted, error) {
 	s.begin()
 	defer s.end()

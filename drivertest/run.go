@@ -19,6 +19,15 @@ type test struct {
 	fn   func(t *testing.T, s driver.Store)
 }
 
+// Run runs the suite as subtests of t, in groups named after the part of the contract they check,
+// such as Claim, Deps or Rate. Each test calls open with its own t for a store of its own, which
+// must be empty. The tests of a group run in parallel, so open must be safe to call from several
+// goroutines and the stores it returns must not share jobs; it can release them with t.Cleanup.
+// The tests sleep and poll on the real clock, so the store's clock must move with it.
+//
+// The Notify tests are skipped for a store that does not implement [driver.Notifier], or whose
+// Subscribe returns an error wrapping [errors.ErrUnsupported], and the Tx tests for a store that
+// does not implement [driver.Transactor].
 func Run(t *testing.T, open func(t *testing.T) driver.Store) {
 	groups := []struct {
 		name  string

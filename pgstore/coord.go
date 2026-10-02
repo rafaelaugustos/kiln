@@ -53,6 +53,7 @@ WHERE j.state = 'processing' AND NOT EXISTS (
 	WHERE s.id = j.server AND s.heartbeat_at > now() - $1 * interval '1 microsecond')
 LIMIT $2`
 
+// Now returns now() from the database server, the clock every method of the store uses.
 func (s *Store) Now(ctx context.Context) (time.Time, error) {
 	var t time.Time
 	if err := s.pool.QueryRow(ctx, s.q.now).Scan(&t); err != nil {
@@ -61,6 +62,8 @@ func (s *Store) Now(ctx context.Context) (time.Time, error) {
 	return t, nil
 }
 
+// Lead acquires or renews the lease called name for holder in one statement, as
+// [driver.Coordinator.Lead] describes.
 func (s *Store) Lead(ctx context.Context, name, holder string, ttl time.Duration) (time.Duration, bool, error) {
 	var held int64
 	err := s.pool.QueryRow(ctx, s.q.lead, name, holder, micros(ttl)).Scan(&held)
@@ -73,6 +76,7 @@ func (s *Store) Lead(ctx context.Context, name, holder string, ttl time.Duration
 	return time.Duration(max(held, 0)) * time.Microsecond, true, nil
 }
 
+// Resign deletes the lease called name if holder has it.
 func (s *Store) Resign(ctx context.Context, name, holder string) error {
 	if _, err := s.pool.Exec(ctx, s.q.resign, name, holder); err != nil {
 		return fmt.Errorf("kiln: resign: %w", err)
@@ -80,6 +84,10 @@ func (s *Store) Resign(ctx context.Context, name, holder string) error {
 	return nil
 }
 
+// Promote moves up to limit scheduled jobs whose run time has come, earliest first, as
+// [driver.Coordinator.Promote] describes. It skips rows that other transactions have locked, so
+// the promoters of every server run side by side, and notifies the queues that received jobs
+// after the commit.
 func (s *Store) Promote(ctx context.Context, limit int) (driver.Promoted, error) {
 	var (
 		p    driver.Promoted
@@ -117,6 +125,8 @@ func (s *Store) Promote(ctx context.Context, limit int) (driver.Promoted, error)
 	return p, nil
 }
 
+// Orphans returns up to limit processing jobs whose server has no row or has not sent a heartbeat
+// for deadAfter. It changes nothing.
 func (s *Store) Orphans(ctx context.Context, deadAfter time.Duration, limit int) ([]driver.Orphan, error) {
 	rows, err := s.pool.Query(ctx, s.q.orphans, micros(deadAfter), max(limit, 1))
 	if err != nil {

@@ -14,6 +14,9 @@ import (
 
 var errNoBus = fmt.Errorf("kiln: subscribe: no bus configured: %w", errors.ErrUnsupported)
 
+// Subscribe hands fn the events of the bus given with [Bus], through the bus's own Subscribe.
+// Without a bus it returns at once with an error wrapping [errors.ErrUnsupported], and servers
+// rely on polling.
 func (s *Store) Subscribe(ctx context.Context, fn func(driver.Event)) error {
 	if s.bus == nil {
 		return errNoBus

@@ -43,6 +43,8 @@ WHERE id = $1 AND version = $11`
 
 const sqlRemoveRecurring = `DELETE FROM {s}.recurring WHERE id = $1`
 
+// Due returns up to limit recurring jobs that are not paused and whose next run has come, the
+// earliest first, with the database's time, in one round trip.
 func (s *Store) Due(ctx context.Context, limit int) ([]driver.Recurring, time.Time, error) {
 	var (
 		now time.Time
@@ -61,6 +63,8 @@ func (s *Store) Due(ctx context.Context, limit int) ([]driver.Recurring, time.Ti
 	return out, now, nil
 }
 
+// Fire applies f in one transaction, as [driver.Coordinator.Fire] describes. After the commit it
+// admits the throttled jobs it inserted and notifies the queues that received jobs.
 func (s *Store) Fire(ctx context.Context, f driver.Fire) ([]driver.Inserted, error) {
 	var (
 		res []driver.Inserted
@@ -112,6 +116,7 @@ func (s *Store) Fire(ctx context.Context, f driver.Fire) ([]driver.Inserted, err
 	return res, nil
 }
 
+// Recurring returns the recurring job id, or an error wrapping [driver.ErrNotFound].
 func (s *Store) Recurring(ctx context.Context, id string) (driver.Recurring, error) {
 	rows, err := s.pool.Query(ctx, s.q.recurring, id)
 	if err != nil {
@@ -127,6 +132,7 @@ func (s *Store) Recurring(ctx context.Context, id string) (driver.Recurring, err
 	return rs[0], nil
 }
 
+// Recurrings returns every recurring job, ordered by id.
 func (s *Store) Recurrings(ctx context.Context) ([]driver.Recurring, error) {
 	rows, err := s.pool.Query(ctx, s.q.recurrings)
 	if err != nil {
@@ -139,6 +145,9 @@ func (s *Store) Recurrings(ctx context.Context) ([]driver.Recurring, error) {
 	return rs, nil
 }
 
+// PutRecurring creates r when r.Version is 0 and no recurring job has its ID, or replaces the
+// stored one when r.Version matches it, and fails with [driver.ErrConflict] otherwise. r must
+// have an ID and a Spec, or PutRecurring fails with [driver.ErrInvalid].
 func (s *Store) PutRecurring(ctx context.Context, r driver.Recurring) error {
 	if r.ID == "" || r.Spec == "" {
 		return fmt.Errorf("%w: recurring needs an id and a spec", driver.ErrInvalid)
@@ -164,6 +173,8 @@ func (s *Store) PutRecurring(ctx context.Context, r driver.Recurring) error {
 	return nil
 }
 
+// RemoveRecurring deletes the recurring job id, or fails with [driver.ErrNotFound]. Jobs it
+// created stay as they are.
 func (s *Store) RemoveRecurring(ctx context.Context, id string) error {
 	tag, err := s.pool.Exec(ctx, s.q.removeRecurring, id)
 	if err != nil {

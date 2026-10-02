@@ -25,6 +25,7 @@ type batch struct {
 	dependents []int64
 }
 
+// OpenBatch creates an unsealed batch and returns its id.
 func (s *Store) OpenBatch(_ context.Context, nb driver.NewBatch) (int64, error) {
 	s.begin()
 	defer s.end()
@@ -33,6 +34,8 @@ func (s *Store) OpenBatch(_ context.Context, nb driver.NewBatch) (int64, error) 
 	return s.batchSeq, nil
 }
 
+// SealBatch seals the batch id, which finishes at once if none of its members is live. It fails
+// with [driver.ErrNotFound] for an unknown id.
 func (s *Store) SealBatch(_ context.Context, id int64) error {
 	s.begin()
 	defer s.end()
@@ -88,6 +91,8 @@ func (b *batch) info() driver.Batch {
 	}
 }
 
+// Batch returns the batch id with its members counted by state, or an error wrapping
+// [driver.ErrNotFound].
 func (s *Store) Batch(_ context.Context, id int64) (driver.Batch, error) {
 	s.begin()
 	defer s.end()
@@ -98,6 +103,7 @@ func (s *Store) Batch(_ context.Context, id int64) (driver.Batch, error) {
 	return b.info(), nil
 }
 
+// Batches returns a page of batches, newest first.
 func (s *Store) Batches(_ context.Context, q driver.BatchQuery) (driver.BatchPage, error) {
 	limit := min(limitOr(q.Limit, 20), 500)
 	var after int64

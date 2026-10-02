@@ -62,6 +62,9 @@ type inserter struct {
 	f       *fallout
 }
 
+// Insert inserts jobs in one transaction, as [driver.Writer.Insert] describes, and admits the
+// throttled jobs of the limit keys they use. After the commit it tells the servers subscribed to
+// the Store, and the bus when the store has one, which queues received jobs to run.
 func (s *Store) Insert(ctx context.Context, jobs []driver.InsertParams) ([]driver.Inserted, error) {
 	if len(jobs) == 0 {
 		return nil, nil

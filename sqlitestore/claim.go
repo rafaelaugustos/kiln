@@ -25,6 +25,8 @@ const sqlClaim = claimHead + claimTail
 
 const sqlClaimKinds = claimHead + ` AND kind IN (SELECT value FROM json_each(?))` + claimTail
 
+// Claim moves up to q.Limit enqueued jobs to processing in one write transaction, as
+// [driver.Worker.Claim] describes.
 func (s *Store) Claim(ctx context.Context, q driver.ClaimQuery) ([]driver.Job, error) {
 	if q.Limit <= 0 || len(q.Queues) == 0 {
 		return nil, nil

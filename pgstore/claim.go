@@ -64,6 +64,9 @@ WHERE j.id = ANY(ARRAY(`, s.schema)
 	return q.(string)
 }
 
+// Claim moves up to q.Limit enqueued jobs to processing in one statement, as
+// [driver.Worker.Claim] describes. It skips rows that other transactions have locked, so servers
+// claiming at the same time neither wait for each other nor take the same job.
 func (s *Store) Claim(ctx context.Context, q driver.ClaimQuery) ([]driver.Job, error) {
 	if q.Limit <= 0 || len(q.Queues) == 0 {
 		return nil, nil

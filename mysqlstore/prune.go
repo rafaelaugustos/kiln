@@ -71,6 +71,9 @@ FOR UPDATE SKIP LOCKED`
 
 const sqlPruneBatches = `DELETE FROM {p}batches WHERE id IN (?)`
 
+// Prune deletes old rows as [driver.Coordinator.Prune] describes, one table at a time. A failure
+// on one table does not stop the others: Prune returns how many rows it deleted along with the
+// errors of every table it could not prune, joined.
 func (s *Store) Prune(ctx context.Context, p driver.PruneParams) (int, error) {
 	limit := p.Limit
 	if limit <= 0 {

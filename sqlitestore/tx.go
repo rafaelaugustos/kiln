@@ -8,6 +8,11 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
+// TxWriter is a [driver.TxWriter] bound to an application's transaction, made by [Store.Tx]. Its
+// writes, the admission of throttled jobs included, happen inside the transaction, each under a
+// savepoint, so one that fails is undone and leaves the transaction usable, unless SQLite has
+// rolled back the whole transaction; every later write then fails. [TxWriter.Notify] wakes the
+// servers after the commit. A TxWriter is not safe for concurrent use.
 type TxWriter struct {
 	s      *Store
 	q      querier
@@ -15,6 +20,8 @@ type TxWriter struct {
 	lost   error
 }
 
+// Insert inserts jobs inside the transaction, as [driver.Writer.Insert] describes, and admits the
+// throttled jobs of the limit keys they use there too.
 func (w *TxWriter) Insert(ctx context.Context, jobs []driver.InsertParams) ([]driver.Inserted, error) {
 	if len(jobs) == 0 {
 		return nil, nil
@@ -30,6 +37,7 @@ func (w *TxWriter) Insert(ctx context.Context, jobs []driver.InsertParams) ([]dr
 	return in.res, nil
 }
 
+// OpenBatch creates an unsealed batch inside the transaction and returns its id.
 func (w *TxWriter) OpenBatch(ctx context.Context, nb driver.NewBatch) (int64, error) {
 	var id int64
 	err := w.atomic(ctx, func() (err error) {
@@ -42,6 +50,8 @@ func (w *TxWriter) OpenBatch(ctx context.Context, nb driver.NewBatch) (int64, er
 	return id, nil
 }
 
+// SealBatch seals the batch id inside the transaction, finishing it when none of its members is
+// live, or fails with [driver.ErrNotFound].
 func (w *TxWriter) SealBatch(ctx context.Context, id int64) error {
 	var f *fallout
 	err := w.atomic(ctx, func() (err error) {
@@ -55,6 +65,10 @@ func (w *TxWriter) SealBatch(ctx context.Context, id int64) error {
 	return nil
 }
 
+// Notify tells the servers subscribed to the Store, and the bus when the store has one, which
+// queues received jobs to run. Call it after the transaction commits. Its error, which only the
+// bus can cause, is advisory: the jobs are committed either way, and without Notify servers find
+// them at their next poll. Calling it twice, or after a rollback, does no harm.
 func (w *TxWriter) Notify(ctx context.Context) error {
 	queues := w.queues
 	w.queues = nil
@@ -86,6 +100,10 @@ func (w *TxWriter) atomic(ctx context.Context, fn func() error) error {
 	return err
 }
 
+// InTx runs fn in a transaction begun with BEGIN IMMEDIATE on the connection kept for writes, and
+// commits it if fn returns nil; otherwise it rolls back and returns fn's error. The store's other
+// writes wait until it ends, so fn must write only through the Writer it is given. After the
+// commit InTx tells the servers which queues received jobs, as [TxWriter.Notify] would.
 func (s *Store) InTx(ctx context.Context, fn func(w driver.Writer) error) error {
 	var w *TxWriter
 	err := s.write(ctx, func(_ context.Context, q querier) error {

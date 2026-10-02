@@ -211,6 +211,11 @@ const sqlReleaseBatches = `WITH b AS (
 const sqlBusy = `SELECT o.id, o.claim FROM unnest($1::bigint[], $2::int[]) AS o(id, claim)
 JOIN {s}.jobs j ON j.id = o.id AND j.claim = o.claim AND j.state = 'processing'`
 
+// Finish applies outcomes in one transaction and one round trip, as [driver.Worker.Finish]
+// describes. An outcome whose job row another transaction has locked is [driver.Busy] while the
+// job is still processing under its claim. When PostgreSQL refuses a value, such as an Output
+// that is not valid JSON, Finish retries the outcomes in halves until it finds the one at fault,
+// which it reports [driver.Rejected], as it does an Output holding a NUL byte.
 func (s *Store) Finish(ctx context.Context, server string, outs []driver.Outcome) ([]driver.Result, error) {
 	res := make([]driver.Result, len(outs))
 	idx := make([]int, 0, len(outs))
