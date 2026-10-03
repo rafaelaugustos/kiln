@@ -53,6 +53,7 @@ type statements struct {
 	insertJobs        string
 	job               string
 	lead              string
+	limitInfo         string
 	limitPage         string
 	lockBatch         string
 	nextDue           string
@@ -146,6 +147,7 @@ func render(prefix string) statements {
 		insertJobs:        r(sqlInsertJobs),
 		job:               r(sqlJob),
 		lead:              r(sqlLead),
+		limitInfo:         r(sqlLimitInfo),
 		limitPage:         r(sqlLimitPage),
 		lockBatch:         r(sqlLockBatch),
 		nextDue:           r(sqlNextDue),

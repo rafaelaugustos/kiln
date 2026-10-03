@@ -11,14 +11,16 @@ import (
 )
 
 var (
-	_ driver.Store      = (*Store)(nil)
-	_ driver.Notifier   = (*Store)(nil)
-	_ driver.Transactor = (*Store)(nil)
-	_ driver.TxWriter   = (*TxWriter)(nil)
+	_ driver.Store       = (*Store)(nil)
+	_ driver.Notifier    = (*Store)(nil)
+	_ driver.Transactor  = (*Store)(nil)
+	_ driver.LimitReader = (*Store)(nil)
+	_ driver.TxWriter    = (*TxWriter)(nil)
 )
 
-// Store is a [driver.Store] on MySQL. It also implements [driver.Transactor], and
-// [driver.Notifier] through the bus given with [Bus]. It is safe for concurrent use.
+// Store is a [driver.Store] on MySQL. It also implements [driver.Transactor] and
+// [driver.LimitReader], and [driver.Notifier] through the bus given with [Bus]. It is safe for
+// concurrent use.
 type Store struct {
 	db     *sql.DB
 	prefix string
@@ -159,6 +161,7 @@ type statements struct {
 	keyState            string
 	lead                string
 	leader              string
+	limitInfo           string
 	limitPage           string
 	linkedNow           string
 	lockArchived        string
@@ -273,6 +276,7 @@ func newStatements(prefix string) statements {
 		keyState:            r.Replace(sqlKeyState),
 		lead:                r.Replace(sqlLead),
 		leader:              r.Replace(sqlLeader),
+		limitInfo:           r.Replace(sqlLimitInfo),
 		limitPage:           r.Replace(sqlLimitPage),
 		linkedNow:           r.Replace(sqlLinkedNow),
 		lockArchived:        r.Replace(sqlLockArchived),

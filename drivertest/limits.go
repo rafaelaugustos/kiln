@@ -24,6 +24,9 @@ var limitsTests = []test{
 	{"Archived", testLimitArchived},
 	{"Rows", testLimitRows},
 	{"Concurrent", testLimitConcurrent},
+	{"Reader", testLimitReader},
+	{"ReaderPages", testLimitReaderPages},
+	{"ReaderNextStart", testLimitReaderNextStart},
 }
 
 func testLimitAdmission(t *testing.T, s driver.Store) {
@@ -383,4 +386,97 @@ func testLimitConcurrent(t *testing.T, s driver.Store) {
 	if c.Throttled != 0 || c.Enqueued != 0 || c.Processing != 0 || c.Scheduled != 0 {
 		t.Fatalf("counts %+v, want every job finished", c)
 	}
+}
+
+func limitReader(t *testing.T, s driver.Store) driver.LimitReader {
+	t.Helper()
+	lr, ok := s.(driver.LimitReader)
+	if !ok {
+		t.Skip("store does not implement driver.LimitReader")
+	}
+	return lr
+}
+
+func readLimits(t *testing.T, lr driver.LimitReader, after string, limit int) []driver.LimitInfo {
+	t.Helper()
+	ls, err := lr.Limits(t.Context(), after, limit)
+	if err != nil {
+		t.Fatalf("limits after %q: %v", after, err)
+	}
+	return ls
+}
+
+func testLimitReader(t *testing.T, s driver.Store) {
+	lr := limitReader(t, s)
+	insert(t, s, repeat(4, limited("lr", "held", 2))...)
+	claimN(t, s, 1, "lr")
+	later := limited("lr", "held", 2)
+	later.Delay = time.Hour
+	add(t, s, later)
+	paced := insertedIDs(insert(t, s, repeat(3, rated("lr", "paced", 1, time.Minute, 1))...))
+	wantState(t, s, driver.Scheduled, paced[1:]...)
+	requeueIDs(t, s, paced[2])
+	wantState(t, s, driver.Scheduled, paced[2])
+
+	ls := readLimits(t, lr, "", 0)
+	if len(ls) != 2 {
+		t.Fatalf("limits %+v, want held and paced", ls)
+	}
+	if want := (driver.LimitInfo{Key: "held", Max: 2, Active: 2, Throttled: 2}); ls[0] != want {
+		t.Fatalf("limit %+v, want %+v", ls[0], want)
+	}
+	got := ls[1]
+	got.NextStart = time.Time{}
+	if want := (driver.LimitInfo{Key: "paced", Rate: 1, Per: time.Minute, Burst: 1, Active: 1, Reserved: 2}); got != want {
+		t.Fatalf("limit %+v, want %+v", ls[1], want)
+	}
+}
+
+func testLimitReaderPages(t *testing.T, s driver.Store) {
+	lr := limitReader(t, s)
+	keys := []string{"a", "b", "c", "d", "e"}
+	for _, k := range keys {
+		add(t, s, limited("lp", k, 1))
+	}
+	for _, c := range []struct {
+		after string
+		limit int
+		want  []string
+	}{
+		{"", 2, []string{"a", "b"}},
+		{"b", 2, []string{"c", "d"}},
+		{"d", 2, []string{"e"}},
+		{"e", 2, nil},
+		{"", 0, keys},
+		{"bb", -1, []string{"c", "d", "e"}},
+	} {
+		var got []string
+		for _, l := range readLimits(t, lr, c.after, c.limit) {
+			got = append(got, l.Key)
+		}
+		if !slices.Equal(got, c.want) {
+			t.Fatalf("limits after %q, at most %d: %v, want %v", c.after, c.limit, got, c.want)
+		}
+	}
+}
+
+func testLimitReaderNextStart(t *testing.T, s driver.Store) {
+	lr := limitReader(t, s)
+	ids := insertedIDs(insert(t, s, repeat(4, rated("ln", "paced", 1, time.Minute, 2))...))
+	add(t, s, rated("ln", "idle", 1, time.Minute, 2))
+	wantState(t, s, driver.Enqueued, ids[:2]...)
+	wantState(t, s, driver.Scheduled, ids[2:]...)
+	last := record(t, s, ids[3]).RunAt
+
+	ls := readLimits(t, lr, "", 0)
+	if len(ls) != 2 || ls[0].Key != "idle" || ls[1].Key != "paced" {
+		t.Fatalf("limits %+v, want idle and paced", ls)
+	}
+	if !ls[0].NextStart.IsZero() {
+		t.Fatalf("idle next start %v, want zero for a key whose next slot is now", ls[0].NextStart)
+	}
+	if ls[1].Reserved != 2 {
+		t.Fatalf("paced reserved %d, want 2", ls[1].Reserved)
+	}
+	within(t, "paced next start", ls[1].NextStart, last.Add(time.Minute), last.Add(time.Minute))
 }

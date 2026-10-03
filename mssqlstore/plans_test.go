@@ -136,6 +136,7 @@ INSERT INTO ` + p + `limits (limit_key, [max], rate, per_us, burst) SELECT CONCA
 		{"next due", "jobs", "jobs_due", "", s.q.nextDue},
 		{"pending", "jobs", "", "", s.q.pending},
 		{"orphans", "jobs", "", `DECLARE @n INT = 100, @us BIGINT = 1000000;`, s.q.orphans},
+		{"limit info", "jobs", "", `DECLARE @n INT = 100, @after NVARCHAR(255) = N'key10';`, s.q.limitInfo},
 	}
 	for _, c := range cases {
 		plan := showplan(t, conn, c.vars+"\n"+c.sql)

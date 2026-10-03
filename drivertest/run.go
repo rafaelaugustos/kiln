@@ -26,8 +26,9 @@ type test struct {
 // The tests sleep and poll on the real clock, so the store's clock must move with it.
 //
 // The Notify tests are skipped for a store that does not implement [driver.Notifier], or whose
-// Subscribe returns an error wrapping [errors.ErrUnsupported], and the Tx tests for a store that
-// does not implement [driver.Transactor].
+// Subscribe returns an error wrapping [errors.ErrUnsupported], the Tx tests for a store that does
+// not implement [driver.Transactor], and the Limits tests of [driver.LimitReader] for a store
+// that does not implement it.
 func Run(t *testing.T, open func(t *testing.T) driver.Store) {
 	groups := []struct {
 		name  string

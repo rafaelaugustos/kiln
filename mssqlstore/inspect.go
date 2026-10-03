@@ -73,6 +73,14 @@ LEFT JOIN (
 LEFT JOIN {p}queues p ON p.name = n.name
 ORDER BY n.name`
 
+const sqlLimitInfo = `SELECT TOP (@n) l.limit_key, l.[max], l.rate, l.per_us, l.burst, l.active,
+	(SELECT COUNT(*) FROM {p}jobs j WHERE j.state = 'throttled' AND j.limit_key = l.limit_key),
+	(SELECT COUNT(*) FROM {p}jobs j WHERE j.state = 'scheduled' AND j.granted = 1 AND j.limit_key = l.limit_key),
+	l.tat, CAST(SYSUTCDATETIME() AS DATETIME2(6))
+FROM {p}limits l
+WHERE l.limit_key > @after
+ORDER BY l.limit_key`
+
 const batchColumns = `b.id, b.description, b.meta, b.total, b.sealed, b.created_at, b.finished_at,
 	(SELECT N'{' + STRING_AGG(N'"' + c.state + N'":' + CAST(c.n AS NVARCHAR(MAX)), N',') + N'}' FROM (
 		SELECT x.state, SUM(x.n) AS n FROM (
@@ -381,6 +389,44 @@ func (s *Store) Queues(ctx context.Context) ([]driver.QueueInfo, error) {
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("kiln: queues: %w", err)
+	}
+	return out, nil
+}
+
+// Limits returns the limit keys after the given key, in key order, at most limit of them, 100
+// when limit is 0 or less, as [driver.LimitReader] describes, in one round trip that counts the
+// jobs of each key through the indexes on limit_key.
+func (s *Store) Limits(ctx context.Context, after string, limit int) ([]driver.LimitInfo, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx, s.q.limitInfo, sql.Named("n", limit), sql.Named("after", after))
+	if err != nil {
+		return nil, fmt.Errorf("kiln: limits: %w", err)
+	}
+	defer rows.Close()
+	var out []driver.LimitInfo
+	for rows.Next() {
+		var (
+			l        driver.LimitInfo
+			per      int64
+			tat, now moment
+		)
+		err := rows.Scan(&l.Key, &l.Max, &l.Rate, &per, &l.Burst, &l.Active, &l.Throttled, &l.Reserved, &tat, &now)
+		if err != nil {
+			return nil, fmt.Errorf("kiln: limits: %w", err)
+		}
+		l.Per = time.Duration(per) * time.Microsecond
+		if l.Rate > 0 {
+			tau := time.Duration(l.Burst-1) * (l.Per / time.Duration(l.Rate))
+			if next := tat.Add(-tau); next.After(now.Time) {
+				l.NextStart = next
+			}
+		}
+		out = append(out, l)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("kiln: limits: %w", err)
 	}
 	return out, nil
 }
