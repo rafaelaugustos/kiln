@@ -159,6 +159,7 @@ type wake struct {
 	queues []string
 	moved  int
 	rules
+	seen rules
 	held []string
 }
 

@@ -352,3 +352,68 @@ func TestDeleteBesideFinishingParent(t *testing.T) {
 	}
 	wantLimit(t, s, "k", 5, 0)
 }
+
+func TestRuleFallback(t *testing.T) {
+	t.Parallel()
+	s := open(t)
+	ctx := context.Background()
+	hold := func(key string) (func(), int32) {
+		t.Helper()
+		tx, err := s.pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var pid int32
+		q := "SELECT pg_backend_pid() FROM " + s.schema + ".limits WHERE key = $1 FOR NO KEY UPDATE"
+		if err := tx.QueryRow(ctx, q, key).Scan(&pid); err != nil {
+			t.Fatal(err)
+		}
+		return func() { tx.Rollback(ctx) }, pid
+	}
+	blocked := func(pid int32) bool {
+		t.Helper()
+		var b bool
+		q := "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE $1::int = ANY(pg_blocking_pids(pid)))"
+		if err := s.pool.QueryRow(ctx, q, pid).Scan(&b); err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	cases := []struct {
+		key     string
+		later   int
+		wantMax int
+	}{
+		{"unchanged", 0, 2},
+		{"changed", 3, 3},
+	}
+	for _, c := range cases {
+		insert(t, s, job("a", limited(c.key, 1)))
+		release, _ := hold(c.key)
+		_, w, err := s.insert(ctx, nil, []driver.InsertParams{job("a", limited(c.key, 2))})
+		release()
+		if err != nil || !slices.Equal(w.keys, []string{c.key}) {
+			t.Fatalf("%s: insert left %v to fall back, %v", c.key, w.keys, err)
+		}
+		if c.later > 0 {
+			insert(t, s, job("a", limited(c.key, c.later)))
+		}
+		release, pid := hold(c.key)
+		done := make(chan error, 1)
+		go func() { done <- s.readmit(ctx, &w) }()
+		for len(done) == 0 && !blocked(pid) {
+			time.Sleep(5 * time.Millisecond)
+		}
+		release()
+		if err := <-done; err != nil {
+			t.Fatalf("%s: readmit: %v", c.key, err)
+		}
+		var got int
+		if err := s.pool.QueryRow(ctx, "SELECT max FROM "+s.schema+".limits WHERE key = $1", c.key).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != c.wantMax {
+			t.Errorf("%s: max is %d after the fallback, want %d", c.key, got, c.wantMax)
+		}
+	}
+}
