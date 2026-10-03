@@ -14,28 +14,62 @@ import (
 
 type batch struct {
 	id         int64
+	parent     int64
 	desc       string
 	meta       map[string]string
 	total      int64
 	sealed     bool
 	live       int
+	nested     int64
+	unfinished int
 	counts     [nstates]int64
 	created    time.Time
 	finished   time.Time
 	dependents []int64
 }
 
-// OpenBatch creates an unsealed batch and returns its id.
+// OpenBatch creates an unsealed batch and returns its id. With nb.Parent set it nests the batch
+// in that one, or fails with [driver.ErrNotFound] or [driver.ErrClosed] as [driver.Batch]
+// describes.
 func (s *Store) OpenBatch(_ context.Context, nb driver.NewBatch) (int64, error) {
 	s.begin()
 	defer s.end()
-	s.batchSeq++
-	s.batches[s.batchSeq] = &batch{id: s.batchSeq, desc: nb.Description, meta: maps.Clone(nb.Meta), created: s.now}
-	return s.batchSeq, nil
+	if nb.Parent > 0 {
+		if err := s.joinable(nb.Parent, nil); err != nil {
+			return 0, err
+		}
+	}
+	b := s.newBatch(nb)
+	s.add(b)
+	return b.id, nil
 }
 
-// SealBatch seals the batch id, which finishes at once if none of its members is live. It fails
-// with [driver.ErrNotFound] for an unknown id.
+func (s *Store) newBatch(nb driver.NewBatch) *batch {
+	s.batchSeq++
+	return &batch{id: s.batchSeq, parent: max(nb.Parent, 0), desc: nb.Description, meta: maps.Clone(nb.Meta), created: s.now}
+}
+
+func (s *Store) add(b *batch) {
+	s.batches[b.id] = b
+	if p := s.batches[b.parent]; p != nil {
+		p.nested++
+		p.unfinished++
+	}
+}
+
+func (s *Store) joinable(id int64, ov *overlay) error {
+	v, ok := s.view(id, ov)
+	switch {
+	case !ok:
+		return fmt.Errorf("%w: batch %d", driver.ErrNotFound, id)
+	case v.closed():
+		return fmt.Errorf("%w: batch %d", driver.ErrClosed, id)
+	}
+	return nil
+}
+
+// SealBatch seals the batch id, which finishes at once if none of its members is live and its
+// nested batches have finished. It fails with [driver.ErrNotFound] for an unknown id.
 func (s *Store) SealBatch(_ context.Context, id int64) error {
 	s.begin()
 	defer s.end()
@@ -54,10 +88,19 @@ func (s *Store) seal(b *batch) {
 }
 
 func (s *Store) complete(b *batch) {
-	if b.sealed && b.live == 0 && b.finished.IsZero() {
-		b.finished = s.now
-		s.done = append(s.done, b)
+	if !b.idle() {
+		return
 	}
+	b.finished = s.now
+	s.done = append(s.done, b)
+	if p := s.batches[b.parent]; p != nil {
+		p.unfinished--
+		s.complete(p)
+	}
+}
+
+func (b *batch) idle() bool {
+	return b.sealed && b.live == 0 && b.unfinished == 0 && b.finished.IsZero()
 }
 
 func (b *batch) members() int64 {
@@ -69,7 +112,7 @@ func (b *batch) members() int64 {
 }
 
 func (b *batch) view() bview {
-	return bview{sealed: b.sealed, finished: !b.finished.IsZero(), live: b.live}
+	return bview{sealed: b.sealed, finished: !b.finished.IsZero(), live: b.live, unfinished: b.unfinished, parent: b.parent}
 }
 
 func (b *batch) info() driver.Batch {
@@ -80,14 +123,17 @@ func (b *batch) info() driver.Batch {
 		}
 	}
 	return driver.Batch{
-		ID:          b.id,
-		Description: b.desc,
-		Meta:        maps.Clone(b.meta),
-		Total:       b.total,
-		Sealed:      b.sealed,
-		Counts:      counts,
-		CreatedAt:   b.created,
-		FinishedAt:  b.finished,
+		ID:             b.id,
+		Description:    b.desc,
+		Meta:           maps.Clone(b.meta),
+		Total:          b.total,
+		Sealed:         b.sealed,
+		Counts:         counts,
+		CreatedAt:      b.created,
+		FinishedAt:     b.finished,
+		Parent:         b.parent,
+		Nested:         b.nested,
+		NestedFinished: b.nested - int64(b.unfinished),
 	}
 }
 
@@ -103,7 +149,8 @@ func (s *Store) Batch(_ context.Context, id int64) (driver.Batch, error) {
 	return b.info(), nil
 }
 
-// Batches returns a page of batches, newest first.
+// Batches returns a page of batches, newest first, or of the batches nested directly in q.Parent
+// when it is set.
 func (s *Store) Batches(_ context.Context, q driver.BatchQuery) (driver.BatchPage, error) {
 	limit := min(limitOr(q.Limit, 20), 500)
 	var after int64
@@ -118,7 +165,7 @@ func (s *Store) Batches(_ context.Context, q driver.BatchQuery) (driver.BatchPag
 	defer s.end()
 	var bs []*batch
 	for id, b := range s.batches {
-		if after == 0 || id < after {
+		if (after == 0 || id < after) && (q.Parent <= 0 || b.parent == q.Parent) {
 			bs = append(bs, b)
 		}
 	}

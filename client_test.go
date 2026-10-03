@@ -147,3 +147,99 @@ func TestStartBatchCleansUp(t *testing.T) {
 		t.Errorf("unrelated duplicate touched: %s %v", r.State, reasons(r))
 	}
 }
+
+func TestStartBatchNested(t *testing.T) {
+	t.Parallel()
+	store := memstore.New()
+	c := NewClient(store)
+	ctx := context.Background()
+	var top, mid, low Batch
+	top.Add(testArgs{K: "a", N: 1})
+	top.Then(testArgs{K: "b", N: 1})
+	mid.Add(testArgs{K: "a", N: 2})
+	mid.Then(testArgs{K: "b", N: 2})
+	low.Add(testArgs{K: "a", N: 3})
+	mid.AddBatch(&low)
+	top.AddBatch(&mid)
+	id, err := c.StartBatch(ctx, &top)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := store.Batches(ctx, driver.BatchQuery{Parent: id})
+	if err != nil || len(page.Batches) != 1 {
+		t.Fatalf("nested batches %+v %v", page, err)
+	}
+	inner := page.Batches[0]
+	if !inner.Sealed || inner.Total != 1 || inner.Nested != 1 {
+		t.Fatalf("nested batch %+v", inner)
+	}
+	jobs, err := store.Jobs(ctx, driver.JobQuery{State: Awaiting})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[int64]int64{id: 0, inner.ID: id}
+	for _, r := range jobs.Records {
+		if b, ok := want[r.AfterBatch]; !ok || r.BatchID != b {
+			t.Errorf("continuation %d after batch %d in batch %d", r.ID, r.AfterBatch, r.BatchID)
+		}
+		delete(want, r.AfterBatch)
+	}
+	if len(want) > 0 {
+		t.Errorf("continuations of batches %v missing", want)
+	}
+
+	more := &Batch{Parent: id}
+	more.Then(testArgs{K: "b", N: 3})
+	late, err := c.StartBatch(ctx, more)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := store.Batch(ctx, late); err != nil || b.Parent != id || b.FinishedAt.IsZero() {
+		t.Fatalf("batch started in %d: %+v %v", id, b, err)
+	}
+	if b, _ := store.Batch(ctx, id); b.Total != 3 || b.Nested != 2 {
+		t.Fatalf("outer batch %+v", b)
+	}
+
+	var self, a, b, x, y, shared Batch
+	self.AddBatch(&self)
+	a.AddBatch(&b)
+	b.AddBatch(&a)
+	x.AddBatch(&shared)
+	x.AddBatch(&y)
+	y.AddBatch(&shared)
+	for _, b := range []*Batch{&self, &a, &x} {
+		if _, err := c.StartBatch(ctx, b); !errors.Is(err, ErrInvalid) {
+			t.Errorf("err = %v, want invalid", err)
+		}
+	}
+	if _, err := c.StartBatch(ctx, &Batch{Parent: 1 << 40}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown parent: err = %v", err)
+	}
+	if page, _ := store.Batches(ctx, driver.BatchQuery{}); len(page.Batches) != 4 {
+		t.Errorf("%d batches, want 4", len(page.Batches))
+	}
+}
+
+func TestStartBatchNestedCleansUp(t *testing.T) {
+	t.Parallel()
+	store := memstore.New()
+	c := NewClient(flakyWriter{store})
+	var outer, inner Batch
+	outer.Add(testArgs{K: "a", N: 1})
+	inner.Add(testArgs{K: "a", N: 2})
+	inner.Then(testArgs{K: "b"})
+	outer.AddBatch(&inner)
+	if _, err := c.StartBatch(context.Background(), &outer); !errors.Is(err, errDown) {
+		t.Fatalf("err = %v", err)
+	}
+	page, err := store.Batches(context.Background(), driver.BatchQuery{})
+	if err != nil || len(page.Batches) != 2 {
+		t.Fatalf("batches %+v %v", page, err)
+	}
+	for _, b := range page.Batches {
+		if !b.Sealed || b.FinishedAt.IsZero() || b.Total != 1 || b.Counts[Deleted] != 1 {
+			t.Errorf("batch not discarded: %+v", b)
+		}
+	}
+}

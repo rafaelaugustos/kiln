@@ -28,6 +28,7 @@ const sqlAwaiting = `SELECT id, deps_pending FROM {p}jobs WHERE state = 'awaitin
 
 const sqlIdleBatches = `SELECT b.id FROM {p}batches b
 WHERE b.finished_at IS NULL AND b.sealed AND NOT EXISTS (SELECT 1 FROM {p}jobs j WHERE j.batch_id = b.id)
+	AND NOT ` + unfinishedNested + `
 ORDER BY b.id
 LIMIT ?`
 

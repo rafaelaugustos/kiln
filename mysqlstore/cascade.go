@@ -48,11 +48,16 @@ const sqlResolved = `) AS v (parent_id, job_id) STRAIGHT_JOIN {p}deps d FORCE IN
 	ON d.batch = ? AND d.parent_id = v.parent_id AND d.job_id = v.job_id
 SET d.resolved = TRUE`
 
-const sqlCompleteBatches = `SELECT b.id FROM {p}batches b FORCE INDEX (PRIMARY)
+const unfinishedNested = `EXISTS (SELECT 1 FROM {p}batches n WHERE n.parent_id = b.id AND n.finished_at IS NULL)`
+
+const sqlCompleteBatches = `SELECT b.id, COALESCE(b.parent_id, 0) FROM {p}batches b FORCE INDEX (PRIMARY)
 WHERE b.id IN (?) AND b.sealed AND b.finished_at IS NULL AND NOT EXISTS (SELECT 1 FROM {p}jobs j WHERE j.batch_id = b.id)
+	AND NOT ` + unfinishedNested + `
 ORDER BY b.id FOR UPDATE SKIP LOCKED`
 
 const sqlFinishBatches = `UPDATE {p}batches SET finished_at = ? WHERE id IN (?)`
+
+const sqlLockParentBatches = `SELECT id FROM {p}batches FORCE INDEX (PRIMARY) WHERE id IN (?) ORDER BY id FOR UPDATE`
 
 const sqlCount = `INSERT INTO {p}stats (bucket, server, succeeded, failed, deleted, retried) VALUES (?, ?, ?, ?, ?, ?) AS n
 ON DUPLICATE KEY UPDATE succeeded = {p}stats.succeeded + n.succeeded, failed = {p}stats.failed + n.failed,
@@ -344,28 +349,46 @@ func (s *Store) advance(ctx context.Context, q querier, f *fallout, children []i
 func (s *Store) complete(ctx context.Context, q querier, f *fallout) error {
 	ids := slices.Sorted(slices.Values(f.batches))
 	f.batches = nil
-	rows, err := q.QueryContext(ctx, render(s.q.completeBatches, ids))
-	if err != nil {
-		return err
-	}
-	var done []int64
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
+	for len(ids) > 0 {
+		done, parents, err := s.completeBatches(ctx, q, ids)
+		if err != nil || len(done) == 0 {
 			return err
 		}
+		if _, err := q.ExecContext(ctx, render(s.q.finishBatches, f.now, done)); err != nil {
+			return err
+		}
+		f.changed += len(done)
+		if len(parents) > 0 {
+			if _, err := q.ExecContext(ctx, render(s.q.lockParentBatches, parents)); err != nil {
+				return err
+			}
+		}
+		if err := s.releaseBatches(ctx, q, f, done); err != nil {
+			return err
+		}
+		ids = parents
+	}
+	return nil
+}
+
+func (s *Store) completeBatches(ctx context.Context, q querier, ids []int64) (done, parents []int64, err error) {
+	rows, err := q.QueryContext(ctx, render(s.q.completeBatches, ids))
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, parent int64
+		if err := rows.Scan(&id, &parent); err != nil {
+			return nil, nil, err
+		}
 		done = append(done, id)
+		if parent != 0 {
+			parents = append(parents, parent)
+		}
 	}
-	rows.Close()
-	if err := rows.Err(); err != nil || len(done) == 0 {
-		return err
-	}
-	if _, err := q.ExecContext(ctx, render(s.q.finishBatches, f.now, done)); err != nil {
-		return err
-	}
-	f.changed += len(done)
-	return s.releaseBatches(ctx, q, f, done)
+	slices.Sort(parents)
+	return done, slices.Compact(parents), rows.Err()
 }
 
 func (s *Store) releaseBatches(ctx context.Context, q querier, f *fallout, ids []int64) error {

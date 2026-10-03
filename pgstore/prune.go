@@ -101,6 +101,7 @@ const sqlPruneBatches = `WITH d AS (
 		WHERE b.finished_at IS NOT NULL
 			AND NOT EXISTS (SELECT 1 FROM {s}.jobs j WHERE j.batch_id = b.id)
 			AND NOT EXISTS (SELECT 1 FROM {s}.archive a WHERE a.batch_id = b.id)
+			AND NOT EXISTS (SELECT 1 FROM {s}.batches n WHERE n.parent_id = b.id)
 		LIMIT $1
 		FOR UPDATE SKIP LOCKED)
 	RETURNING 1

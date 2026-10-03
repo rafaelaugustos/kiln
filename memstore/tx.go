@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
 
 	"github.com/rafaelaugustos/kiln/driver"
@@ -40,9 +39,11 @@ type overlay struct {
 }
 
 type bview struct {
-	sealed   bool
-	finished bool
-	live     int
+	sealed     bool
+	finished   bool
+	live       int
+	unfinished int
+	parent     int64
 }
 
 func newOverlay() overlay {
@@ -99,7 +100,8 @@ func (t *Tx) Insert(_ context.Context, jobs []driver.InsertParams) ([]driver.Ins
 }
 
 // OpenBatch returns the id of a new batch, which exists once the transaction commits. Jobs
-// inserted through the Tx can join it before then.
+// inserted and batches opened through the Tx can join it before then. With nb.Parent set it
+// nests the batch in that one, or fails as [Store.OpenBatch] does.
 func (t *Tx) OpenBatch(_ context.Context, nb driver.NewBatch) (int64, error) {
 	s := t.s
 	s.begin()
@@ -107,9 +109,13 @@ func (t *Tx) OpenBatch(_ context.Context, nb driver.NewBatch) (int64, error) {
 	if t.done {
 		return 0, errDone
 	}
-	s.batchSeq++
-	b := &batch{id: s.batchSeq, desc: nb.Description, meta: maps.Clone(nb.Meta), created: s.now}
-	t.ov.batches[b.id] = &bview{}
+	if nb.Parent > 0 {
+		if err := s.joinable(nb.Parent, &t.ov); err != nil {
+			return 0, err
+		}
+	}
+	b := s.newBatch(nb)
+	t.ov.open(s, b)
 	t.ops = append(t.ops, txop{open: b})
 	return b.id, nil
 }
@@ -127,7 +133,7 @@ func (t *Tx) SealBatch(_ context.Context, id int64) error {
 	if v == nil {
 		return fmt.Errorf("%w: batch %d", driver.ErrNotFound, id)
 	}
-	v.seal()
+	t.ov.seal(s, v)
 	t.ops = append(t.ops, txop{seal: id})
 	return nil
 }
@@ -154,7 +160,7 @@ func (t *Tx) Commit() error {
 	for _, op := range t.ops {
 		switch {
 		case op.open != nil:
-			s.batches[op.open.id] = op.open
+			s.add(op.open)
 		case op.seal != 0:
 			s.seal(s.batches[op.seal])
 		default:
@@ -211,13 +217,18 @@ func (t *Tx) release() {
 func (op txop) check(s *Store, ov *overlay) error {
 	switch {
 	case op.open != nil:
-		ov.batches[op.open.id] = &bview{}
+		if p := op.open.parent; p != 0 {
+			if err := s.joinable(p, ov); err != nil {
+				return err
+			}
+		}
+		ov.open(s, op.open)
 	case op.seal != 0:
 		v := ov.batch(s, op.seal)
 		if v == nil {
 			return fmt.Errorf("%w: batch %d", driver.ErrNotFound, op.seal)
 		}
-		v.seal()
+		ov.seal(s, v)
 	default:
 		if err := s.resolve(op.plan, ov); err != nil {
 			return err
@@ -250,11 +261,31 @@ func (ov *overlay) batch(s *Store, id int64) *bview {
 	return &v
 }
 
-func (v *bview) seal() {
-	if !v.sealed {
-		v.sealed = true
-		v.finished = v.live == 0
+func (ov *overlay) open(s *Store, b *batch) {
+	ov.batches[b.id] = &bview{parent: b.parent}
+	if p := ov.batch(s, b.parent); p != nil {
+		p.unfinished++
 	}
+}
+
+func (ov *overlay) seal(s *Store, v *bview) {
+	v.sealed = true
+	ov.complete(s, v)
+}
+
+func (ov *overlay) complete(s *Store, v *bview) {
+	if !v.sealed || v.finished || v.live > 0 || v.unfinished > 0 {
+		return
+	}
+	v.finished = true
+	if p := ov.batch(s, v.parent); p != nil {
+		p.unfinished--
+		ov.complete(s, p)
+	}
+}
+
+func (v bview) closed() bool {
+	return v.finished || v.sealed && v.live == 0 && v.unfinished == 0
 }
 
 func (s *Store) view(id int64, ov *overlay) (bview, bool) {

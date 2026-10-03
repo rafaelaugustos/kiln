@@ -95,7 +95,11 @@ FROM g`,
 INSERT INTO ` + p + `deps (batch, parent_id, job_id, mask) SELECT 0, n % 20000 + 1, 100000 + n, 1 FROM g`,
 		`WITH g AS (SELECT TOP (2000) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS n FROM sys.all_columns a CROSS JOIN sys.all_columns b)
 INSERT INTO ` + p + `limits (limit_key, [max], rate, per_us, burst) SELECT CONCAT(N'key', n), n % 3, n % 2 * 10, 1000000, 1 FROM g`,
+		`WITH g AS (SELECT TOP (20000) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS n FROM sys.all_columns a CROSS JOIN sys.all_columns b)
+INSERT INTO ` + p + `batches (id, description, sealed, created_at, finished_at, parent_id)
+SELECT n, N'', 1, SYSUTCDATETIME(), CASE WHEN n % 10 <> 0 THEN SYSUTCDATETIME() END, CASE WHEN n > 100 THEN n % 100 + 1 END FROM g`,
 		`UPDATE STATISTICS ` + p + `jobs WITH FULLSCAN`,
+		`UPDATE STATISTICS ` + p + `batches WITH FULLSCAN`,
 		`UPDATE STATISTICS ` + p + `deps WITH FULLSCAN`,
 		`UPDATE STATISTICS ` + p + `limits WITH FULLSCAN`,
 	}
@@ -137,6 +141,8 @@ INSERT INTO ` + p + `limits (limit_key, [max], rate, per_us, burst) SELECT CONCA
 		{"pending", "jobs", "", "", s.q.pending},
 		{"orphans", "jobs", "", `DECLARE @n INT = 100, @us BIGINT = 1000000;`, s.q.orphans},
 		{"limit info", "jobs", "", `DECLARE @n INT = 100, @after NVARCHAR(255) = N'key10';`, s.q.limitInfo},
+		{"complete batches", "batches", "", `DECLARE @now DATETIME2(6) = SYSUTCDATETIME(), @ids NVARCHAR(MAX) = N'[7, 9]';`, s.q.completeBatches},
+		{"nested batches", "batches", "batches_parent", `DECLARE @n INT = 21, @before BIGINT = 1000000, @parent BIGINT = 7;`, s.q.nestedBatches},
 	}
 	for _, c := range cases {
 		plan := showplan(t, conn, c.vars+"\n"+c.sql)

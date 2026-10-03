@@ -9,17 +9,24 @@ import (
 )
 
 // Batch groups jobs so that continuations can run once all of them have finished. Add jobs with
-// [Batch.Add] and continuations with [Batch.Then], then insert everything with [Client.StartBatch].
+// [Batch.Add], continuations with [Batch.Then] and nested batches with [Batch.AddBatch], then
+// insert everything with [Client.StartBatch].
 //
-// A batch finishes when every job in it has succeeded or been deleted; a failed job keeps it open
-// until the job is requeued and succeeds, or is deleted. Continuations run when the batch
-// finishes, whether its jobs succeeded or were deleted.
+// A batch finishes when every job in it has succeeded or been deleted and every batch nested in
+// it has finished; a failed job keeps it open until the job is requeued and succeeds, or is
+// deleted. Continuations run when the batch finishes, whether its jobs succeeded or were deleted.
 type Batch struct {
 	Description string            // shown in the dashboard
 	Meta        map[string]string // up to 64 keys and 16 KiB in all
 
-	jobs []Spec
-	then []Spec
+	// Parent nests the batch in an existing batch that can still take jobs, as [InBatch] does
+	// for a job; a running job of that batch can pass its BatchID. The parent waits for the
+	// batch to finish, and the batch's continuations become jobs of the parent.
+	Parent int64
+
+	jobs   []Spec
+	then   []Spec
+	nested []*Batch
 }
 
 // Add appends a job to the batch. Nothing is inserted until [Client.StartBatch].
@@ -28,9 +35,17 @@ func (b *Batch) Add(args Args, opts ...InsertOption) {
 }
 
 // Then appends a continuation, a job inserted with the batch that runs once the batch has
-// finished. Continuations are not members of the batch.
+// finished. Continuations are not members of the batch; those of a nested batch are members of
+// the batch it is nested in, which therefore waits for them too.
 func (b *Batch) Then(args Args, opts ...InsertOption) {
 	b.then = append(b.then, Spec{Args: args, Options: opts})
+}
+
+// AddBatch nests child in the batch, which then finishes only after child has. [Client.StartBatch]
+// inserts child, its jobs and its own nested batches together with b. A batch can be nested in
+// one place only, and never in itself.
+func (b *Batch) AddBatch(child *Batch) {
+	b.nested = append(b.nested, child)
 }
 
 // Len returns the number of jobs added with [Batch.Add], not counting continuations.
@@ -38,30 +53,32 @@ func (b *Batch) Len() int {
 	return len(b.jobs)
 }
 
-// StartBatch inserts the jobs and continuations of b under a new batch, seals it and returns its
-// id. With a store that implements [driver.Transactor] this happens in one transaction; with other
-// stores, a failure midway deletes the jobs already inserted. A job whose [Unique] key is held
-// stays out of the batch. A batch without jobs finishes as it is sealed, so its continuations run
-// right away.
+// StartBatch inserts the jobs and continuations of b under a new batch, with the batches nested
+// in it, seals them and returns the id of b's batch. With a store that implements
+// [driver.Transactor] this happens in one transaction; with other stores, a failure midway
+// deletes the jobs already inserted and seals the batches already opened. A job whose [Unique]
+// key is held stays out of the batch. A batch with no jobs and no nested batches finishes as it is
+// sealed, so its continuations run right away. A batch nested in itself or in two places is
+// [ErrInvalid], and a [Batch.Parent] that does not exist or has finished is [ErrNotFound] or
+// [ErrClosed].
 func (c *Client) StartBatch(ctx context.Context, b *Batch) (int64, error) {
-	jobs, then, err := b.params()
+	t, err := b.tree(make(map[*Batch]bool))
 	if err != nil {
 		return 0, err
 	}
-	t, ok := c.store.(driver.Transactor)
+	tx, ok := c.store.(driver.Transactor)
 	if !ok {
-		id, added, err := c.startBatch(ctx, c.store, b, jobs, then)
+		var p progress
+		id, err := c.startBatch(ctx, c.store, t, b.Parent, &p)
 		if err != nil {
-			if id != 0 {
-				c.discardBatch(ctx, id, added)
-			}
+			c.discardBatch(ctx, &p)
 			return 0, err
 		}
 		return id, nil
 	}
 	var id int64
-	err = t.InTx(ctx, func(w driver.Writer) error {
-		id, _, err = c.startBatch(ctx, w, b, jobs, then)
+	err = tx.InTx(ctx, func(w driver.Writer) error {
+		id, err = c.startBatch(ctx, w, t, b.Parent, &progress{})
 		return err
 	})
 	if err != nil {
@@ -76,15 +93,11 @@ func (c *Client) StartBatchTx(ctx context.Context, w driver.Writer, b *Batch) (i
 	if w == nil {
 		return 0, driver.ErrNilTx
 	}
-	jobs, then, err := b.params()
+	t, err := b.tree(make(map[*Batch]bool))
 	if err != nil {
 		return 0, err
 	}
-	id, _, err := c.startBatch(ctx, w, b, jobs, then)
-	if err != nil {
-		return 0, err
-	}
-	return id, nil
+	return c.startBatch(ctx, w, t, b.Parent, &progress{})
 }
 
 // OpenBatch creates an empty batch and returns its id, for a batch built over several calls: add
@@ -98,10 +111,42 @@ func (c *Client) OpenBatch(ctx context.Context, description string, meta map[str
 }
 
 // SealBatch marks the batch complete, so that it finishes once every job in it has succeeded or
-// been deleted. Jobs can still join it with [InBatch] until then. Sealing twice is not an error;
-// an unknown id is [ErrNotFound].
+// been deleted and every batch nested in it has finished. Jobs can still join it with [InBatch]
+// until then. Sealing twice is not an error; an unknown id is [ErrNotFound].
 func (c *Client) SealBatch(ctx context.Context, id int64) error {
 	return c.store.SealBatch(ctx, id)
+}
+
+type batchTree struct {
+	batch  *Batch
+	jobs   []driver.InsertParams
+	then   []driver.InsertParams
+	nested []*batchTree
+}
+
+type progress struct {
+	batches []int64
+	jobs    []int64
+}
+
+func (b *Batch) tree(seen map[*Batch]bool) (*batchTree, error) {
+	if seen[b] {
+		return nil, fmt.Errorf("%w: batch nested in itself or in two places", ErrInvalid)
+	}
+	seen[b] = true
+	jobs, then, err := b.params()
+	if err != nil {
+		return nil, err
+	}
+	t := &batchTree{batch: b, jobs: jobs, then: then}
+	for _, child := range b.nested {
+		n, err := child.tree(seen)
+		if err != nil {
+			return nil, err
+		}
+		t.nested = append(t.nested, n)
+	}
+	return t, nil
 }
 
 func (b *Batch) params() (jobs, then []driver.InsertParams, err error) {
@@ -121,39 +166,59 @@ func (b *Batch) params() (jobs, then []driver.InsertParams, err error) {
 	return jobs, then, nil
 }
 
-func (c *Client) startBatch(ctx context.Context, w driver.Writer, b *Batch, jobs, then []driver.InsertParams) (id int64, added []int64, err error) {
-	id, err = w.OpenBatch(ctx, driver.NewBatch{Description: b.Description, Meta: b.Meta})
+func (c *Client) startBatch(ctx context.Context, w driver.Writer, t *batchTree, parent int64, p *progress) (int64, error) {
+	b := t.batch
+	id, err := w.OpenBatch(ctx, driver.NewBatch{Description: b.Description, Meta: b.Meta, Parent: parent})
 	if err != nil {
-		return 0, nil, err
+		return 0, err
 	}
-	for i := range jobs {
-		jobs[i].BatchID = id
+	p.batches = append(p.batches, id)
+	for i := range t.jobs {
+		t.jobs[i].BatchID = id
 	}
-	for i := range then {
-		then[i].AfterBatch = id
+	if err := c.insertBatch(ctx, w, t.jobs, p); err != nil {
+		return 0, err
 	}
-	for _, ps := range [][]driver.InsertParams{jobs, then} {
-		if len(ps) == 0 {
-			continue
-		}
-		res, err := c.insertAll(ctx, w, ps)
-		if err != nil {
-			return id, added, err
-		}
-		for _, r := range res {
-			if !r.Duplicate {
-				added = append(added, r.ID)
-			}
+	for _, n := range t.nested {
+		if _, err := c.startBatch(ctx, w, n, id, p); err != nil {
+			return 0, err
 		}
 	}
-	return id, added, w.SealBatch(ctx, id)
+	for i := range t.then {
+		t.then[i].AfterBatch = id
+		if parent != 0 {
+			t.then[i].BatchID = parent
+		}
+	}
+	if err := c.insertBatch(ctx, w, t.then, p); err != nil {
+		return 0, err
+	}
+	return id, w.SealBatch(ctx, id)
 }
 
-func (c *Client) discardBatch(ctx context.Context, id int64, added []int64) {
+func (c *Client) insertBatch(ctx context.Context, w driver.Writer, ps []driver.InsertParams, p *progress) error {
+	if len(ps) == 0 {
+		return nil
+	}
+	res, err := c.insertAll(ctx, w, ps)
+	if err != nil {
+		return err
+	}
+	for _, r := range res {
+		if !r.Duplicate {
+			p.jobs = append(p.jobs, r.ID)
+		}
+	}
+	return nil
+}
+
+func (c *Client) discardBatch(ctx context.Context, p *progress) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	if len(added) > 0 {
-		c.store.Delete(ctx, driver.Filter{IDs: added})
+	if len(p.jobs) > 0 {
+		c.store.Delete(ctx, driver.Filter{IDs: p.jobs})
 	}
-	c.store.SealBatch(ctx, id)
+	for _, id := range p.batches {
+		c.store.SealBatch(ctx, id)
+	}
 }

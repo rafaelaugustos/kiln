@@ -142,7 +142,8 @@ const sqlAttach = `WITH n AS (
 	SELECT id, n FROM unnest($1::bigint[], $2::bigint[]) AS t(id, n)
 ), b AS MATERIALIZED (
 	SELECT b.id, b.finished_at IS NULL AND (NOT b.sealed OR (
-		SELECT count(*) FROM (SELECT 1 FROM {s}.jobs j WHERE j.batch_id = b.id LIMIT n.n + 1) x) > n.n) AS open
+		SELECT count(*) FROM (SELECT 1 FROM {s}.jobs j WHERE j.batch_id = b.id LIMIT n.n + 1) x) > n.n
+		OR ` + unfinishedNested + `) AS open
 	FROM {s}.batches b JOIN n ON n.id = b.id
 	ORDER BY b.id
 	FOR NO KEY UPDATE OF b

@@ -32,6 +32,7 @@ RETURNING j.queue, j.state::text, coalesce(j.limit_key, '')`
 
 const sqlIdleBatches = `SELECT b.id FROM {s}.batches b
 WHERE b.sealed AND b.finished_at IS NULL AND NOT EXISTS (SELECT 1 FROM {s}.jobs j WHERE j.batch_id = b.id)
+	AND NOT ` + unfinishedNested + `
 ORDER BY b.id
 LIMIT $1`
 
@@ -183,6 +184,8 @@ func (s *Store) sweepBatches(ctx context.Context, limit int, w *wake) (int, erro
 	if len(idle) > 0 {
 		b.Queue(s.q.lockBatches, idle)
 		b.Queue(s.q.complete, idle).Query(counting(w, &n))
+		b.Queue(s.q.lockAncestors, idle)
+		b.Queue(s.q.completeAncestors, idle).Query(counting(w, &n))
 	}
 	if len(finished) > 0 {
 		b.Queue(s.q.releaseBatches, finished).Query(counting(w, &n))

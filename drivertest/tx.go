@@ -14,6 +14,7 @@ var txTests = []test{
 	{"InsertError", testTxInsertError},
 	{"OwnWrites", testTxOwnWrites},
 	{"Batch", testTxBatch},
+	{"NestedBatch", testTxNestedBatch},
 	{"Limit", testTxLimit},
 	{"SealLimit", testTxSealLimit},
 }
@@ -113,6 +114,39 @@ func testTxBatch(t *testing.T, s driver.Store) {
 	apply(t, s, outcome(js[0], driver.Succeeded), outcome(js[1], driver.Succeeded))
 	wantFinished(t, s, bid, true)
 	wantState(t, s, driver.Enqueued, next)
+}
+
+func testTxNestedBatch(t *testing.T, s driver.Store) {
+	outer := openBatch(t, s)
+	var inner, top, low int64
+	inTx(t, s, func(w driver.Writer) error {
+		inner = nest(t, w, outer)
+		insert(t, w, members("m", inner, 1)...)
+		top = openBatch(t, w)
+		low = nest(t, w, top)
+		seal(t, w, low)
+		seal(t, w, top)
+		return w.SealBatch(t.Context(), inner)
+	})
+	if b := wantFinished(t, s, inner, false); b.Parent != outer || !b.Sealed || b.Total != 1 {
+		t.Fatalf("nested batch %+v", b)
+	}
+	if b := wantFinished(t, s, top, true); b.Nested != 1 || b.NestedFinished != 1 {
+		t.Fatalf("batch %d %+v", top, b)
+	}
+	seal(t, s, outer)
+	if b := wantFinished(t, s, outer, false); b.Nested != 1 {
+		t.Fatalf("outer batch %+v", b)
+	}
+	apply(t, s, outcome(claimN(t, s, 1, "m")[0], driver.Succeeded))
+	wantFinished(t, s, inner, true)
+	wantFinished(t, s, outer, true)
+
+	err := transactor(t, s).InTx(t.Context(), func(w driver.Writer) error {
+		_, err := w.OpenBatch(t.Context(), driver.NewBatch{Parent: outer})
+		return err
+	})
+	wantErr(t, err, driver.ErrClosed)
 }
 
 func testTxLimit(t *testing.T, s driver.Store) {

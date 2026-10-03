@@ -15,7 +15,8 @@ var (
 	// processing under the claim of the given [Ref].
 	ErrLost = errors.New("kiln: claim lost")
 
-	// ErrClosed is returned when a job is inserted into a batch that has already finished.
+	// ErrClosed is returned when a job is inserted, or a batch opened, into a batch that has
+	// already finished.
 	ErrClosed = errors.New("kiln: batch closed")
 
 	// ErrInvalid is returned for arguments that kiln or the store does not accept. The wrapping
