@@ -110,7 +110,7 @@
 <tr>
 {{- if $sel}}<td class="cb"><input type="checkbox" name="id" value="{{.ID}}" form="bulk" aria-label="Select job {{.ID}}"></td>{{end}}
 <td class="id"><a href="{{link "/jobs/" .ID}}">{{.ID}}</a></td>
-<td class="job"><a href="{{link "/jobs/" .ID}}"><span class="kind">{{.Kind}}</span>{{with preview .Args}}<span class="args">{{.}}</span>{{end}}</a></td>
+<td class="job"><span><a href="{{link "/jobs/" .ID}}"><span class="kind"{{if .Title}} title="{{.Kind}}"{{end}}>{{or .Title .Kind}}</span>{{with preview .Args}}<span class="args">{{.}}</span>{{end}}</a>{{range .Tags}}<a class="chip" href="{{link "/jobs/" $l.State "?tag=" (query .)}}">{{.}}</a>{{end}}</span></td>
 <td><a class="chip" href="{{link "/jobs/" $l.State "?queue=" .Queue}}">{{.Queue}}</a></td>
 <td class="r num">{{.Attempt}}<span class="of">/{{.MaxAttempts}}</span></td>
 {{- if eq $l.State "processing"}}<td class="mono dim">{{.Server}}</td>{{end}}

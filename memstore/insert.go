@@ -16,6 +16,7 @@ type item struct {
 	deps    []dep
 	pending int
 	doom    string
+	holder  int64
 }
 
 type plan struct {
@@ -78,6 +79,11 @@ func (s *Store) prepare(jobs []driver.InsertParams, ov *overlay) (*plan, error) 
 		if u := s.holder(key); u != nil {
 			st, _ := s.state(u.job, ov)
 			p.res[i] = driver.Inserted{ID: u.job, State: st, Duplicate: true}
+			if j := s.jobs[u.job]; j != nil && replaces(j, &jobs[i]) {
+				p.items[i].holder = j.id
+				p.res[i].State, _ = s.replaced(j, runAt(&jobs[i], s.now))
+				p.res[i].Replaced = true
+			}
 		}
 	}
 	if err := p.sort(); err != nil {
@@ -233,7 +239,10 @@ func (s *Store) initial(it *item) driver.State {
 }
 
 func runAt(p *driver.InsertParams, now time.Time) time.Time {
-	if !p.RunAt.IsZero() {
+	switch {
+	case p.UniqueDebounce > 0:
+		return now.Add(p.UniqueDebounce)
+	case !p.RunAt.IsZero():
 		return p.RunAt
 	}
 	return now.Add(max(p.Delay, 0))
@@ -251,6 +260,7 @@ func (s *Store) apply(p *plan, admit bool) {
 			args:        slices.Clone(ps.Args),
 			meta:        maps.Clone(ps.Meta),
 			tags:        slices.Clone(ps.Tags),
+			title:       clip(ps.Title, maxTitle),
 			priority:    ps.Priority,
 			maxAttempts: ps.MaxAttempts,
 			timeout:     ps.Timeout,
@@ -299,6 +309,13 @@ func (s *Store) apply(p *plan, admit bool) {
 		s.index(j)
 		if j.state == driver.Throttled && admit {
 			s.admitting(j.limit)
+		}
+	}
+	for i := range p.items {
+		it := &p.items[i]
+		if j := s.jobs[it.holder]; j != nil && replaces(j, it.p) {
+			s.replace(j, it.p)
+			p.res[i].State = j.state
 		}
 	}
 }

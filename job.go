@@ -28,6 +28,7 @@ type Job[T any] struct {
 	Parents     []int64   // the jobs it waited for
 	Meta        map[string]string
 	Tags        []string
+	Title       string // the job's [Title], or ""
 	Args        T
 
 	run *run
@@ -169,6 +170,7 @@ func rawJob(dj *driver.Job, s *Server) *RawJob {
 		Parents:     dj.Parents,
 		Meta:        dj.Meta,
 		Tags:        dj.Tags,
+		Title:       dj.Title,
 		Args:        dj.Args,
 		run:         &run{ref: dj.Ref, srv: s, closed: s != nil && s.console == nil},
 	}
@@ -189,6 +191,7 @@ func typed[T any](raw *RawJob) (*Job[T], error) {
 		Parents:     raw.Parents,
 		Meta:        raw.Meta,
 		Tags:        raw.Tags,
+		Title:       raw.Title,
 		run:         raw.state(),
 	}
 	if err := json.Unmarshal(raw.Args, &j.Args); err != nil {

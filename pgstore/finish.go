@@ -11,11 +11,11 @@ import (
 
 const archiveColumns = `id, state, queue, kind, priority, attempt, max_attempts, claim, timeout_ms, run_at, created_at,
 		attempted_at, finalized_at, server, batch_id, after_batch, parents, recurring_id, unique_key, limit_key,
-		args, meta, tags, history, output, progress`
+		args, meta, tags, history, output, progress, title`
 
 const movedColumns = `j.id, j.queue, j.kind, j.priority, j.attempt, j.max_attempts, j.claim, j.timeout_ms, j.run_at,
 		j.created_at, j.attempted_at, j.server, j.batch_id, j.after_batch, j.parents, j.recurring_id, j.unique_key,
-		j.limit_key, j.args, j.meta, j.tags, j.history, j.progress`
+		j.limit_key, j.args, j.meta, j.tags, j.history, j.progress, j.title`
 
 const sqlFinish = `WITH t AS MATERIALIZED (
 	SELECT j.id, j.claim, j.queue, greatest(j.attempt - o.refund::int, 0) AS attempt, j.unique_key, j.limit_key,
@@ -48,7 +48,7 @@ const sqlFinish = `WITH t AS MATERIALIZED (
 		a.created_at, a.attempted_at, now(), a.server, a.batch_id, a.after_batch, a.parents, a.recurring_id,
 		a.unique_key, a.limit_key, a.args, a.meta, a.tags,
 		{s}.push(a.history, {s}.entry(a.fin, a.next, a.reason, a.err, a.trace, a.server)),
-		nullif(a.output, '')::json, a.progress
+		nullif(a.output, '')::json, a.progress, a.title
 	FROM a
 ), u AS (
 	UPDATE {s}.jobs j SET state = t.fin, attempt = t.attempt,
@@ -133,7 +133,7 @@ const resolveDeps = `WITH p AS MATERIALIZED (
 	SELECT a.id, 'deleted', a.queue, a.kind, a.priority, a.attempt, a.max_attempts, a.claim, a.timeout_ms, a.run_at,
 		a.created_at, a.attempted_at, now(), a.server, a.batch_id, a.after_batch, a.parents, a.recurring_id,
 		a.unique_key, a.limit_key, a.args, a.meta, a.tags,
-		{s}.push(a.history, {s}.entry('deleted', a.attempt, a.doom, '', '', NULL)), NULL, a.progress
+		{s}.push(a.history, {s}.entry('deleted', a.attempt, a.doom, '', '', NULL)), NULL, a.progress, a.title
 	FROM a
 ), u AS (
 	UPDATE {s}.jobs j SET deps_pending = greatest(j.deps_pending - k.n, 0),

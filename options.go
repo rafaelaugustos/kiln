@@ -56,6 +56,11 @@ type (
 	// up, without duplicates, to at most 32 tags of 1 to 64 bytes.
 	Tags []string
 
+	// Title describes a job in a few words, which the dashboard shows in place of the kind. It is
+	// cut to 200 bytes. A job inserted without it takes the title its args return from a method
+	// Title() string, when they have one.
+	Title string
+
 	// Meta is string metadata stored with a job, which handlers read in [Job.Meta]. Keys from
 	// several options are merged, the later value winning, up to 64 keys and 16 KiB in all. kiln
 	// keeps its own entries under keys that start with "kiln.".
@@ -109,9 +114,19 @@ type (
 // With For zero, a job holds its key until it succeeds, fails or is deleted. With For positive,
 // the key is held for that long after the insert, whatever happens to the job, so it means "at
 // most one job per For" rather than "no duplicates while one is pending".
+//
+// With Replace, a duplicate updates the holder while it has not started: the holder takes the
+// duplicate's args, meta, tags, title, priority and run time. A holder that is already due takes
+// only a run time in the future, and goes back to waiting for it, and a holder that a [Limit] has
+// given a start or a slot keeps it. Debounce makes the job wait that long, in place of [Delay] or
+// [At], and each duplicate inserted while the holder is still [Scheduled], with no start given by
+// a Limit, replaces it and pushes its run time Debounce from now, so the job runs Debounce after
+// the last insert. Replace and Debounce together are [ErrInvalid].
 type Unique struct {
-	Key string
-	For time.Duration
+	Key      string
+	For      time.Duration
+	Replace  bool
+	Debounce time.Duration
 }
 
 // Limit holds back jobs that share Key, across all servers and queues. Key defaults to the kind.
@@ -149,6 +164,7 @@ func (At) insertOption()            {}
 func (MaxAttempts) insertOption()   {}
 func (Timeout) insertOption()       {}
 func (Tags) insertOption()          {}
+func (Title) insertOption()         {}
 func (Meta) insertOption()          {}
 func (Unique) insertOption()        {}
 func (Limit) insertOption()         {}

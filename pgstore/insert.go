@@ -11,6 +11,8 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
+const maxTitle = 200
+
 const claimUniques = `, c AS (
 	INSERT INTO {s}.uniques AS u (key, job_id, expires_at)
 	SELECT w.ukey, w.id, w.expires_at FROM w ORDER BY w.ukey
@@ -34,9 +36,9 @@ const claimUniques = `, c AS (
 const insertRows = `
 	FROM unnest($1::bigint[], $2::text[], $3::text[], $4::smallint[], $5::int[], $6::bigint[], $7::int[],
 		$8::timestamptz[], $9::bigint[], $10::bigint[], $11::bigint[], $12::text[], $13::text[], $14::bytea[],
-		$15::bigint[], $16::text[], $17::text[], $18::text[], $19::text[])
+		$15::bigint[], $16::text[], $17::text[], $18::text[], $19::text[], $20::text[])
 	WITH ORDINALITY AS t(id, queue, kind, priority, max_attempts, timeout_ms, pending, at, delay, batch_id,
-		after_batch, parents, recurring_id, ukey, ufor, limit_key, args, meta, tags, ord)`
+		after_batch, parents, recurring_id, ukey, ufor, limit_key, args, meta, tags, title, ord)`
 
 const sqlInsert = `WITH v AS MATERIALIZED (
 	SELECT coalesce(t.id, nextval('{s}.job_ids')) AS id, t.ord, t.queue, t.kind, coalesce(t.priority, 0) AS priority,
@@ -45,13 +47,14 @@ const sqlInsert = `WITH v AS MATERIALIZED (
 		nullif(t.batch_id, 0) AS batch_id, nullif(t.after_batch, 0) AS after_batch,
 		nullif(t.parents, '')::bigint[] AS parents, nullif(t.recurring_id, '') AS recurring_id,
 		t.ukey, coalesce(t.ufor, 0) AS ufor, nullif(t.limit_key, '') AS limit_key,
-		t.args::json AS args, nullif(t.meta, '')::jsonb AS meta, nullif(t.tags, '')::text[] AS tags` + insertRows + `
+		t.args::json AS args, nullif(t.meta, '')::jsonb AS meta, nullif(t.tags, '')::text[] AS tags,
+		nullif(t.title, '') AS title` + insertRows + `
 ), w AS (
 	SELECT v.id, v.ukey, CASE WHEN v.ufor > 0 THEN now() + v.ufor * interval '1 microsecond' END AS expires_at
-	FROM v WHERE $20 AND v.ukey IS NOT NULL
+	FROM v WHERE $21 AND v.ukey IS NOT NULL
 )` + claimUniques + `, i AS (
 	INSERT INTO {s}.jobs (id, state, queue, kind, priority, max_attempts, timeout_ms, deps_pending, run_at,
-		batch_id, after_batch, parents, recurring_id, unique_key, limit_key, args, meta, tags)
+		batch_id, after_batch, parents, recurring_id, unique_key, limit_key, args, meta, tags, title)
 	SELECT v.id, CASE
 			WHEN v.pending > 0 THEN 'awaiting'
 			WHEN v.run_at > statement_timestamp() THEN 'scheduled'
@@ -60,21 +63,45 @@ const sqlInsert = `WITH v AS MATERIALIZED (
 		END::{s}.state,
 		v.queue, v.kind, v.priority, v.max_attempts, v.timeout_ms, v.pending, v.run_at,
 		v.batch_id, v.after_batch, v.parents, v.recurring_id, CASE WHEN v.ufor = 0 THEN v.ukey END,
-		v.limit_key, v.args, v.meta, v.tags
-	FROM v WHERE v.ukey IS NULL OR NOT $20 OR v.ukey IN (SELECT key FROM won)
+		v.limit_key, v.args, v.meta, v.tags, v.title
+	FROM v WHERE v.ukey IS NULL OR NOT $21 OR v.ukey IN (SELECT key FROM won)
 	RETURNING id, state
 )
 SELECT v.ord, i.id, i.state::text FROM i JOIN v ON v.id = i.id`
 
 const sqlInsertDoomed = `INSERT INTO {s}.archive (id, state, queue, kind, priority, attempt, max_attempts, claim,
 	timeout_ms, run_at, created_at, finalized_at, batch_id, after_batch, parents, recurring_id, limit_key,
-	args, meta, tags, history)
+	args, meta, tags, title, history)
 SELECT t.id, 'deleted', t.queue, t.kind, coalesce(t.priority, 0), 0, t.max_attempts, 0, coalesce(t.timeout_ms, 0),
 	coalesce(t.at, statement_timestamp() + coalesce(t.delay, 0) * interval '1 microsecond'), now(), now(),
 	nullif(t.batch_id, 0), nullif(t.after_batch, 0), nullif(t.parents, '')::bigint[], nullif(t.recurring_id, ''),
 	nullif(t.limit_key, ''), t.args::json, nullif(t.meta, '')::jsonb, nullif(t.tags, '')::text[],
-	jsonb_build_array({s}.entry('deleted', 0, r.reason, '', '', NULL))` + insertRows + `
-JOIN unnest($20::text[]) WITH ORDINALITY AS r(reason, ord) ON r.ord = t.ord`
+	nullif(t.title, ''), jsonb_build_array({s}.entry('deleted', 0, r.reason, '', '', NULL))` + insertRows + `
+JOIN unnest($21::text[]) WITH ORDINALITY AS r(reason, ord) ON r.ord = t.ord`
+
+const sqlReplace = `WITH n AS (
+	SELECT t.ord, t.ukey, d.debounce, t.args, t.meta, t.tags, t.title, coalesce(t.priority, 0) AS priority,
+		coalesce(t.at, statement_timestamp() + coalesce(t.delay, 0) * interval '1 microsecond') AS run_at` + insertRows + `
+	JOIN unnest($21::bool[]) WITH ORDINALITY AS d(debounce, ord) ON d.ord = t.ord
+), h AS MATERIALIZED (
+	SELECT n.ord, j.id FROM n
+	JOIN {s}.uniques u ON u.key = n.ukey
+	JOIN {s}.jobs j ON j.id = u.job_id
+	WHERE (u.expires_at IS NULL OR u.expires_at > now()) AND CASE WHEN n.debounce
+		THEN j.state = 'scheduled' AND NOT j.granted
+		ELSE j.state IN ('awaiting', 'scheduled', 'throttled', 'enqueued') END
+	ORDER BY j.id
+	FOR NO KEY UPDATE OF j
+)
+UPDATE {s}.jobs j SET args = n.args::json, meta = nullif(n.meta, '')::jsonb, tags = nullif(n.tags, '')::text[],
+	title = nullif(n.title, ''), priority = n.priority,
+	state = CASE WHEN NOT j.granted AND n.run_at > statement_timestamp()
+		AND (j.state = 'throttled' OR j.state = 'enqueued' AND j.limit_key IS NULL) THEN 'scheduled' ELSE j.state END,
+	run_at = CASE WHEN j.granted OR j.state = 'enqueued' AND j.limit_key IS NOT NULL THEN j.run_at
+		WHEN j.state IN ('awaiting', 'scheduled') OR n.run_at > statement_timestamp() THEN n.run_at ELSE j.run_at END
+FROM h JOIN n ON n.ord = h.ord
+WHERE j.id = h.id
+RETURNING n.ord`
 
 const sqlAllocate = `WITH v AS MATERIALIZED (
 	SELECT nextval('{s}.job_ids') AS id, t.ord, t.ukey, coalesce(t.ufor, 0) AS ufor
@@ -172,6 +199,8 @@ type inserter struct {
 	live    []int
 	keys    [][]byte
 	holders map[string]holder
+	swaps   []int
+	swapped []int
 	linked  bool
 	batched bool
 	w       wake
@@ -240,6 +269,9 @@ func (in *inserter) plan() {
 			seen[string(p.UniqueKey)] = i
 			in.first[i] = i
 			in.keys = append(in.keys, p.UniqueKey)
+			if p.UniqueReplace || p.UniqueDebounce > 0 {
+				in.swaps = append(in.swaps, i)
+			}
 		}
 		in.live = append(in.live, i)
 	}
@@ -282,6 +314,7 @@ func (in *inserter) runPlain(ctx context.Context) error {
 			return err
 		}
 	}
+	in.queueReplace(b)
 	cols := in.columns(in.live, nil, nil)
 	b.Queue(in.s.q.insert, cols.params(true)...).Query(in.scanInserted(in.live))
 	if len(in.keys) > 0 {
@@ -348,16 +381,38 @@ func (in *inserter) settle() {
 	for i, f := range in.first {
 		if f == i && in.res[i].ID == 0 {
 			h := in.holders[string(in.jobs[i].UniqueKey)]
-			in.res[i] = driver.Inserted{ID: h.id, State: h.state, Duplicate: true}
+			in.res[i] = driver.Inserted{ID: h.id, State: h.state, Duplicate: true,
+				Replaced: slices.Contains(in.swapped, i)}
 		}
 	}
 	for i, f := range in.first {
 		if f >= 0 && f != i {
 			r := in.res[f]
-			r.Duplicate = true
+			r.Duplicate, r.Replaced = true, false
 			in.res[i] = r
 		}
 	}
+}
+
+func (in *inserter) queueReplace(b *pgx.Batch) {
+	if len(in.swaps) == 0 {
+		return
+	}
+	debounce := make([]bool, len(in.swaps))
+	for k, i := range in.swaps {
+		debounce[k] = in.jobs[i].UniqueDebounce > 0
+	}
+	c := in.columns(in.swaps, nil, nil)
+	b.Queue(in.s.q.replace, c.params(debounce)...).Query(func(rows pgx.Rows) error {
+		var ord int
+		for rows.Next() {
+			if err := rows.Scan(&ord); err != nil {
+				return err
+			}
+			in.swapped = append(in.swapped, in.swaps[ord-1])
+		}
+		return rows.Err()
+	})
 }
 
 func (in *inserter) inserted() []int {
@@ -427,6 +482,7 @@ type columns struct {
 	args      []string
 	meta      []string
 	tags      []string
+	title     []string
 }
 
 func put[T any](col *[]T, n, i int, v T) {
@@ -458,9 +514,12 @@ func (in *inserter) columns(items []int, ids []int64, pending []int32) *columns 
 		if p.Timeout != 0 {
 			put(&c.timeout, n, r, millis(p.Timeout))
 		}
-		if !p.RunAt.IsZero() {
+		switch {
+		case p.UniqueDebounce > 0:
+			put(&c.delay, n, r, micros(p.UniqueDebounce))
+		case !p.RunAt.IsZero():
 			put(&c.at, n, r, pgtype.Timestamptz{Time: p.RunAt, Valid: true})
-		} else if p.Delay > 0 {
+		case p.Delay > 0:
 			put(&c.delay, n, r, micros(p.Delay))
 		}
 		if p.BatchID != 0 {
@@ -487,11 +546,14 @@ func (in *inserter) columns(items []int, ids []int64, pending []int32) *columns 
 		if p.Tags != nil {
 			put(&c.tags, n, r, textArray(p.Tags))
 		}
+		if p.Title != "" {
+			put(&c.title, n, r, clean(p.Title, maxTitle))
+		}
 	}
 	return c
 }
 
 func (c *columns) params(extra ...any) []any {
 	return append([]any{c.id, c.queue, c.kind, c.priority, c.attempts, c.timeout, c.pending, c.at, c.delay,
-		c.batch, c.after, c.parents, c.recurring, c.ukey, c.ufor, c.limit, c.args, c.meta, c.tags}, extra...)
+		c.batch, c.after, c.parents, c.recurring, c.ukey, c.ufor, c.limit, c.args, c.meta, c.tags, c.title}, extra...)
 }

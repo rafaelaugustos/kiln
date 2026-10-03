@@ -19,9 +19,21 @@ const recordColumns = `j.id, j.claim, j.kind, j.queue, j.args, j.meta, j.tags, j
 	j.timeout_ms, j.run_at, j.created_at, j.attempted_at, COALESCE(j.batch_id, 0), COALESCE(j.recurring_id, N''),
 	j.parents, COALESCE(j.limit_key, N''), j.state, j.finalized_at, COALESCE(j.server, N''), COALESCE(j.after_batch, 0)`
 
-const liveRecord = recordColumns + `, j.cancel_requested, j.deps_pending, j.progress`
+const liveRecord = recordColumns + `, j.cancel_requested, j.deps_pending, j.progress, COALESCE(j.title, N'')`
 
-const archivedRecord = recordColumns + `, CAST(0 AS BIT), 0, j.progress`
+const archivedRecord = recordColumns + `, CAST(0 AS BIT), 0, j.progress, COALESCE(j.title, N'')`
+
+const tagScan = 1000
+
+const sqlTagged = `SELECT TOP (@n) %[1]s, CAST(CASE WHEN t.n = @cap THEN 1 ELSE 0 END AS BIT) FROM (
+	SELECT j.id, j.hit, ROW_NUMBER() OVER (ORDER BY %[2]s) AS n FROM (
+		SELECT TOP (@cap) j.id, j.run_at, j.priority, j.finalized_at, CASE WHEN EXISTS (SELECT 1 FROM OPENJSON(j.tags) x
+			WHERE x.[value] = @tag COLLATE Latin1_General_100_BIN2) THEN 1 ELSE 0 END AS hit%[3]s
+		ORDER BY %[2]s
+	) j
+) t JOIN %[4]s j ON j.id = t.id
+WHERE t.hit = 1 OR t.n = @cap
+ORDER BY t.n`
 
 const childrenOf = `(SELECT N'[' + STRING_AGG(CAST(d.job_id AS NVARCHAR(MAX)), N',') + N']' FROM {p}deps d
 	WHERE d.batch = 0 AND d.parent_id = j.id)`
@@ -110,7 +122,7 @@ func (s *Store) Job(ctx context.Context, id int64) (driver.Record, error) {
 	return recs[0], nil
 }
 
-func scanRecords(rows *sql.Rows, full bool) ([]driver.Record, error) {
+func scanRecords(rows *sql.Rows, full bool, extra ...any) ([]driver.Record, error) {
 	defer rows.Close()
 	var (
 		out                                 []driver.Record
@@ -125,11 +137,11 @@ func scanRecords(rows *sql.Rows, full bool) ([]driver.Record, error) {
 		var r driver.Record
 		dst := []any{&r.ID, &r.Claim, &r.Kind, &r.Queue, &r.Args, &meta, &tags, &r.Priority, &r.Attempt,
 			&r.MaxAttempts, &ms, &run, &created, &attempted, &r.BatchID, &r.RecurringID, &parents, &r.LimitKey,
-			&state, &finished, &r.Server, &r.AfterBatch, &r.CancelRequested, &pending, &r.Progress}
+			&state, &finished, &r.Server, &r.AfterBatch, &r.CancelRequested, &pending, &r.Progress, &r.Title}
 		if full {
 			dst = append(dst, &hist, &output, &children)
 		}
-		if err := rows.Scan(dst...); err != nil {
+		if err := rows.Scan(append(dst, extra...)...); err != nil {
 			return nil, err
 		}
 		r.Meta = decodeMeta(meta)
@@ -155,7 +167,9 @@ func scanRecords(rows *sql.Rows, full bool) ([]driver.Record, error) {
 }
 
 // Jobs returns a page of the jobs in q.State that match the rest of q, in the order
-// [driver.Inspector.Jobs] specifies. Its records leave out History, Output and Children.
+// [driver.Inspector.Jobs] specifies. Its records leave out History, Output and Children. With
+// q.Tag it looks at no more than 1000 jobs for a page, and sets Next when it stops there, even on a
+// short or empty page.
 func (s *Store) Jobs(ctx context.Context, q driver.JobQuery) (driver.Page, error) {
 	if !q.State.Valid() {
 		return driver.Page{}, fmt.Errorf("%w: state %q", driver.ErrInvalid, q.State)
@@ -179,8 +193,6 @@ func (s *Store) Jobs(ctx context.Context, q driver.JobQuery) (driver.Page, error
 		from, cols = "archive", archivedRecord
 	}
 	var b strings.Builder
-	b.WriteString("SELECT TOP (@n) ")
-	b.WriteString(cols)
 	b.WriteString(" FROM ")
 	b.WriteString(s.prefix)
 	b.WriteString(from)
@@ -225,33 +237,53 @@ func (s *Store) Jobs(ctx context.Context, q driver.JobQuery) (driver.Page, error
 			args = append(args, sql.Named("c2", c2))
 		}
 	}
-	b.WriteString(" ORDER BY ")
-	b.WriteString(order)
-	rows, err := s.db.QueryContext(ctx, b.String(), args...)
+	var (
+		query string
+		edge  bool
+		extra []any
+	)
+	if q.Tag == "" {
+		query = "SELECT TOP (@n) " + cols + b.String() + " ORDER BY " + order
+	} else {
+		query = fmt.Sprintf(sqlTagged, cols, order, b.String(), s.prefix+from)
+		args = append(args, sql.Named("cap", tagScan), sql.Named("tag", q.Tag))
+		extra = append(extra, &edge)
+	}
+	rows, err := s.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return driver.Page{}, fmt.Errorf("kiln: jobs: %w", err)
 	}
-	recs, err := scanRecords(rows, false)
+	recs, err := scanRecords(rows, false, extra...)
 	if err != nil {
 		return driver.Page{}, fmt.Errorf("kiln: jobs: %w", err)
 	}
-	var p driver.Page
-	if len(recs) > limit {
-		recs = recs[:limit]
-		last := recs[limit-1]
-		switch q.State {
-		case driver.Scheduled:
-			p.Next = encodeCursor(last.RunAt.UnixMicro(), last.ID)
-		case driver.Enqueued, driver.Throttled:
-			p.Next = encodeCursor(int64(last.Priority), last.ID)
-		case driver.Succeeded, driver.Deleted, driver.Failed:
-			p.Next = encodeCursor(last.FinalizedAt.UnixMicro(), last.ID)
-		default:
-			p.Next = encodeCursor(0, last.ID)
+	var next *driver.Record
+	if edge {
+		next = &recs[len(recs)-1]
+		if !slices.Contains(next.Tags, q.Tag) {
+			recs = recs[:len(recs)-1]
 		}
 	}
-	p.Records = recs
+	if len(recs) > limit {
+		recs, next = recs[:limit], &recs[limit-1]
+	}
+	p := driver.Page{Records: recs}
+	if next != nil {
+		p.Next = cursorOf(q.State, next)
+	}
 	return p, nil
+}
+
+func cursorOf(st driver.State, r *driver.Record) string {
+	switch st {
+	case driver.Scheduled:
+		return encodeCursor(r.RunAt.UnixMicro(), r.ID)
+	case driver.Enqueued, driver.Throttled:
+		return encodeCursor(int64(r.Priority), r.ID)
+	case driver.Succeeded, driver.Deleted, driver.Failed:
+		return encodeCursor(r.FinalizedAt.UnixMicro(), r.ID)
+	}
+	return encodeCursor(0, r.ID)
 }
 
 func encodeCursor(a, b int64) string {

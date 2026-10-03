@@ -98,6 +98,7 @@ func (l *linker) fetch(ctx context.Context) error {
 	if err := in.begin(ctx, b); err != nil {
 		return err
 	}
+	in.queueReplace(b)
 	if len(l.parents) > 0 {
 		b.Queue(in.s.q.lockParents, l.parents).Query(l.scanStates)
 		b.Queue(in.s.q.archivedParents, l.parents).Query(l.scanStates)

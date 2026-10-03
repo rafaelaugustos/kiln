@@ -34,7 +34,8 @@ type InsertParams struct {
 	Args        []byte // JSON
 	Meta        map[string]string
 	Tags        []string
-	Priority    int16 // within a queue, higher is claimed first
+	Title       string // shown in place of the kind; stores keep 200 bytes of it, cut on a rune boundary
+	Priority    int16  // within a queue, higher is claimed first
 	MaxAttempts int
 	Timeout     time.Duration // per attempt; 0 leaves it to the handler or server, negative means none
 
@@ -50,6 +51,20 @@ type InsertParams struct {
 	// an earlier job in the same call.
 	UniqueKey []byte
 	UniqueFor time.Duration
+
+	// UniqueReplace makes a job whose key is held by a job that has not started, one awaiting,
+	// scheduled, throttled or enqueued, update that holder instead: the holder takes the job's
+	// args, meta, tags, title, priority and run time, and Insert reports the duplicate as Replaced.
+	// A granted holder keeps its reserved start, a throttled or enqueued one takes only a run time
+	// in the future and goes back to scheduled with it, and an enqueued one with a limit key keeps
+	// its slot and its run time. A processing holder, or a key held by a finished job, makes a
+	// plain duplicate, and so does a job that repeats a key of the same call.
+	//
+	// UniqueDebounce, when positive, makes the job run that long after the store's now, in place of
+	// RunAt and Delay, and makes it replace a holder as UniqueReplace does, but only a holder that
+	// is scheduled and not granted. It must not be set with UniqueReplace.
+	UniqueReplace  bool
+	UniqueDebounce time.Duration
 
 	// LimitKey puts the job under the limit of that key, described in the package documentation.
 	// LimitMax caps how many jobs of the key are enqueued or processing together, 0 meaning no cap,
@@ -72,6 +87,7 @@ type Inserted struct {
 	ID        int64 // the new job, or the job that holds the unique key of a duplicate
 	State     State // the state the job was inserted in, or the holder's state when known
 	Duplicate bool  // the unique key was held and nothing was inserted
+	Replaced  bool  // the duplicate updated the holder; see [InsertParams.UniqueReplace]
 }
 
 // Job is a job as a server receives it from [Worker.Claim].
@@ -82,6 +98,7 @@ type Job struct {
 	Args        []byte
 	Meta        map[string]string
 	Tags        []string
+	Title       string // empty for none
 	Priority    int16
 	Attempt     int // the number of this attempt, from 1
 	MaxAttempts int
@@ -271,6 +288,7 @@ type JobQuery struct {
 	Queue   string
 	Kind    string
 	BatchID int64
+	Tag     string // only jobs carrying this tag
 	Limit   int    // page size, 20 when 0 and at most 500
 	Cursor  string // Next of the previous page; empty for the first
 }

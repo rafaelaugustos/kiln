@@ -26,7 +26,7 @@ UPDATE j SET state = 'processing', attempt = j.attempt + 1, claim = j.claim + 1,
 OUTPUT inserted.id, inserted.claim, inserted.kind, inserted.queue, inserted.args, inserted.meta, inserted.tags,
 	inserted.priority, inserted.attempt, inserted.max_attempts, inserted.timeout_ms, inserted.run_at,
 	inserted.created_at, inserted.attempted_at, COALESCE(inserted.batch_id, 0), COALESCE(inserted.recurring_id, N''),
-	inserted.parents, COALESCE(inserted.limit_key, N'')
+	inserted.parents, COALESCE(inserted.limit_key, N''), COALESCE(inserted.title, N'')
 FROM {p}jobs j JOIN c ON c.id = j.id`
 
 // Claim moves up to q.Limit enqueued jobs to processing in one statement, as
@@ -79,7 +79,8 @@ func scanClaimed(rows *sql.Rows) ([]driver.Job, error) {
 	for rows.Next() {
 		var j driver.Job
 		err := rows.Scan(&j.ID, &j.Claim, &j.Kind, &j.Queue, &j.Args, &meta, &tags, &j.Priority, &j.Attempt,
-			&j.MaxAttempts, &ms, &run, &created, &attempted, &j.BatchID, &j.RecurringID, &parents, &j.LimitKey)
+			&j.MaxAttempts, &ms, &run, &created, &attempted, &j.BatchID, &j.RecurringID, &parents, &j.LimitKey,
+			&j.Title)
 		if err != nil {
 			return jobs, err
 		}

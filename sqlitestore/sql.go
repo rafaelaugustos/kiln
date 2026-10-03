@@ -83,6 +83,7 @@ type statements struct {
 	release           string
 	remove            string
 	removeRecurring   string
+	replace           string
 	requeueArchived   string
 	requeueLive       string
 	reserve           string
@@ -182,6 +183,7 @@ func render(prefix string) statements {
 		release:           r(sqlRelease),
 		remove:            r(sqlRemove),
 		removeRecurring:   r(sqlRemoveRecurring),
+		replace:           r(sqlReplace),
 		requeueArchived:   r(sqlRequeueArchived),
 		requeueLive:       r(sqlRequeueLive),
 		reserve:           r(sqlReserve),

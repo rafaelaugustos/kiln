@@ -25,6 +25,7 @@ const (
 	maxTagLen   = 64
 	maxMetaKeys = 64
 	maxMetaLen  = 16 << 10
+	maxTitle    = 200
 
 	metaDeadline   = "kiln.deadline"
 	metaOccurrence = "kiln.occurrence"
@@ -32,6 +33,10 @@ const (
 
 type insertDefaults interface {
 	InsertOptions() []InsertOption
+}
+
+type titled interface {
+	Title() string
 }
 
 type builder struct {
@@ -69,6 +74,9 @@ func newBuilder(args Args) (*builder, error) {
 			MaxAttempts: DefaultMaxAttempts,
 		},
 		overlap: true,
+	}
+	if t, ok := args.(titled); ok {
+		b.p.Title = t.Title()
 	}
 	if d, ok := args.(insertDefaults); ok {
 		for _, o := range d.InsertOptions() {
@@ -136,6 +144,8 @@ func (b *builder) insert(o InsertOption) {
 				p.Tags = append(p.Tags, t)
 			}
 		}
+	case Title:
+		p.Title = string(o)
 	case Meta:
 		for k, v := range o {
 			b.setMeta(k, v)
@@ -212,6 +222,7 @@ func (b *builder) finish() (driver.InsertParams, error) {
 	if p.Delay < 0 {
 		p.Delay = 0
 	}
+	p.Title = clean(p.Title, maxTitle)
 	if len(p.Tags) > maxTags {
 		return p, fmt.Errorf("%w: %d tags", ErrTooLarge, len(p.Tags))
 	}
@@ -228,12 +239,16 @@ func (b *builder) finish() (driver.InsertParams, error) {
 		return p, err
 	}
 	if u := b.unique; u != nil {
+		if u.Replace && u.Debounce > 0 {
+			return p, fmt.Errorf("%w: unique replace and debounce together", ErrInvalid)
+		}
 		key := u.Key
 		if key == "" {
 			key = string(p.Args)
 		}
 		p.UniqueKey = uniqueKey(p.Kind, key)
 		p.UniqueFor = max(u.For, 0)
+		p.UniqueReplace, p.UniqueDebounce = u.Replace, max(u.Debounce, 0)
 	}
 	if l := b.limit; l != nil {
 		p.LimitKey, p.LimitMax = l.Key, l.Max

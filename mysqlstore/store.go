@@ -173,6 +173,7 @@ type statements struct {
 	lockBatches         string
 	lockChildren        string
 	lockFailed          string
+	lockHolders         string
 	lockLimits          string
 	lockParents         string
 	lockRunning         string
@@ -198,6 +199,8 @@ type statements struct {
 	releaseUniques      string
 	remove              string
 	removeRecurring     string
+	replace             string
+	replaceTail         string
 	requeueArchived     string
 	requeueArchivedTail string
 	requeueLive         string
@@ -293,6 +296,7 @@ func newStatements(prefix string) statements {
 		lockBatches:         r.Replace(sqlLockBatches),
 		lockChildren:        r.Replace(sqlLockChildren),
 		lockFailed:          r.Replace(sqlLockFailed),
+		lockHolders:         r.Replace(sqlLockHolders),
 		lockLimits:          r.Replace(sqlLockLimits),
 		lockParents:         r.Replace(sqlLockParents),
 		lockRunning:         r.Replace(sqlLockRunning),
@@ -317,6 +321,8 @@ func newStatements(prefix string) statements {
 		recurrings:          r.Replace(sqlRecurrings),
 		releaseUniques:      r.Replace(sqlReleaseUniques),
 		remove:              r.Replace(sqlRemove),
+		replace:             r.Replace(sqlReplace),
+		replaceTail:         r.Replace(sqlReplaceTail),
 		removeRecurring:     r.Replace(sqlRemoveRecurring),
 		requeueArchived:     r.Replace(sqlRequeueArchived),
 		requeueArchivedTail: r.Replace(sqlRequeueArchivedTail),
