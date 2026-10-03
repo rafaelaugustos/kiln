@@ -3,6 +3,7 @@ package kiln
 import (
 	"cmp"
 	"context"
+	"math/rand/v2"
 	"slices"
 	"sync/atomic"
 	"time"
@@ -13,6 +14,7 @@ import (
 type producer struct {
 	s        *Server
 	queues   []string
+	weights  []int
 	workers  int
 	batch    int
 	eager    int
@@ -21,19 +23,27 @@ type producer struct {
 	dirty    atomic.Bool
 	wake     chan struct{}
 	open     []string
+	left     []int
 	tasks    []*task
 }
 
-func newProducer(s *Server, p Pool) *producer {
-	batch := min(cmp.Or(s.cfg.FetchBatch, p.Workers), p.Workers, maxFetchBatch)
-	return &producer{
+func newProducer(s *Server, pl Pool) *producer {
+	batch := min(cmp.Or(s.cfg.FetchBatch, pl.Workers), pl.Workers, maxFetchBatch)
+	p := &producer{
 		s:       s,
-		queues:  p.Queues,
-		workers: p.Workers,
+		queues:  pl.Queues,
+		workers: pl.Workers,
 		batch:   batch,
 		eager:   max(batch/2, 1),
 		wake:    make(chan struct{}, 1),
 	}
+	if len(pl.Weights) > 0 {
+		p.weights = make([]int, len(pl.Queues))
+		for i, q := range pl.Queues {
+			p.weights[i] = cmp.Or(pl.Weights[q], 1)
+		}
+	}
+	return p
 }
 
 func (p *producer) poke() {
@@ -144,17 +154,43 @@ func (p *producer) fetch() bool {
 }
 
 func (p *producer) active() []string {
-	paused := p.s.paused.Load()
-	if paused == nil || len(*paused) == 0 {
+	var paused []string
+	if ps := p.s.paused.Load(); ps != nil {
+		paused = *ps
+	}
+	if len(paused) == 0 && p.weights == nil {
 		return p.queues
 	}
-	p.open = p.open[:0]
-	for _, q := range p.queues {
-		if !slices.Contains(*paused, q) {
+	p.open, p.left = p.open[:0], p.left[:0]
+	for i, q := range p.queues {
+		if !slices.Contains(paused, q) {
 			p.open = append(p.open, q)
+			if p.weights != nil {
+				p.left = append(p.left, p.weights[i])
+			}
 		}
 	}
+	if p.weights != nil {
+		draw(p.open, p.left)
+	}
 	return p.open
+}
+
+func draw(queues []string, weights []int) {
+	total := 0
+	for _, w := range weights {
+		total += w
+	}
+	for i := range len(queues) - 1 {
+		r, j := rand.IntN(total), i
+		for r >= weights[j] {
+			r -= weights[j]
+			j++
+		}
+		queues[i], queues[j] = queues[j], queues[i]
+		weights[i], weights[j] = weights[j], weights[i]
+		total -= weights[i]
+	}
 }
 
 func signal(c chan struct{}) {

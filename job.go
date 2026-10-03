@@ -3,6 +3,7 @@ package kiln
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"sync"
@@ -78,6 +79,28 @@ func (j *Job[T]) Output() json.RawMessage {
 		return nil
 	}
 	return j.run.output
+}
+
+// ParentOutputs returns the output of each of the job's parents that succeeded, keyed by parent id,
+// reading the parents from the store one at a time. A parent that did not succeed, has no output or
+// has been pruned is left out, and so is every parent of a job that no server is running.
+func (j *Job[T]) ParentOutputs(ctx context.Context) (map[int64]json.RawMessage, error) {
+	out := make(map[int64]json.RawMessage, len(j.Parents))
+	r := j.state()
+	if r.srv == nil {
+		return out, nil
+	}
+	for _, id := range j.Parents {
+		rec, err := r.srv.store.Job(ctx, id)
+		switch {
+		case errors.Is(err, ErrNotFound):
+		case err != nil:
+			return nil, err
+		case rec.State == Succeeded && len(rec.Output) > 0:
+			out[id] = rec.Output
+		}
+	}
+	return out, nil
 }
 
 // Param decodes the JSON value under key in the job's Meta, as stored by [Job.SetParam], into v,

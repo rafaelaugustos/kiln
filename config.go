@@ -30,10 +30,17 @@ const (
 const Forever time.Duration = -1
 
 // Pool is a set of workers shared by one or more queues. It takes jobs from Queues in order,
-// moving to a queue only when the ones before it have no job ready.
+// moving to a queue only when the ones before it have no job ready, unless Weights is set.
 type Pool struct {
 	Queues  []string
 	Workers int // at least 1
+
+	// Weights, when not empty, gives each queue a share of the pool instead of a place in line:
+	// every fetch orders the queues by a weighted random draw, so that under load each queue gets
+	// about its share of the jobs the pool claims and none starves, while the share of a queue
+	// with no job ready goes to the others. A queue missing from Weights has weight 1. [NewServer]
+	// returns [ErrInvalid] for a weight below 1 or for a queue that is not in Queues.
+	Weights map[string]int
 }
 
 // ServerConfig configures a [Server]. The zero value runs 10 workers on [DefaultQueue], with the
@@ -44,8 +51,8 @@ type ServerConfig struct {
 	// Queues maps queue names to worker counts; each entry becomes a pool of its own.
 	Queues map[string]int
 
-	// Pools lists pools of workers, each serving its queues in order. A queue can belong to one
-	// pool only, including the pools made from Queues.
+	// Pools lists pools of workers, each serving its queues in order or by weight. A queue can
+	// belong to one pool only, including the pools made from Queues.
 	Pools []Pool
 
 	// Name is reported as the host of the server and starts its ID. Empty means the machine's host
@@ -175,7 +182,7 @@ func (c ServerConfig) resolve() (ServerConfig, error) {
 func (c *ServerConfig) pools() ([]Pool, error) {
 	pools := make([]Pool, 0, len(c.Pools)+len(c.Queues))
 	for _, p := range c.Pools {
-		pools = append(pools, Pool{Queues: slices.Clone(p.Queues), Workers: p.Workers})
+		pools = append(pools, Pool{Queues: slices.Clone(p.Queues), Workers: p.Workers, Weights: maps.Clone(p.Weights)})
 	}
 	for _, q := range slices.Sorted(maps.Keys(c.Queues)) {
 		pools = append(pools, Pool{Queues: []string{q}, Workers: c.Queues[q]})
@@ -199,6 +206,14 @@ func (c *ServerConfig) pools() ([]Pool, error) {
 				return nil, fmt.Errorf("%w: queue %q is in more than one pool", ErrInvalid, q)
 			}
 			seen[q] = true
+		}
+		for q, w := range p.Weights {
+			if w < 1 {
+				return nil, fmt.Errorf("%w: queue %q has weight %d", ErrInvalid, q, w)
+			}
+			if !slices.Contains(p.Queues, q) {
+				return nil, fmt.Errorf("%w: weight for queue %q outside pool %v", ErrInvalid, q, p.Queues)
+			}
 		}
 	}
 	return pools, nil
