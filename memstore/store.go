@@ -33,8 +33,8 @@ func Clock(now func() time.Time) Option {
 // Store is a [driver.Store] kept in memory, which also implements [driver.Notifier],
 // [driver.Transactor], [driver.LimitReader] and [driver.Console]. It is safe for concurrent use.
 // Every write runs under one lock, so it takes effect all at once, even a Delete or Requeue of many
-// jobs. The store
-// copies the values it is given and those it returns, so callers may change them afterwards.
+// jobs. The store copies the values it is given and those it returns, so callers may change them
+// afterwards.
 type Store struct {
 	mu    sync.Mutex
 	clock func() time.Time

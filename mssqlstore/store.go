@@ -21,8 +21,7 @@ var (
 
 // Store is a [driver.Store] on SQL Server. It also implements [driver.Transactor],
 // [driver.LimitReader] and [driver.Console], and [driver.Notifier] through the bus given with [Bus].
-// It is safe for
-// concurrent use.
+// It is safe for concurrent use.
 type Store struct {
 	db     *sql.DB
 	prefix string

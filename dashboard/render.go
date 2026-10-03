@@ -78,6 +78,7 @@ func (h *handler) parse() map[string]*template.Template {
 		"stamp":   stamp,
 		"initial": initial,
 		"iso":     iso,
+		"clock":   clock,
 		"dur":     dur,
 		"label":   label,
 		"preview": preview,

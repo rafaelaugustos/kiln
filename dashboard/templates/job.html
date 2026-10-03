@@ -20,6 +20,11 @@
 {{- if $j.CancelRequested}}
 <div class="note">Cancellation requested. The worker stops the job at its next check.</div>
 {{- end}}
+{{- if eq $j.State "processing"}}
+<section class="panel pad" data-progress{{if not $j.Progress}} hidden{{end}}>
+<span class="progress-cell"><svg class="progress" role="img" aria-label="{{$j.Progress}}% done"><rect class="f-processing" width="{{$j.Progress}}%" height="100%"></rect></svg><span class="num dim">{{$j.Progress}}%</span></span>
+</section>
+{{- end}}
 
 <div class="detail">
 <div class="stack">
@@ -27,6 +32,18 @@
 <div class="panel-head"><h2>Arguments</h2></div>
 <pre class="code">{{pretty $j.Args}}</pre>
 </section>
+{{- with $j.Console}}
+<section class="panel" data-console="{{.URL}}" data-after="{{.After}}"{{if .Live}} data-live{{end}}>
+<div class="panel-head"><h2>Console</h2></div>
+<div class="console">
+{{- range .Groups}}
+<div class="run" data-attempt="{{.Attempt}}"><div class="run-head">Attempt {{.Attempt}}</div><pre>{{range .Lines}}<span><time datetime="{{iso .At}}" title="{{abs .At}}">{{clock .At}}</time>{{.Text}}</span>{{end}}</pre></div>
+{{- else}}
+{{template "empty" "Nothing logged yet."}}
+{{- end}}
+</div>
+</section>
+{{- end}}
 {{- with $j.Output}}
 <section class="panel">
 <div class="panel-head"><h2>Output</h2></div>

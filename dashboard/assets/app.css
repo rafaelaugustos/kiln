@@ -903,6 +903,13 @@ pre.code {
 .code .n { color: var(--tok-num); }
 .code .b { color: var(--tok-lit); }
 
+.console { max-height: 480px; overflow: auto; background: var(--code); border-radius: 0 0 21px 21px; }
+.run + .run { border-top: 1px solid var(--line); }
+.run-head { position: sticky; top: 0; padding: 8px 16px 2px; background: var(--code); color: var(--fg-3); font-size: 11.5px; }
+.run pre { padding: 2px 16px 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.run pre > span { display: block; }
+.run time { margin-right: 12px; color: var(--fg-3); user-select: none; }
+
 .timeline { list-style: none; padding: 6px 0; }
 .timeline li { position: relative; padding: 8px 16px 8px 40px; }
 .timeline li::before { content: ""; position: absolute; left: 20px; top: 0; bottom: 0; width: 1px; background: var(--line); }
