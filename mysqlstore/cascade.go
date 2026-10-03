@@ -287,6 +287,17 @@ func (s *Store) advance(ctx context.Context, q querier, f *fallout, children []i
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	now := f.now
+	for _, c := range locked {
+		if _, bad := doom[c.id]; !bad && c.pending <= ok[c.id] && c.runAt.After(now) {
+			var t stamp
+			if err := q.QueryRowContext(ctx, sqlNow).Scan(&t); err != nil {
+				return err
+			}
+			now = t.Time
+			break
+		}
+	}
 	var (
 		doomed []int64
 		arch   []byte
@@ -309,7 +320,7 @@ func (s *Store) advance(ctx context.Context, q querier, f *fallout, children []i
 		st := driver.Awaiting
 		switch {
 		case pending > 0:
-		case c.runAt.After(f.now):
+		case c.runAt.After(now):
 			st = driver.Scheduled
 		case c.limit != "":
 			st = driver.Throttled
