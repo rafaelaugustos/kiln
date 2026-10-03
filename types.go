@@ -56,3 +56,11 @@ type Spec struct {
 	Args    Args
 	Options []InsertOption
 }
+
+// RecurringSpec is one recurring job for [Client.SyncRecurring], with the arguments of
+// [Client.SetRecurring].
+type RecurringSpec struct {
+	ID, Spec string
+	Args     Args
+	Options  []RecurringOption
+}

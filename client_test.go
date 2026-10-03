@@ -3,6 +3,7 @@ package kiln
 import (
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
@@ -44,6 +45,45 @@ func TestDotNames(t *testing.T) {
 	}
 	if _, err := c.Enqueue(ctx, testArgs{K: "a"}, Queue("...")); err != nil {
 		t.Errorf("Enqueue to queue ...: %v", err)
+	}
+}
+
+func TestSyncRecurring(t *testing.T) {
+	t.Parallel()
+	store := memstore.New()
+	c := NewClient(store)
+	ctx := context.Background()
+	if err := c.SetRecurring(ctx, "solo", "@daily", testArgs{K: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	daily := RecurringSpec{ID: "daily", Spec: "@daily", Args: testArgs{K: "a"}}
+	hourly := RecurringSpec{ID: "hourly", Spec: "@hourly", Args: testArgs{K: "b"}}
+	other := RecurringSpec{ID: "other", Spec: "@daily", Args: testArgs{K: "c"}}
+	for _, sync := range []struct {
+		group string
+		jobs  []RecurringSpec
+	}{
+		{"reports", []RecurringSpec{daily, hourly}},
+		{"misc", []RecurringSpec{other}},
+		{"reports", []RecurringSpec{daily}},
+	} {
+		if err := c.SyncRecurring(ctx, sync.group, sync.jobs...); err != nil {
+			t.Fatalf("sync %s: %v", sync.group, err)
+		}
+	}
+	rs, err := store.Recurrings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups := make(map[string]string, len(rs))
+	for _, r := range rs {
+		groups[r.ID] = r.Group
+	}
+	if want := map[string]string{"daily": "reports", "other": "misc", "solo": ""}; !maps.Equal(groups, want) {
+		t.Fatalf("recurring groups %v, want %v", groups, want)
+	}
+	if err := c.SyncRecurring(ctx, "", daily); !errors.Is(err, ErrInvalid) {
+		t.Errorf("sync with no group: err = %v", err)
 	}
 }
 
