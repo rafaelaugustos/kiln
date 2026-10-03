@@ -4,3 +4,4 @@ go.work.sum
 *.out
 .DS_Store
 /bench/bench
+/soak/soak
