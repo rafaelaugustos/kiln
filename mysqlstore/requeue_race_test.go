@@ -56,8 +56,8 @@ func TestTxInsertBesideRequeue(t *testing.T) {
 				switch me := mysqlError(err); {
 				case err == nil:
 					inserted.Add(1)
-					for _, r := range res {
-						if !r.Duplicate {
+					for i, r := range res {
+						if !r.Duplicate && len(ps[i].Parents) == 0 {
 							ids.add(r.ID)
 						}
 					}
