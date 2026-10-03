@@ -312,6 +312,12 @@ func (in *inserter) record(got map[int64]driver.State) {
 
 func (in *inserter) write(ctx context.Context, q querier) error {
 	in.reset()
+	if in.linked {
+		in.link = newLinker(in)
+		if err := in.link.fetch(ctx, q); err != nil {
+			return err
+		}
+	}
 	if len(in.keys) > 0 {
 		if err := in.claimUniques(ctx, q); err != nil {
 			return err
@@ -329,10 +335,6 @@ func (in *inserter) write(ctx context.Context, q querier) error {
 	}
 	var t, deps table
 	if in.linked {
-		in.link = newLinker(in)
-		if err := in.link.fetch(ctx, q); err != nil {
-			return err
-		}
 		in.link.rows(&t, &deps)
 	} else {
 		for r, i := range in.live {

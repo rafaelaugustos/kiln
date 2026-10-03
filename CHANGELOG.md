@@ -3,6 +3,24 @@
 Every module in this repository (`kiln`, `pgstore`, `mysqlstore`, `mssqlstore`, `sqlitestore`, `kilnotel`, `redisbus`) is
 released together under the same version. The GitHub releases have the full notes.
 
+## Unreleased
+
+### Fixed
+- mysqlstore: an insert through a `TxWriter` that names a parent job no longer deadlocks with a `Requeue`
+  of that parent. The insert locked its unique keys before its parents and the requeue locked them the
+  other way round, so the application's transaction could fail with error 1213. Inserts now lock their
+  parents first. mssqlstore takes the same order, which removes the plain case; under heavy concurrency
+  SQL Server can still pick such a transaction as a deadlock victim (1205).
+- mysqlstore, mssqlstore: a child released while its parent finishes is checked against a fresh clock, so
+  it is enqueued at once instead of waiting up to a second as scheduled.
+- dashboard: changing pages no longer fades the content out and back in.
+
+### Docs
+- Recurring jobs: the spec is evaluated in UTC unless `TZ` says otherwise, and occurrences overlap unless
+  `Overlap(false)` is set.
+- Operating: how deploys interact with `ShutdownTimeout` and `KillGrace`, and why each service should
+  have its own queues.
+
 ## v0.8.0 (2026-10-03)
 
 ### Added
