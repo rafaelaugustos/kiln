@@ -97,7 +97,25 @@
 
 {{define "empty"}}<p class="empty">{{.}}</p>{{end}}
 
-{{define "progress"}}<svg class="progress" role="img" aria-label="{{t "progress" "n" .Percent}}">{{range .Segments}}<rect class="f-{{.State}}" x="{{printf "%.3f" .X}}%" width="{{printf "%.3f" .W}}%" height="100%"><title>{{label .State}} {{num .N}}</title></rect>{{if .X}}<line class="gap" x1="{{printf "%.3f" .X}}%" x2="{{printf "%.3f" .X}}%" y1="0" y2="100%"></line>{{end}}{{end}}</svg>{{end}}
+{{define "progress"}}<svg class="progress" role="img" aria-label="{{t "progress" "n" .Percent}}">{{range .Segments}}<rect class="f-{{.State}}" x="{{printf "%.3f" .X}}%" width="{{printf "%.3f" .W}}%" height="100%"><title>{{if .Nested}}{{if eq .State "succeeded"}}{{t "batch.seg.finished"}}{{else}}{{t "batch.seg.running"}}{{end}}{{else}}{{label .State}}{{end}} {{num .N}}</title></rect>{{if .X}}<line class="gap" x1="{{printf "%.3f" .X}}%" x2="{{printf "%.3f" .X}}%" y1="0" y2="100%"></line>{{end}}{{end}}</svg>{{end}}
+
+{{define "batchtable"}}{{$l := .}}<div class="tbl">
+<table class="grid">
+<thead><tr><th class="id">{{t "col.id"}}</th><th>{{t "col.description"}}</th><th class="w-progress">{{t "col.progress"}}</th><th class="r">{{t "col.jobs"}}</th><th>{{t "col.status"}}</th><th class="r">{{t "col.created"}}</th></tr></thead>
+<tbody>
+{{- range $l.Batches}}
+<tr>
+<td class="id"><a href="{{link "/batches/" .ID}}">{{.ID}}</a></td>
+<td><a class="link" href="{{link "/batches/" .ID}}">{{if .Description}}{{.Description}}{{else}}<span class="dim">{{t "batch.untitled"}}</span>{{end}}</a>{{if and .Parent (not $l.Parent)}} <a class="chip" href="{{link "/batches/" .Parent}}" title="{{t "batches.nested_in" "id" .Parent}}">#{{.Parent}}</a>{{end}}</td>
+<td><span class="progress-cell">{{template "progress" .}}<span class="num dim">{{.Percent}}%</span></span></td>
+<td class="r num">{{num .Done}}<span class="of">/{{num .Total}}</span></td>
+<td>{{if .Finished}}<span class="badge s-succeeded"><i></i>{{t "batch.finished"}}</span>{{else if .Sealed}}<span class="badge s-processing"><i></i>{{t "batch.running"}}</span>{{else}}<span class="badge s-awaiting"><i></i>{{t "batch.open"}}</span>{{end}}</td>
+<td class="r nowrap">{{template "when" .CreatedAt}}</td>
+</tr>
+{{- end}}
+</tbody>
+</table>
+</div>{{end}}
 
 {{define "n"}}{{if .}}{{num .}}{{else}}<span class="none">0</span>{{end}}{{end}}
 

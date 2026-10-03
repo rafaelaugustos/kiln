@@ -261,3 +261,42 @@ func TestNewPanicsWithoutAuthorize(t *testing.T) {
 	}()
 	New(kiln.NewClient(memstore.New()), Options{})
 }
+
+func TestNestedBatchPages(t *testing.T) {
+	t.Parallel()
+	c := kiln.NewClient(memstore.New())
+	outer := &kiln.Batch{Description: "Monthly close"}
+	inner := &kiln.Batch{Description: "Account 7"}
+	inner.Add(resize{Key: "a7.png"})
+	outer.AddBatch(inner)
+	id, err := c.StartBatch(t.Context(), outer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := New(c, Options{Authorize: grant(ReadOnly)})
+	sid := strconv.FormatInt(id, 10)
+
+	r := get(h, "/batches/"+sid)
+	for _, want := range []string{"Nested batches", "Account 7", "0 of 1 nested batches finished"} {
+		if r.code != http.StatusOK || !strings.Contains(r.body, want) {
+			t.Errorf("outer page: %d, missing %q", r.code, want)
+		}
+	}
+	children := decodeJSON[struct {
+		Batches []struct {
+			ID     int64 `json:"id"`
+			Parent int64 `json:"parent"`
+		} `json:"batches"`
+	}](t, h, "/api/batches?parent="+sid)
+	if len(children.Batches) != 1 || children.Batches[0].Parent != id {
+		t.Fatalf("children %+v", children)
+	}
+	r = get(h, "/batches/"+strconv.FormatInt(children.Batches[0].ID, 10))
+	if r.code != http.StatusOK || !strings.Contains(r.body, `href="/batches/`+sid+`"`) {
+		t.Errorf("inner page: %d, no link to the parent", r.code)
+	}
+	r = do(h, http.MethodGet, "/batches/"+sid, nil, "Accept-Language", "pt-BR")
+	if !strings.Contains(r.body, "0 de 1 lotes aninhados concluídos") {
+		t.Errorf("pt-BR outer page has no nested summary")
+	}
+}
