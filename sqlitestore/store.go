@@ -15,12 +15,13 @@ var (
 	_ driver.Notifier    = (*Store)(nil)
 	_ driver.Transactor  = (*Store)(nil)
 	_ driver.LimitReader = (*Store)(nil)
+	_ driver.Console     = (*Store)(nil)
 	_ driver.TxWriter    = (*TxWriter)(nil)
 )
 
 // Store is a [driver.Store] on SQLite, which also implements [driver.Notifier],
-// [driver.Transactor] and [driver.LimitReader]. It is safe for concurrent use. The Stores opened
-// on one [sql.DB] share the connection kept for writes, so their writes take turns.
+// [driver.Transactor], [driver.LimitReader] and [driver.Console]. It is safe for concurrent use. The
+// Stores opened on one [sql.DB] share the connection kept for writes, so their writes take turns.
 type Store struct {
 	db     *sql.DB
 	prefix string

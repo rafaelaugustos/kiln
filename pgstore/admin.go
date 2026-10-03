@@ -71,7 +71,7 @@ const sqlDelete = `WITH w AS MATERIALIZED (
 	SELECT a.id, 'deleted', a.queue, a.kind, a.priority, a.attempt, a.max_attempts, a.claim, a.timeout_ms, a.run_at,
 		a.created_at, a.attempted_at, now(), a.server, a.batch_id, a.after_batch, a.parents, a.recurring_id,
 		a.unique_key, a.limit_key, a.args, a.meta, a.tags,
-		{s}.push(a.history, {s}.entry('deleted', a.attempt, 'deleted', '', '', NULL)), NULL
+		{s}.push(a.history, {s}.entry('deleted', a.attempt, 'deleted', '', '', NULL)), NULL, a.progress
 	FROM a
 )
 SELECT w.id, coalesce(x.state::text, ''), coalesce(x.batch_id, 0), w.id IN (SELECT id FROM c)
@@ -126,15 +126,15 @@ const sqlRequeueArchived = `WITH t AS MATERIALIZED (
 	WHERE a.id = ANY(ARRAY(SELECT id FROM t WHERE unique_key IS NULL UNION ALL SELECT job_id FROM c))
 	RETURNING a.id, a.queue, a.kind, a.priority, a.attempt, a.max_attempts, a.claim, a.timeout_ms, a.created_at,
 		a.attempted_at, a.server, a.batch_id, a.after_batch, a.parents, a.recurring_id, a.unique_key, a.limit_key,
-		a.args, a.meta, a.tags, a.history
+		a.args, a.meta, a.tags, a.history, a.progress
 ), u AS (
 	INSERT INTO {s}.jobs (id, state, queue, kind, priority, attempt, max_attempts, claim, timeout_ms, run_at,
 		created_at, attempted_at, server, batch_id, after_batch, parents, recurring_id, unique_key, limit_key,
-		args, meta, tags, history)
+		args, meta, tags, history, progress)
 	SELECT m.id, {s}.ready(now(), m.limit_key), m.queue, m.kind, m.priority, 0, m.max_attempts, m.claim,
 		m.timeout_ms, now(), m.created_at, m.attempted_at, m.server, m.batch_id, m.after_batch, m.parents,
 		m.recurring_id, m.unique_key, m.limit_key, m.args, m.meta, m.tags,
-		{s}.push(m.history, {s}.entry({s}.ready(now(), m.limit_key), 0, 'requeued', '', '', NULL))
+		{s}.push(m.history, {s}.entry({s}.ready(now(), m.limit_key), 0, 'requeued', '', '', NULL)), m.progress
 	FROM m
 	RETURNING queue, state, limit_key
 )` + requeueResult

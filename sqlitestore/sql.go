@@ -15,6 +15,7 @@ type statements struct {
 	advance           string
 	afterBatches      string
 	allocate          string
+	appendLogs        string
 	archive           string
 	archiveSucceeded  string
 	archived          string
@@ -26,6 +27,7 @@ type statements struct {
 	children          string
 	claim             string
 	claimKinds        string
+	claimed           string
 	complete          string
 	count             string
 	counts            string
@@ -35,6 +37,7 @@ type statements struct {
 	dropArchived      string
 	dropDeps          string
 	dropHolder        string
+	dropLogs          string
 	dueRecurring      string
 	enqueue           string
 	expiredStats      string
@@ -56,6 +59,7 @@ type statements struct {
 	limitInfo         string
 	limitPage         string
 	lockBatch         string
+	logs              string
 	nextDue           string
 	now               string
 	openBatch         string
@@ -64,6 +68,7 @@ type statements struct {
 	parents           string
 	pause             string
 	pending           string
+	progress          string
 	promote           string
 	pruneArchive      string
 	pruneBatches      string
@@ -109,6 +114,7 @@ func render(prefix string) statements {
 		advance:           r(sqlAdvance),
 		afterBatches:      r(sqlAfterBatches),
 		allocate:          r(sqlAllocate),
+		appendLogs:        r(sqlAppendLogs),
 		archive:           r(sqlArchive),
 		archiveSucceeded:  r(sqlArchiveSucceeded),
 		archived:          r(sqlArchived),
@@ -120,6 +126,7 @@ func render(prefix string) statements {
 		children:          r(sqlChildren),
 		claim:             r(sqlClaim),
 		claimKinds:        r(sqlClaimKinds),
+		claimed:           r(sqlClaimed),
 		complete:          r(sqlComplete),
 		count:             r(sqlCount),
 		counts:            r(sqlCounts),
@@ -129,6 +136,7 @@ func render(prefix string) statements {
 		dropArchived:      r(sqlDropArchived),
 		dropDeps:          r(sqlDropDeps),
 		dropHolder:        r(sqlDropHolder),
+		dropLogs:          r(sqlDropLogs),
 		dueRecurring:      r(sqlDueRecurring),
 		enqueue:           r(sqlEnqueue),
 		expiredStats:      r(sqlExpiredStats),
@@ -150,6 +158,7 @@ func render(prefix string) statements {
 		limitInfo:         r(sqlLimitInfo),
 		limitPage:         r(sqlLimitPage),
 		lockBatch:         r(sqlLockBatch),
+		logs:              r(sqlLogs),
 		nextDue:           r(sqlNextDue),
 		now:               r(sqlNow),
 		openBatch:         r(sqlOpenBatch),
@@ -158,6 +167,7 @@ func render(prefix string) statements {
 		parents:           r(sqlParents),
 		pause:             r(sqlPause),
 		pending:           r(sqlPending),
+		progress:          r(sqlProgress),
 		promote:           r(sqlPromote),
 		pruneArchive:      r(sqlPruneArchive),
 		pruneBatches:      r(sqlPruneBatches),

@@ -61,10 +61,10 @@ SET j.state = v.state, j.run_at = ?, j.finalized_at = NULL, j.cancel_requested =
 
 const sqlRequeueArchived = `INSERT INTO {p}jobs (id, state, queue, kind, priority, attempt, max_attempts, claim, timeout_ms,
 	deps_pending, run_at, created_at, attempted_at, server, batch_id, after_batch, parents, recurring_id, unique_key,
-	limit_key, args, meta, tags, history)
+	limit_key, args, meta, tags, history, progress)
 SELECT j.id, v.state, j.queue, j.kind, j.priority, v.attempt, j.max_attempts, j.claim,
 	j.timeout_ms, 0, ?, j.created_at, j.attempted_at, j.server, j.batch_id, j.after_batch, j.parents, j.recurring_id,
-	j.unique_key, j.limit_key, j.args, j.meta, j.tags, ` + pushHistory + `
+	j.unique_key, j.limit_key, j.args, j.meta, j.tags, ` + pushHistory + `, j.progress
 FROM (VALUES `
 
 const sqlRequeueArchivedTail = `) AS v (id, state, entry, attempt) STRAIGHT_JOIN {p}archive j FORCE INDEX (PRIMARY) ON j.id = v.id`

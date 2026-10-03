@@ -15,11 +15,13 @@ var (
 	_ driver.Notifier    = (*Store)(nil)
 	_ driver.Transactor  = (*Store)(nil)
 	_ driver.LimitReader = (*Store)(nil)
+	_ driver.Console     = (*Store)(nil)
 	_ driver.TxWriter    = (*TxWriter)(nil)
 )
 
-// Store is a [driver.Store] on SQL Server. It also implements [driver.Transactor] and
-// [driver.LimitReader], and [driver.Notifier] through the bus given with [Bus]. It is safe for
+// Store is a [driver.Store] on SQL Server. It also implements [driver.Transactor],
+// [driver.LimitReader] and [driver.Console], and [driver.Notifier] through the bus given with [Bus].
+// It is safe for
 // concurrent use.
 type Store struct {
 	db     *sql.DB
@@ -130,6 +132,7 @@ type statements struct {
 	lockParents       string
 	lockRunning       string
 	lockTargets       string
+	logs              string
 	nextDue           string
 	openBatch         string
 	orphans           string
@@ -167,6 +170,7 @@ type statements struct {
 	updateLive        string
 	updateRecurring   string
 	waiting           string
+	writeConsole      string
 }
 
 func newStatements(prefix string) statements {
@@ -222,6 +226,7 @@ func newStatements(prefix string) statements {
 		lockParents:       r.Replace(sqlLockParents),
 		lockRunning:       r.Replace(sqlLockRunning),
 		lockTargets:       r.Replace(sqlLockTargets),
+		logs:              r.Replace(sqlLogs),
 		nextDue:           r.Replace(sqlNextDue),
 		openBatch:         r.Replace(sqlOpenBatch),
 		orphans:           r.Replace(sqlOrphans),
@@ -259,5 +264,6 @@ func newStatements(prefix string) statements {
 		updateLive:        r.Replace(sqlUpdateLive),
 		updateRecurring:   r.Replace(sqlUpdateRecurring),
 		waiting:           r.Replace(sqlWaiting),
+		writeConsole:      r.Replace(sqlWriteConsole),
 	}
 }
