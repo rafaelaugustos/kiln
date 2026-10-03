@@ -1,12 +1,23 @@
 const svgNS = 'http://www.w3.org/2000/svg';
-const fmt = new Intl.NumberFormat('en-US');
-const clock = new Intl.DateTimeFormat([], { hour: 'numeric', minute: '2-digit' });
+const lang = document.documentElement.lang;
+const catalog = JSON.parse(document.querySelector('[data-text]')?.textContent || '{}');
+const fmt = new Intl.NumberFormat(lang);
+const tenths = new Intl.NumberFormat(lang, { maximumFractionDigits: 1, useGrouping: false });
+const clock = new Intl.DateTimeFormat(lang, { hour: 'numeric', minute: '2-digit' });
 const api = document.body.dataset.api;
 const calm = matchMedia('(prefers-reduced-motion: reduce)');
 const series = [
-  { key: 'succeeded', label: 'Succeeded' },
-  { key: 'failed', label: 'Failed' },
+  { key: 'succeeded', label: t('chart.succeeded') },
+  { key: 'failed', label: t('chart.failed') },
 ];
+
+function t(key, args = {}) {
+  return (catalog[key] ?? key).replace(/\{(\w+)\}/g, (m, k) => args[k] ?? m);
+}
+
+function plural(key, n) {
+  return t(`${key}.${n === 1 ? 'one' : 'other'}`, { n: fmt.format(n) });
+}
 
 function node(tag, cls, text) {
   const e = document.createElement(tag);
@@ -55,8 +66,8 @@ function count(v, capped, short) {
 }
 
 function compact(v) {
-  if (v >= 1e6) return `${+(v / 1e6).toFixed(1)}M`;
-  if (v >= 1e3) return `${+(v / 1e3).toFixed(1)}k`;
+  if (v >= 1e6) return t('count.million', { n: tenths.format(v / 1e6) });
+  if (v >= 1e3) return t('count.thousand', { n: tenths.format(v / 1e3) });
   return String(v);
 }
 
@@ -113,7 +124,7 @@ function live() {
   const link = up => {
     if (!dot) return;
     dot.dataset.live = up ? 'up' : 'down';
-    text.textContent = up ? 'Live' : 'Reconnecting…';
+    text.textContent = up ? t('live') : t('live.lost');
   };
   every(5000, async () => {
     const o = await load(`${api}/overview`);
@@ -131,7 +142,7 @@ function live() {
     }
     for (const n of document.querySelectorAll('[data-plural]')) {
       const v = values[n.dataset.plural];
-      if (v !== undefined) n.textContent = v === 1 ? n.dataset.one : n.dataset.other;
+      if (v !== undefined) n.textContent = v === 1 ? n.dataset.pluralOne : n.dataset.pluralOther;
     }
     for (const n of document.querySelectorAll('[data-show]')) n.hidden = !values[n.dataset.show];
     for (const n of document.querySelectorAll('[data-stat]')) n.classList.toggle('zero', !values[n.dataset.stat]);
@@ -150,18 +161,8 @@ function live() {
   }, () => link(false));
 }
 
-const quips = {
-  fresh: ['Ready when you are.', 'Fire me up!'],
-  cold: ['Zzz…', 'Five more minutes…'],
-  failed: ['Some pots cracked.', 'Not my best batch.', 'Let’s look at those?'],
-  busy: ['Firing away.', 'Careful, 1200 °C in here.', 'Hot hands!'],
-  waiting: ['Waiting for a worker…', 'Anyone there?'],
-  idle: ['Just keeping warm.', 'Nice and quiet.'],
-  party: ['All fixed. Nice!', 'Clean batch!'],
-};
-
 function say(hero, key) {
-  const list = quips[key] ?? quips.idle;
+  const list = t(`quip.${key}`).split('\n');
   let b = hero.querySelector('.quip');
   if (!b) {
     b = node('span', 'quip');
@@ -207,8 +208,9 @@ function mascot() {
   const hello = hero.querySelector('[data-hello]');
   const h = new Date().getHours();
   const name = hello.dataset.name;
-  if (h < 5) hello.textContent = name ? `Up late, ${name}?` : 'Up late?';
-  else hello.textContent = `${h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'}${name ? `, ${name}` : ''}`;
+  const greeting = h < 12 ? t('hello.morning') : h < 18 ? t('hello.afternoon') : t('hello.evening');
+  if (h < 5) hello.textContent = name ? t('hello.late_name', { name }) : t('hello.late');
+  else hello.textContent = name ? t('hello.name', { greeting, name }) : greeting;
   const btn = hero.querySelector('[data-poke]');
   btn.addEventListener('click', () => {
     btn.classList.remove('poke');
@@ -266,7 +268,7 @@ function chart(root) {
   }, () => {
     if (data) return;
     const msg = node('div', 'chart-msg error');
-    msg.append(node('span', '', 'Couldn’t load this chart. Trying again…'));
+    msg.append(node('span', '', t('chart.error')));
     root.replaceChildren(msg);
   });
   return () => {
@@ -289,8 +291,8 @@ function render(root, tip, data, intro) {
   const bw = Math.max(1, Math.min(18, slot - Math.max(2, slot * 0.3)));
   const y = v => m.t + h - (v / max) * h;
   const totals = series.map(s => pts.reduce((n, p) => n + p[s.key], 0));
-  const sums = series.map((s, i) => `${fmt.format(totals[i])} ${s.label.toLowerCase()}`);
-  const svg = shape('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': sums.join(', ') });
+  const sum = t('chart.summary', { succeeded: fmt.format(totals[0]), failed: fmt.format(totals[1]) });
+  const svg = shape('svg', { width: W, height: H, viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': sum });
   if (intro) svg.classList.add('intro');
 
   for (const v of [0, max / 2, max]) {
@@ -368,7 +370,7 @@ function render(root, tip, data, intro) {
   const parts = [svg, tip];
   if (totals.every(n => n === 0)) {
     const msg = node('div', 'chart-msg');
-    msg.append(node('span', '', root.dataset.empty || 'Nothing finished yet.'));
+    msg.append(node('span', '', root.dataset.empty));
     parts.push(msg);
   }
   root.replaceChildren(...parts);
@@ -429,7 +431,7 @@ function bulk() {
     const n = list.filter(b => b.checked).length;
     for (const b of form.querySelectorAll('[data-needs-selection]')) b.disabled = n === 0;
     label.hidden = n === 0;
-    label.textContent = `${fmt.format(n)} selected`;
+    label.textContent = plural('selected', n);
     if (all) {
       all.checked = n > 0 && n === list.length;
       all.indeterminate = n > 0 && n < list.length;
@@ -472,13 +474,13 @@ function tail() {
         out.querySelector('.empty')?.remove();
         run = node('div', 'run');
         run.dataset.attempt = l.attempt;
-        run.append(node('div', 'run-head', `Attempt ${l.attempt}`), node('pre'));
+        run.append(node('div', 'run-head', t('console.attempt', { n: l.attempt })), node('pre'));
         out.append(run);
       }
       const iso = new Date(l.at).toISOString();
       const at = node('time', '', iso.slice(11, 19));
       at.dateTime = iso;
-      at.title = `${iso.slice(0, 10)} ${iso.slice(11, 19)} UTC`;
+      at.title = t('date.full', { y: iso.slice(0, 4), m: iso.slice(5, 7), d: iso.slice(8, 10), time: iso.slice(11, 19) });
       const line = node('span');
       line.append(at, l.text);
       run.lastElementChild.append(line);
@@ -489,7 +491,7 @@ function tail() {
       const p = r.state === 'processing' ? r.progress : 0;
       bar.hidden = !p;
       bar.querySelector('rect').setAttribute('width', `${p}%`);
-      bar.querySelector('svg').setAttribute('aria-label', `${p}% done`);
+      bar.querySelector('svg').setAttribute('aria-label', t('progress', { n: p }));
       bar.querySelector('.num').textContent = `${p}%`;
     }
     on = r.state === 'processing' || r.lines.length === 500;

@@ -133,7 +133,7 @@ func (h *handler) batches(w http.ResponseWriter, r *http.Request) {
 	if cursor != "" {
 		l.FirstURL = h.link("/batches")
 	}
-	h.show(w, r, "batches", "Batches", l)
+	h.show(w, r, "batches", l)
 }
 
 func (h *handler) batch(w http.ResponseWriter, r *http.Request) {
@@ -147,5 +147,5 @@ func (h *handler) batch(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	h.show(w, r, "batch", "Batch "+strconv.FormatInt(id, 10), h.viewBatch(&b))
+	h.show(w, r, "batch", h.viewBatch(&b))
 }

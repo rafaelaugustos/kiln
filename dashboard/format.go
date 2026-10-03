@@ -13,14 +13,18 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
-func num(v any) string {
-	var n int64
+func integer(v any) int64 {
 	switch v := v.(type) {
 	case int:
-		n = int64(v)
+		return int64(v)
 	case int64:
-		n = v
+		return v
 	}
+	return 0
+}
+
+func (lc *locale) num(v any) string {
+	n := integer(v)
 	s := strconv.FormatInt(n, 10)
 	neg := n < 0
 	if neg {
@@ -32,82 +36,92 @@ func num(v any) string {
 	}
 	for i, c := range s {
 		if i > 0 && (len(s)-i)%3 == 0 {
-			b.WriteByte(',')
+			b.WriteString(lc.group)
 		}
 		b.WriteRune(c)
 	}
 	return b.String()
 }
 
-func short(n int64) string {
+func (lc *locale) short(n int64) string {
 	switch {
 	case n >= 1e6:
-		return decimal(float64(n)/1e6) + "M"
+		return lc.text("count.million", "n", lc.tenths(float64(n)/1e6))
 	case n >= 1e5:
-		return decimal(float64(n)/1e3) + "k"
+		return lc.text("count.thousand", "n", lc.tenths(float64(n)/1e3))
 	}
-	return num(n)
+	return lc.num(n)
 }
 
-func decimal(x float64) string {
-	return strconv.FormatFloat(math.Round(x*10)/10, 'f', -1, 64)
+func (lc *locale) tenths(x float64) string {
+	return lc.decimal(math.Round(x*10)/10, -1)
 }
 
-func ago(t time.Time) string {
+func (lc *locale) decimal(x float64, prec int) string {
+	return strings.Replace(strconv.FormatFloat(x, 'f', prec, 64), ".", lc.point, 1)
+}
+
+func (lc *locale) ago(t time.Time) string {
 	d := time.Since(t)
 	switch {
 	case d > -time.Second && d < time.Second:
-		return "now"
+		return lc.text("time.now")
 	case d < 0:
-		return "in " + span(-d)
+		return lc.text("time.in", "t", lc.span(-d))
 	}
-	return span(d) + " ago"
+	return lc.text("time.ago", "t", lc.span(d))
 }
 
-func span(d time.Duration) string {
+func (lc *locale) span(d time.Duration) string {
 	switch {
 	case d < time.Minute:
-		return strconv.Itoa(int(d/time.Second)) + "s"
+		return lc.unit("unit.s", d/time.Second)
 	case d < time.Hour:
-		return strconv.Itoa(int(d/time.Minute)) + "m"
+		return lc.unit("unit.m", d/time.Minute)
 	case d < 48*time.Hour:
-		return strconv.Itoa(int(d/time.Hour)) + "h"
+		return lc.unit("unit.h", d/time.Hour)
 	}
-	return strconv.Itoa(int(d/(24*time.Hour))) + "d"
+	return lc.unit("unit.d", d/(24*time.Hour))
 }
 
-func dur(d time.Duration) string {
+func (lc *locale) unit(key string, n time.Duration) string {
+	return lc.text(key, "n", strconv.Itoa(int(n)))
+}
+
+func (lc *locale) dur(d time.Duration) string {
 	switch {
 	case d <= 0:
-		return "0s"
+		return lc.unit("unit.s", 0)
 	case d < time.Second:
-		return strconv.Itoa(int(d/time.Millisecond)) + "ms"
+		return lc.unit("unit.ms", d/time.Millisecond)
 	case d < 10*time.Second:
-		return strconv.FormatFloat(d.Seconds(), 'f', 1, 64) + "s"
+		return lc.text("unit.s", "n", lc.decimal(d.Seconds(), 1))
 	case d < time.Minute:
-		return strconv.Itoa(int(d/time.Second)) + "s"
+		return lc.unit("unit.s", d/time.Second)
 	case d < time.Hour:
-		return pair(d, time.Minute, "m", time.Second, "s")
+		return lc.pair(d, time.Minute, "unit.m", time.Second, "unit.s")
 	case d < 24*time.Hour:
-		return pair(d, time.Hour, "h", time.Minute, "m")
+		return lc.pair(d, time.Hour, "unit.h", time.Minute, "unit.m")
 	}
-	return pair(d, 24*time.Hour, "d", time.Hour, "h")
+	return lc.pair(d, 24*time.Hour, "unit.d", time.Hour, "unit.h")
 }
 
-func pair(d, big time.Duration, bs string, small time.Duration, ss string) string {
-	s := strconv.Itoa(int(d/big)) + bs
+func (lc *locale) pair(d, big time.Duration, bk string, small time.Duration, sk string) string {
+	s := lc.unit(bk, d/big)
 	if r := d % big / small; r > 0 {
-		s += " " + strconv.Itoa(int(r)) + ss
+		s += " " + lc.unit(sk, r)
 	}
 	return s
 }
 
-func abs(t time.Time) string {
-	return t.UTC().Format("2006-01-02 15:04:05 UTC")
+func (lc *locale) abs(t time.Time) string {
+	s := t.UTC().Format("2006-01-02 15:04:05")
+	return lc.text("date.full", "y", s[:4], "m", s[5:7], "d", s[8:10], "time", s[11:])
 }
 
-func stamp(t time.Time) string {
-	return t.UTC().Format("Jan 2 15:04 UTC")
+func (lc *locale) stamp(t time.Time) string {
+	u := t.UTC()
+	return lc.text("date.stamp", "month", lc.months[u.Month()-1], "d", strconv.Itoa(u.Day()), "time", u.Format("15:04"))
 }
 
 func iso(t time.Time) string {
@@ -118,19 +132,12 @@ func clock(t time.Time) string {
 	return t.UTC().Format("15:04:05")
 }
 
-func label(s driver.State) string {
-	if s == "" {
-		return ""
+func (lc *locale) label(s driver.State, form ...string) string {
+	k := "state." + string(s)
+	for _, f := range form {
+		k += "." + f
 	}
-	return strings.ToUpper(string(s[:1])) + string(s[1:])
-}
-
-func plural(n any, one, other string) string {
-	switch n {
-	case 1, int64(1):
-		return one
-	}
-	return other
+	return lc.text(k)
 }
 
 func initial(s string) string {

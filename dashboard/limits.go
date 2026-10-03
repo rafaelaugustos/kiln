@@ -63,5 +63,5 @@ func (h *handler) limits(w http.ResponseWriter, r *http.Request) {
 			NextStart: li.NextStart,
 		}
 	}
-	h.show(w, r, "limits", "Limits", l)
+	h.show(w, r, "limits", l)
 }

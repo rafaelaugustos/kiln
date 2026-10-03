@@ -1,33 +1,43 @@
 {{define "layout"}}<!doctype html>
-<html lang="en">
+<html lang="{{lang}}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>{{.Title}} · {{.App}}</title>
+<title>{{template "title" .}} · {{.App}}</title>
 <link rel="icon" href="{{.Icon}}" type="image/svg+xml">
 <link rel="stylesheet" href="{{.CSS}}">
+{{- with .Text}}
+<script type="application/json" data-text>{{.}}</script>
+{{- end}}
 <script type="module" src="{{.JS}}"></script>
 </head>
 <body data-api="{{link "/api"}}">
-<a class="skip" href="#main">Skip to content</a>
+<a class="skip" href="#main">{{t "skip"}}</a>
 <header class="top">
 <div class="wrap bar">
 <a class="brand" href="{{link "/"}}">{{template "logo"}}<span>{{.App}}</span></a>
-<nav class="nav" aria-label="Main">
+<nav class="nav" aria-label="{{t "nav.label"}}">
 {{- range .Nav}}
-<a href="{{.URL}}"{{if .On}} class="on" aria-current="page"{{end}}>{{.Label}}{{if .Key}}<span class="pill{{if .Alert}} alert{{end}}" data-count="{{.Key}}"{{if not .Count}} hidden{{end}}>{{num .Count}}</span>{{end}}{{if .On}}<span class="ember" aria-hidden="true"></span>{{end}}</a>
+<a href="{{.URL}}"{{if .On}} class="on" aria-current="page"{{end}}>{{t .Label}}{{if .Key}}<span class="pill{{if .Alert}} alert{{end}}" data-count="{{.Key}}"{{if not .Count}} hidden{{end}}>{{num .Count}}</span>{{end}}{{if .On}}<span class="ember" aria-hidden="true"></span>{{end}}</a>
 {{- end}}
 </nav>
 <div class="who">
-{{- if not .Write}}<span class="tag" title="You can look around, but actions are turned off"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7"/></svg>Read-only</span>{{end}}
-{{- with .Actor}}<span class="actor" title="Signed in as {{.}}"><span class="avatar">{{initial .}}</span><span class="name">{{.}}</span></span>{{end -}}
+<form class="lang" method="get">
+{{- range .Query}}<input type="hidden" name="{{.Name}}" value="{{.Value}}">{{end}}
+<span class="tag"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M2.5 8h11M8 2.5c-2 2.3-2 8.7 0 11M8 2.5c2 2.3 2 8.7 0 11"/></svg><span aria-hidden="true">{{lang}}</span><select name="lang" aria-label="{{t "lang.label"}}" data-autosubmit>
+{{- range langs}}<option value="{{.Tag}}" lang="{{.Tag}}"{{if eq .Tag lang}} selected{{end}}>{{.Name}}</option>{{end -}}
+</select></span>
+<noscript><button class="btn sm" type="submit">{{t "lang.apply"}}</button></noscript>
+</form>
+{{- if not .Write}}<span class="tag" title="{{t "readonly.hint"}}"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"/><path d="M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7"/></svg>{{t "readonly"}}</span>{{end}}
+{{- with .Actor}}<span class="actor" title="{{t "actor" "name" .}}"><span class="avatar">{{initial .}}</span><span class="name">{{.}}</span></span>{{end -}}
 </div>
 </div>
 </header>
 <main class="wrap" id="main">
 {{- with .Flash}}
-<div class="flash" role="status" data-flash><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span>{{.Text}}</span>{{with .URL}}<a href="{{.}}">View job</a>{{end}}<button class="flash-x" type="button" data-dismiss aria-label="Dismiss"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7m0-7l-7 7"/></svg></button></div>
+<div class="flash" role="status" data-flash><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7"/></svg><span>{{.Text}}</span>{{with .URL}}<a href="{{.}}">{{t "flash.view"}}</a>{{end}}<button class="flash-x" type="button" data-dismiss aria-label="{{t "flash.dismiss"}}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7m0-7l-7 7"/></svg></button></div>
 {{- end}}
 {{template "content" .}}
 </main>
@@ -87,28 +97,28 @@
 
 {{define "empty"}}<p class="empty">{{.}}</p>{{end}}
 
-{{define "progress"}}<svg class="progress" role="img" aria-label="{{.Percent}}% done">{{range .Segments}}<rect class="f-{{.State}}" x="{{printf "%.3f" .X}}%" width="{{printf "%.3f" .W}}%" height="100%"><title>{{label .State}} {{num .N}}</title></rect>{{if .X}}<line class="gap" x1="{{printf "%.3f" .X}}%" x2="{{printf "%.3f" .X}}%" y1="0" y2="100%"></line>{{end}}{{end}}</svg>{{end}}
+{{define "progress"}}<svg class="progress" role="img" aria-label="{{t "progress" "n" .Percent}}">{{range .Segments}}<rect class="f-{{.State}}" x="{{printf "%.3f" .X}}%" width="{{printf "%.3f" .W}}%" height="100%"><title>{{label .State}} {{num .N}}</title></rect>{{if .X}}<line class="gap" x1="{{printf "%.3f" .X}}%" x2="{{printf "%.3f" .X}}%" y1="0" y2="100%"></line>{{end}}{{end}}</svg>{{end}}
 
 {{define "n"}}{{if .}}{{num .}}{{else}}<span class="none">0</span>{{end}}{{end}}
 
-{{define "pager"}}{{if or .NextURL .FirstURL}}<div class="pager">{{with .FirstURL}}<a class="btn ghost" href="{{.}}">First page</a>{{end}}{{with .NextURL}}<a class="btn" href="{{.}}" rel="next">Next<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></a>{{end}}</div>{{end}}{{end}}
+{{define "pager"}}{{if or .NextURL .FirstURL}}<div class="pager">{{with .FirstURL}}<a class="btn ghost" href="{{.}}">{{t "pager.first"}}</a>{{end}}{{with .NextURL}}<a class="btn" href="{{.}}" rel="next">{{t "pager.next"}}<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3.5l4.5 4.5L6 12.5"/></svg></a>{{end}}</div>{{end}}{{end}}
 
 {{define "jobtable"}}{{$l := .Data}}{{$sel := and .Write (or $l.CanRequeue $l.CanDelete)}}
 {{- if $l.Jobs}}
 <div class="tbl">
 <table class="grid">
 <thead><tr>
-{{- if $sel}}<th class="cb"><input type="checkbox" data-all aria-label="Select all"></th>{{end}}
-<th class="id">ID</th><th>Job</th><th>Queue</th><th class="r">Attempt</th>
-{{- if eq $l.State "processing"}}<th>Server</th>{{end}}
-{{- if eq $l.State "throttled"}}<th>Limit</th>{{end}}
-{{- if eq $l.State "awaiting"}}<th class="r">Waiting on</th>{{end}}
-<th class="r">{{$l.Column}}</th>
+{{- if $sel}}<th class="cb"><input type="checkbox" data-all aria-label="{{t "jobs.select_all"}}"></th>{{end}}
+<th class="id">{{t "col.id"}}</th><th>{{t "col.job"}}</th><th>{{t "col.queue"}}</th><th class="r">{{t "col.attempt"}}</th>
+{{- if eq $l.State "processing"}}<th>{{t "col.server"}}</th>{{end}}
+{{- if eq $l.State "throttled"}}<th>{{t "col.limit"}}</th>{{end}}
+{{- if eq $l.State "awaiting"}}<th class="r">{{t "col.waiting"}}</th>{{end}}
+<th class="r">{{t $l.Column}}</th>
 </tr></thead>
 <tbody>
 {{- range $l.Jobs}}
 <tr>
-{{- if $sel}}<td class="cb"><input type="checkbox" name="id" value="{{.ID}}" form="bulk" aria-label="Select job {{.ID}}"></td>{{end}}
+{{- if $sel}}<td class="cb"><input type="checkbox" name="id" value="{{.ID}}" form="bulk" aria-label="{{t "jobs.select" "id" .ID}}"></td>{{end}}
 <td class="id"><a href="{{link "/jobs/" .ID}}">{{.ID}}</a></td>
 <td class="job"><span><a href="{{link "/jobs/" .ID}}"><span class="kind"{{if .Title}} title="{{.Kind}}"{{end}}>{{or .Title .Kind}}</span>{{with preview .Args}}<span class="args">{{.}}</span>{{end}}</a>{{range .Tags}}<a class="chip" href="{{link "/jobs/" $l.State "?tag=" (query .)}}">{{.}}</a>{{end}}</span></td>
 <td><a class="chip" href="{{link "/jobs/" $l.State "?queue=" .Queue}}">{{.Queue}}</a></td>
@@ -122,5 +132,5 @@
 </tbody>
 </table>
 </div>
-{{- else}}{{template "empty" $l.Empty}}{{end}}
+{{- else}}{{template "empty" (t $l.Empty "state" (label $l.State "job"))}}{{end}}
 {{end}}

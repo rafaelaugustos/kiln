@@ -65,5 +65,5 @@ func (h *handler) servers(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	h.show(w, r, "servers", "Servers", &serverList{Servers: serverViews(ss)})
+	h.show(w, r, "servers", &serverList{Servers: serverViews(ss)})
 }

@@ -68,7 +68,7 @@ func (h *handler) recurring(w http.ResponseWriter, r *http.Request) {
 			UpdatedAt: rc.UpdatedAt,
 		}
 	}
-	h.show(w, r, "recurring", "Recurring", l)
+	h.show(w, r, "recurring", l)
 }
 
 func (h *handler) recurringAction(w http.ResponseWriter, r *http.Request) {

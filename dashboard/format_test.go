@@ -10,11 +10,11 @@ import (
 func TestNum(t *testing.T) {
 	t.Parallel()
 	for in, want := range map[int64]string{0: "0", 7: "7", 999: "999", 1000: "1,000", 1234567: "1,234,567", -4200: "-4,200"} {
-		if got := num(in); got != want {
+		if got := english.num(in); got != want {
 			t.Errorf("num(%d) = %q, want %q", in, got, want)
 		}
 	}
-	if got := num(12345); got != "12,345" {
+	if got := english.num(12345); got != "12,345" {
 		t.Errorf("num(int) = %q", got)
 	}
 }
@@ -22,7 +22,7 @@ func TestNum(t *testing.T) {
 func TestShort(t *testing.T) {
 	t.Parallel()
 	for in, want := range map[int64]string{42: "42", 99999: "99,999", 100000: "100k", 167412: "167.4k", 1234567: "1.2M", 12345678: "12.3M"} {
-		if got := short(in); got != want {
+		if got := english.short(in); got != want {
 			t.Errorf("short(%d) = %q, want %q", in, got, want)
 		}
 	}
@@ -44,7 +44,7 @@ func TestAgo(t *testing.T) {
 		{now.Add(90 * time.Minute), "in 1h"},
 	}
 	for _, tt := range tests {
-		if got := ago(tt.at); got != tt.want {
+		if got := english.ago(tt.at); got != tt.want {
 			t.Errorf("ago(%v) = %q, want %q", now.Sub(tt.at), got, tt.want)
 		}
 	}
@@ -67,7 +67,7 @@ func TestDur(t *testing.T) {
 		24*time.Hour + 30*time.Minute:     "1d",
 		10*time.Second + time.Millisecond: "10s",
 	} {
-		if got := dur(in); got != want {
+		if got := english.dur(in); got != want {
 			t.Errorf("dur(%v) = %q, want %q", in, got, want)
 		}
 	}

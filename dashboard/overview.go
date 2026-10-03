@@ -48,18 +48,8 @@ func (c *counts) of(s driver.State) int64 {
 	return 0
 }
 
-func (c *counts) text(n int64) string {
-	if c.Capped && n >= countCap {
-		return num(n) + "+"
-	}
-	return num(n)
-}
-
-func (c *counts) short(n int64) string {
-	if c.Capped && n >= countCap {
-		return short(n) + "+"
-	}
-	return short(n)
+func (c *counts) capped(n int64) bool {
+	return c.Capped && n >= countCap
 }
 
 type snapshot struct {
@@ -136,15 +126,14 @@ func (h *handler) loadOverview(ctx context.Context) (*snapshot, error) {
 }
 
 type stat struct {
-	Key   string
-	Label string
-	Note  string
-	State driver.State
-	N     int64
-	Value string
-	Short string
-	URL   string
-	Sub   *stat
+	Key    string
+	Label  string
+	Note   string
+	State  driver.State
+	N      int64
+	Capped bool
+	URL    string
+	Sub    *stat
 }
 
 type stage struct {
@@ -216,31 +205,31 @@ func (h *handler) overview(w http.ResponseWriter, r *http.Request) {
 	c := &s.Counts
 	state := func(st driver.State, note string) stat {
 		n := c.of(st)
-		return stat{Key: string(st), Label: label(st), Note: note, State: st, N: n, Value: c.text(n), Short: c.short(n), URL: h.link("/jobs/", st)}
+		return stat{Key: string(st), Label: "state." + string(st), Note: note, State: st, N: n, Capped: c.capped(n), URL: h.link("/jobs/", st)}
 	}
 	scheduled := state(driver.Scheduled, "")
-	scheduled.Sub = &stat{Key: "retries", Label: "retrying", N: c.Retries, Value: c.text(c.Retries), URL: h.link("/retries")}
-	succeeded := state(driver.Succeeded, "all time")
-	succeeded.Value, succeeded.Short = num(c.Succeeded), short(c.Succeeded)
-	deleted := state(driver.Deleted, "all time")
-	deleted.Value, deleted.Short = num(c.Deleted), short(c.Deleted)
+	scheduled.Sub = &stat{Key: "retries", Label: "stat.retrying", N: c.Retries, Capped: c.capped(c.Retries), URL: h.link("/retries")}
+	succeeded := state(driver.Succeeded, "stat.total")
+	succeeded.Capped = false
+	deleted := state(driver.Deleted, "stat.total")
+	deleted.Capped = false
 	p := &overviewPage{
 		snapshot: s,
 		Mood:     mood(s),
 		Heat:     heat(s),
 		Stages: []stage{
-			{Label: "Held back", Stats: []stat{
-				state(driver.Awaiting, "on other jobs"),
+			{Label: "stage.held", Stats: []stat{
+				state(driver.Awaiting, "stat.awaiting"),
 				scheduled,
-				state(driver.Throttled, "by a limit"),
+				state(driver.Throttled, "stat.throttled"),
 			}},
-			{Label: "Queued & running", Stats: []stat{
-				state(driver.Enqueued, "ready for a worker"),
-				state(driver.Processing, "running now"),
+			{Label: "stage.active", Stats: []stat{
+				state(driver.Enqueued, "stat.enqueued"),
+				state(driver.Processing, "stat.processing"),
 			}},
-			{Label: "Outcomes", Stats: []stat{
+			{Label: "stage.outcomes", Stats: []stat{
 				succeeded,
-				state(driver.Failed, "stay until handled"),
+				state(driver.Failed, "stat.failed"),
 				deleted,
 			}},
 		},
@@ -250,7 +239,7 @@ func (h *handler) overview(w http.ResponseWriter, r *http.Request) {
 	if s.Workers > 0 {
 		p.Load = min(float64(s.Running)/float64(s.Workers)*100, 100)
 	}
-	h.render(w, r, http.StatusOK, "overview", "Overview", p)
+	h.render(w, r, http.StatusOK, "overview", p)
 }
 
 type chart struct {

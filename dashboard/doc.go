@@ -12,6 +12,10 @@
 // Policy. Every request goes through [Options.Authorize]. Changes are POST requests from the same
 // origin with [ReadWrite] access; API calls that change something also need a JSON body.
 //
+// The pages come in English and Brazilian Portuguese. Viewers pick one in the header, which keeps
+// their choice in a cookie; until they do, [Options.Language] or else their browser's languages
+// decide. The JSON API is not translated.
+//
 // The pages are mirrored as JSON under <prefix>/api:
 //
 //	GET  /api/overview                job counts and totals of servers, workers and queues

@@ -1,19 +1,21 @@
-{{define "content"}}{{$l := .Data}}
+{{define "title"}}{{if .Data.Retries}}{{t "nav.retries"}}{{else}}{{label .Data.State "jobs"}}{{end}}{{end}}
+
+{{define "content"}}{{$l := .Data}}{{$del := t $l.DeleteLabel}}
 <div class="head">
 <div>
 {{- if $l.Retries}}
-<h1>Retries</h1>
-<p class="sub">Jobs that failed and are scheduled to run again.</p>
+<h1>{{t "nav.retries"}}</h1>
+<p class="sub">{{t "retries.sub"}}</p>
 {{- else}}
-<h1>Jobs</h1>
+<h1>{{t "nav.jobs"}}</h1>
 {{- end}}
 </div>
 </div>
 
 {{- if not $l.Retries}}
-<nav class="tabs" aria-label="States">
+<nav class="tabs" aria-label="{{t "jobs.states"}}">
 {{- range $l.Tabs}}
-<a class="s-{{.State}}{{if .On}} on{{end}}" href="{{.URL}}"{{if .On}} aria-current="page"{{end}}><i class="dot"></i>{{label .State}}{{with .Count}}<span class="n">{{.}}</span>{{end}}</a>
+<a class="s-{{.State}}{{if .On}} on{{end}}" href="{{.URL}}"{{if .On}} aria-current="page"{{end}}><i class="dot"></i>{{label .State}}{{if .Counted}}<span class="n">{{num .N}}{{if .Capped}}+{{end}}</span>{{end}}</a>
 {{- end}}
 </nav>
 {{- end}}
@@ -22,24 +24,24 @@
 <div class="toolbar">
 {{- if $l.CanFilter}}
 <form class="filters" method="get" action="{{$l.Self}}">
-<select name="queue" data-autosubmit aria-label="Queue">
-<option value="">All queues</option>
+<select name="queue" data-autosubmit aria-label="{{t "col.queue"}}">
+<option value="">{{t "queues.all"}}</option>
 {{- range $l.Queues}}
 <option value="{{.}}"{{if eq . $l.Queue}} selected{{end}}>{{.}}</option>
 {{- end}}
 </select>
-<input type="search" name="kind" value="{{$l.Kind}}" placeholder="Kind" list="kinds" aria-label="Kind" autocomplete="off" spellcheck="false">
+<input type="search" name="kind" value="{{$l.Kind}}" placeholder="{{t "col.kind"}}" list="kinds" aria-label="{{t "col.kind"}}" autocomplete="off" spellcheck="false">
 <datalist id="kinds">{{range $l.Kinds}}<option value="{{.}}"></option>{{end}}</datalist>
-<input type="search" name="tag" value="{{$l.Tag}}" placeholder="Tag" aria-label="Tag" autocomplete="off" spellcheck="false">
+<input type="search" name="tag" value="{{$l.Tag}}" placeholder="{{t "jobs.tag"}}" aria-label="{{t "jobs.tag"}}" autocomplete="off" spellcheck="false">
 {{- if $l.Batch}}
 <input type="hidden" name="batch" value="{{$l.Batch}}">
-<a class="chip removable" href="{{$l.Unbatch}}" title="Remove batch filter">Batch {{$l.Batch}}<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7m0-7l-7 7"/></svg></a>
+<a class="chip removable" href="{{$l.Unbatch}}" title="{{t "jobs.unbatch"}}">{{t "batch.title" "id" $l.Batch}}<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7m0-7l-7 7"/></svg></a>
 {{- end}}
-<button class="btn" type="submit">Filter</button>
-{{- if $l.Filtered}}<a class="btn ghost" href="{{$l.Self}}">Clear</a>{{end}}
+<button class="btn" type="submit">{{t "action.filter"}}</button>
+{{- if $l.Filtered}}<a class="btn ghost" href="{{$l.Self}}">{{t "action.clear"}}</a>{{end}}
 </form>
 {{- else}}
-<div class="summary">{{num (len $l.Jobs)}} on this page</div>
+<div class="summary">{{t "jobs.on_page" "n" (num (len $l.Jobs))}}</div>
 {{- end}}
 {{- if and $.Write (or $l.CanRequeue $l.CanDelete)}}
 <form id="bulk" class="bulk" method="post" action="{{link "/jobs/requeue"}}">
@@ -50,12 +52,12 @@
 {{- with $l.Tag}}<input type="hidden" name="tag" value="{{.}}">{{end}}
 {{- if $l.Retries}}<input type="hidden" name="back" value="retries">{{end}}
 <span class="selected" data-selected hidden></span>
-{{- if $l.CanRequeue}}<button class="btn" type="submit" formaction="{{link "/jobs/requeue"}}" data-needs-selection>Requeue</button>{{end}}
-{{- if $l.CanDelete}}<button class="btn danger" type="submit" formaction="{{link "/jobs/delete"}}" data-needs-selection data-confirm="{{$l.DeleteLabel}} the selected jobs?">{{$l.DeleteLabel}}</button>{{end}}
+{{- if $l.CanRequeue}}<button class="btn" type="submit" formaction="{{link "/jobs/requeue"}}" data-needs-selection>{{t "action.requeue"}}</button>{{end}}
+{{- if $l.CanDelete}}<button class="btn danger" type="submit" formaction="{{link "/jobs/delete"}}" data-needs-selection data-confirm="{{t "jobs.confirm_selected" "verb" $del}}">{{$del}}</button>{{end}}
 {{- if and $l.CanFilter $l.Jobs (not $l.Tag)}}
 <span class="sep" aria-hidden="true"></span>
-{{- if $l.CanRequeue}}<button class="btn" type="submit" name="all" value="1" formaction="{{link "/jobs/requeue"}}" data-confirm="Requeue every {{$l.State}} job matching the current filters?">Requeue all matching</button>{{end}}
-{{- if $l.CanDelete}}<button class="btn danger" type="submit" name="all" value="1" formaction="{{link "/jobs/delete"}}" data-confirm="{{$l.DeleteLabel}} every {{$l.State}} job matching the current filters?">{{$l.DeleteLabel}} all matching</button>{{end}}
+{{- if $l.CanRequeue}}<button class="btn" type="submit" name="all" value="1" formaction="{{link "/jobs/requeue"}}" data-confirm="{{t "jobs.confirm_all" "verb" (t "action.requeue") "state" (label $l.State "job")}}">{{t "jobs.all" "verb" (t "action.requeue")}}</button>{{end}}
+{{- if $l.CanDelete}}<button class="btn danger" type="submit" name="all" value="1" formaction="{{link "/jobs/delete"}}" data-confirm="{{t "jobs.confirm_all" "verb" $del "state" (label $l.State "job")}}">{{t "jobs.all" "verb" $del}}</button>{{end}}
 {{- end}}
 </form>
 {{- end}}
