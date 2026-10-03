@@ -2,11 +2,11 @@
 // applications meet it only through the types package kiln re-exports and through [Writer], which
 // enqueues jobs inside the application's own transaction.
 //
-// A store implements [Store], and may implement [Notifier] or [Bus] to wake servers and
-// [Transactor] to group writes in one transaction. Package memstore is the reference
-// implementation, and drivertest.Run is the conformance suite every store must pass. A store must
-// be safe for concurrent use by any number of servers and clients, and its errors must wrap the
-// sentinel errors of this package wherever one applies.
+// A store implements [Store], and may implement [Notifier] or [Bus] to wake servers,
+// [Transactor] to group writes in one transaction and [Console] to keep what jobs log. Package
+// memstore is the reference implementation, and drivertest.Run is the conformance suite every
+// store must pass. A store must be safe for concurrent use by any number of servers and clients,
+// and its errors must wrap the sentinel errors of this package wherever one applies.
 //
 // # Time
 //
@@ -28,9 +28,9 @@
 // # Claims
 //
 // A claim increments the job's Attempt and Claim counters. Claim never decreases, and every write
-// made for a running job ([Worker.Finish], [Worker.SetMeta]) is fenced: it applies only while the
-// job is processing under the same [Ref], so a server that lost a job cannot overwrite its state.
-// An outcome with Refund set gives the attempt back, never the claim.
+// made for a running job ([Worker.Finish], [Worker.SetMeta], [Console.WriteConsole]) is fenced: it
+// applies only while the job is processing under the same [Ref], so a server that lost a job
+// cannot overwrite its state. An outcome with Refund set gives the attempt back, never the claim.
 //
 // # Limits
 //

@@ -11,8 +11,8 @@ var (
 	// is no longer at the version the caller read.
 	ErrConflict = errors.New("kiln: conflict")
 
-	// ErrLost is returned by [Worker.SetMeta] when the job is no longer processing under the claim
-	// of the given [Ref].
+	// ErrLost is returned by [Worker.SetMeta] and [Console.WriteConsole] when the job is no longer
+	// processing under the claim of the given [Ref].
 	ErrLost = errors.New("kiln: claim lost")
 
 	// ErrClosed is returned when a job is inserted into a batch that has already finished.

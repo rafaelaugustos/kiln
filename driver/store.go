@@ -269,6 +269,21 @@ type TxWriter interface {
 	Notify(ctx context.Context) error
 }
 
+// Console is implemented by stores that keep the console of a job: the lines its handler writes
+// and its progress. Servers write to it while a job runs, and the dashboard reads it.
+type Console interface {
+	// WriteConsole appends lines to the console of the job ref points to and, when progress is 0
+	// or more, sets the job's progress, while the job is processing under ref's claim; otherwise
+	// it fails with [ErrLost] and writes nothing. Each line gets the job's Attempt, the store's
+	// time and the next Seq of the job.
+	WriteConsole(ctx context.Context, ref Ref, lines []string, progress int) error
+
+	// Logs returns the lines of job id with a Seq above after, oldest first, at most limit of
+	// them, or 100 when limit is 0 or less. Lines keep their Attempt across retries and requeues,
+	// and [Coordinator.Prune] deletes them with the job.
+	Logs(ctx context.Context, id int64, after int64, limit int) ([]LogLine, error)
+}
+
 // Transactor is implemented by stores that can run several writes in one transaction. Package kiln
 // uses it to insert a batch together with its jobs.
 type Transactor interface {

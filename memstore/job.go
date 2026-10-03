@@ -48,6 +48,8 @@ type job struct {
 	children    []int64
 	history     []driver.Entry
 	output      []byte
+	progress    int
+	logs        []driver.LogLine
 
 	heap *jobHeap
 	slot int
@@ -150,6 +152,7 @@ func (j *job) record(full bool) driver.Record {
 		CancelRequested: j.cancel,
 		AfterBatch:      j.afterBatch,
 		PendingDeps:     j.pending,
+		Progress:        j.progress,
 	}
 	if full {
 		r.History = slices.Clone(j.history)
