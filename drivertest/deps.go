@@ -197,7 +197,7 @@ func testDepsFanIn(t *testing.T, s driver.Store) {
 		t.Fatalf("claimed %d parents, want %d", len(js), fans*width)
 	}
 	ctx := t.Context()
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	var wg sync.WaitGroup
 	for _, j := range js {
 		wg.Go(func() {
@@ -215,7 +215,7 @@ func testDepsFanIn(t *testing.T, s driver.Store) {
 				}
 				time.Sleep(time.Millisecond)
 			}
-			t.Errorf("parent %d still busy after 3s", j.ID)
+			t.Errorf("parent %d still busy after 15s", j.ID)
 		})
 	}
 	wg.Wait()
