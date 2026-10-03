@@ -23,3 +23,5 @@ v0.6 adds two changes, both additive: a log table and a `progress` column for th
 (`003_console`), and a nullable group column on recurring jobs (`004_recurring_group`). On SQL Server
 Standard edition, adding the `progress` column with its default may touch every row of the jobs and
 archive tables; on Enterprise, Developer and Azure SQL it only changes metadata.
+
+v0.7 adds one additive change, `005_job_extras`: a nullable `title` column on the jobs and archive tables.

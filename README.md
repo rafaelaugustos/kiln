@@ -29,13 +29,13 @@ you already have, so they survive restarts and crashes, they can be enqueued in 
 data that produced them, and you can watch and retry them from a dashboard that comes with the library.
 
 - **Retries** with exponential or custom backoff, snoozes, timeouts and permanent failures
-- **Workflows**: jobs that wait for one or many other jobs, and batches with a job that runs when the
-  whole batch is done
+- **Workflows**: jobs that wait for one or many other jobs and read their outputs, and batches with a job
+  that runs when the whole batch is done
 - **Limits** per key, across every server: how many jobs run at once and how many start per second
 - **Recurring jobs** from cron specs, with time zones, a policy for missed runs, and `SyncRecurring` to
   keep them in step with your code
 - **Job console**: log lines and a progress bar from inside a handler, live in the dashboard
-- **Unique jobs**, while a job is live or for a window of time
+- **Unique jobs**, while a job is live or for a window of time, with replace and debounce
 - **Transactional enqueue**: the job exists only if your transaction commits
 - **Cancellation** of a running job from any process
 - **Dashboard** and JSON API, mounted on your own HTTP server
@@ -215,8 +215,12 @@ client.Enqueue(ctx, SendEmail{To: to},
 	kiln.Delay(10*time.Minute),
 	kiln.MaxAttempts(5),
 	kiln.Tags{"welcome"},
+	kiln.Title("Welcome email for "+to),
 )
 ```
+
+`Title` names the job in the dashboard, which otherwise shows its kind; an args type can also have a
+`Title() string` method. Tags can be filtered on in the dashboard's job lists.
 
 ### Retries
 
@@ -240,6 +244,9 @@ fetch := flow.Add(FetchData{URL: src})
 flow.Add(ProcessData{}, kiln.Needs{fetch})
 client.EnqueueMany(ctx, flow...)
 ```
+
+A continuation can read what its parents produced: `j.ParentOutputs(ctx)` returns the output of each parent
+that succeeded, keyed by id.
 
 ### Batches
 
@@ -280,6 +287,25 @@ inserting another one. The key is released as soon as that job succeeds, fails o
 `Unique{Key, For: d}` holds the key for `d` from the first enqueue, whatever happens to the job in the
 meantime, including success. It means "at most once per `d`" (one reminder per 10 minutes), not "no
 duplicates while it runs".
+
+`Unique{Key, Replace: true}` updates a holder that hasn't started yet with the new args, meta, tags, title
+and priority, so the job runs with the latest data. `Unique{Key, Debounce: d}` runs the job `d` after the
+last enqueue: every new enqueue pushes a holder that is still waiting and replaces its args, which suits
+work like "reindex once the user stops editing". A holder that is already running is never touched.
+
+### Queues and workers
+
+A server runs pools of workers, each serving its queues in order, so a busy first queue can keep the others
+waiting. `Weights` shares a pool between its queues instead: under load each queue gets about its weight's
+share of the claims, and a queue with nothing to do leaves its share to the others.
+
+```go
+kiln.ServerConfig{Pools: []kiln.Pool{{
+	Queues:  []string{"critical", "default", "low"},
+	Workers: 20,
+	Weights: map[string]int{"critical": 6, "default": 3},
+}}}
+```
 
 ### Limits
 
@@ -407,7 +433,8 @@ mux.Handle("/kiln/", dashboard.New(client, dashboard.Options{
 control plugs into whatever auth your app already has. `dashboard.AllowAll` is for local
 development: it grants read/write access only to requests addressed to `localhost` or a loopback
 IP, and denies everything else. The dashboard shows live counts and a succeeded/failed chart, jobs by
-state with filtering and bulk actions, job detail with redactable args/meta/output and the live console,
+state with filters by queue, kind, batch and tag and bulk actions, job detail with titles, redactable
+args/meta/output and the live console,
 retries, recurring schedules and their groups, queues, servers, batches, and limits with what each key
 is running and holding back, and mirrors all of it under a JSON API at
 `<prefix>/api/...` for scripting. It's server-rendered with no external assets and a strict CSP.
@@ -452,7 +479,8 @@ On an Apple M4 Max, with PostgreSQL and MySQL in Docker on the same machine:
 Against [River](https://github.com/riverqueue/river) on the same PostgreSQL, kiln drains no-op jobs about
 as fast as River tuned to a 1ms fetch cooldown, and 20 times faster than River's defaults.
 [Performance](docs/performance.md) has the full numbers and how they were measured, along with a run under a
-production-like load: a shop backend whose payment jobs share a 20-per-second gateway, on all four stores.
+production-like load and a chaos run: 57,000 jobs through 31 `kill -9`s, 22 graceful stops and 3 database
+restarts in 15 minutes, with no job lost and every limit held.
 
 ## Documentation
 

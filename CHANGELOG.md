@@ -3,6 +3,25 @@
 Every module in this repository (`kiln`, `pgstore`, `mysqlstore`, `sqlitestore`, `kilnotel`, `redisbus`) is
 released together under the same version. The GitHub releases have the full notes.
 
+## v0.7.0 (2026-10-03)
+
+### Added
+- Job titles: `kiln.Title` or a `Title()` method on the args names a job in the dashboard.
+- A tag filter on the dashboard's job lists, backed by `driver.JobQuery.Tag`.
+- `Unique{Replace: true}` updates a holder that hasn't started with the new args, and
+  `Unique{Debounce: d}` runs the job `d` after the last enqueue. `driver.Inserted` gains `Replaced`.
+- `Job.ParentOutputs` returns the outputs of a continuation's parents that succeeded.
+- `Pool.Weights` shares a pool's claims between its queues by weight instead of strict order.
+- `soak/`, a chaos harness that kills workers and restarts the database while it checks that no job is
+  lost.
+
+### Fixed
+- drivertest's fan-in case gives parents waiting on a busy child 15s instead of 3s, enough for SQL Server
+  on a small CI runner.
+
+### Upgrading
+- Additive schema change `005_job_extras`; v0.6 servers keep running next to v0.7 during a rolling deploy.
+
 ## v0.6.0 (2026-10-02)
 
 ### Added

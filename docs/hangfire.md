@@ -24,6 +24,7 @@ for its `Kind()`. Most calls map one to one:
 | `CancellationToken` parameter | the handler's `ctx`, cancelled with cause `kiln.ErrCanceled` on `Delete` |
 | Hangfire.Console `context.WriteLine("...")` / `WriteProgressBar()` | `j.Logf("...")` / `j.SetProgress(n)` |
 | `RecurringJob.AddOrUpdate` for every job at startup, removing stale ones by hand | `client.SyncRecurring(ctx, group, specs...)` |
+| `[JobDisplayName("Welcome email for {0}")]` | `kiln.Title("Welcome email for " + to)`, or a `Title()` method on the args |
 | `context.SetJobParameter("cursor", c)` | `j.SetParam(ctx, "cursor", c)` / `j.Param("cursor", &c)` |
 | `IClientFilter` / `IServerFilter` | `kiln.NewClient(store, mw...)` / `mux.Use(mw...)` |
 | `Enqueue<IMailer>(x => x.Send(...))` resolved from DI | a method value with its dependencies: `kiln.Handle(mux, mailer.Send)` |

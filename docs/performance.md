@@ -52,3 +52,29 @@ Rescued jobs now restart within 100ms of being rescued; the rest of those times 
 worker is gone (`DeadAfter`, plus `LeaderTTL` when the dead server was the leader). Across the runs, 25
 buyers racing for 5 units of stock always ended with 5 orders, 20 rejections and no job left behind for a
 rolled-back order, and every charge reached the gateway exactly once.
+
+## Under chaos
+
+`soak/` runs worker processes against PostgreSQL or MySQL for as long as you ask, while it kills them with
+`SIGKILL`, stops them with `SIGTERM` and restarts the database, then checks that every job reached a final
+state, none ran more than its attempts plus the runs cut short, limits and rates held, and the store needs
+no repair. The jobs mix plain ones, retries, jobs that always fail, fan-in flows that read their parents'
+outputs, slow jobs, and jobs under a mutex, a `Max`, a `Rate` and both.
+
+A 15 minute run on PostgreSQL, 4 workers, 50 enqueues per second:
+
+| | |
+|---|---|
+| Jobs | 57,211 |
+| Chaos | 31 `SIGKILL`s, 22 `SIGTERM`s, 3 database restarts of about 1.5s |
+| Jobs lost | 0 |
+| Jobs run more often than allowed | 0 |
+| Peak concurrency per limited key | at or under its `Max` |
+| Store after the run | limit counters at 0, nothing for Sweep to repair |
+
+```
+cd soak && go run . -duration 24h -rate 20
+```
+
+See [soak/README.md](../soak/README.md) for the flags. `-container none` skips the database restarts when
+other tests share the database.
