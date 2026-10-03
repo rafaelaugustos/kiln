@@ -3,6 +3,8 @@ package kiln
 import (
 	"context"
 	"encoding/json"
+	"maps"
+	"math"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -36,6 +38,43 @@ func TestServerLimits(t *testing.T) {
 	eventually(t, 5*time.Second, "limited jobs", func() bool { return s.Stats().Succeeded == uint64(len(ids)) })
 	if p := peak.Load(); p > 3 || p < 1 {
 		t.Fatalf("peak concurrency %d, limit 3", p)
+	}
+}
+
+func TestServerWeightedPool(t *testing.T) {
+	t.Parallel()
+	c := NewClient(memstore.New())
+	m := NewMux()
+	const measured = 2400
+	var (
+		mu     sync.Mutex
+		counts = make(map[string]int)
+		total  int
+	)
+	done := make(chan map[string]int, 1)
+	m.HandleFunc("weighted", func(_ context.Context, j *RawJob) error {
+		mu.Lock()
+		defer mu.Unlock()
+		if total < measured {
+			counts[j.Queue]++
+			if total++; total == measured {
+				done <- maps.Clone(counts)
+			}
+		}
+		return nil
+	})
+	for _, q := range []string{"a", "b", "c"} {
+		mustEnqueueMany(t, c, 2000, testArgs{K: "weighted"}, Queue(q))
+	}
+	cfg := fastConfig()
+	cfg.Queues = nil
+	cfg.Pools = []Pool{{Queues: []string{"a", "b", "c"}, Workers: 2, Weights: map[string]int{"a": 6, "b": 3}}}
+	runServer(t, c, m, cfg)
+	got := receive(t, done)
+	for q, want := range map[string]float64{"a": 0.6, "b": 0.3, "c": 0.1} {
+		if share := float64(got[q]) / measured; math.Abs(share-want) > 0.06 {
+			t.Errorf("queue %s got %.3f of the jobs, want %.2f", q, share, want)
+		}
 	}
 }
 
