@@ -12,6 +12,7 @@
 <p align="center">
   <a href="https://pkg.go.dev/github.com/rafaelaugustos/kiln"><img src="https://pkg.go.dev/badge/github.com/rafaelaugustos/kiln.svg" alt="Go Reference"></a>
   <a href="https://github.com/rafaelaugustos/kiln/actions/workflows/ci.yml"><img src="https://github.com/rafaelaugustos/kiln/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://codecov.io/gh/rafaelaugustos/kiln"><img src="https://codecov.io/gh/rafaelaugustos/kiln/graph/badge.svg" alt="Coverage"></a>
   <a href="https://github.com/rafaelaugustos/kiln/releases"><img src="https://img.shields.io/github/v/release/rafaelaugustos/kiln" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
 </p>
