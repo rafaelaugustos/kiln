@@ -25,3 +25,7 @@ Standard edition, adding the `progress` column with its default may touch every 
 archive tables; on Enterprise, Developer and Azure SQL it only changes metadata.
 
 v0.7 adds one additive change, `005_job_extras`: a nullable `title` column on the jobs and archive tables.
+
+v0.8 adds one additive change, `006_nested_batches`: a nullable `parent_id` column on batches and two
+indexes. v0.7 servers don't know about nested batches and can finish a batch while batches nested in it
+are still running, so nest batches only once every server runs v0.8.

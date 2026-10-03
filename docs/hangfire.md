@@ -20,6 +20,7 @@ for its `Kind()`. Most calls map one to one:
 | `[DisableConcurrentExecution(60)]` | `kiln.Limit{Key: "reports", Max: 1}` |
 | Ace semaphore / rate limiter | `kiln.Limit{Key: k, Max: n}` / `kiln.Limit{Key: k, Rate: n, Per: time.Second}` |
 | Pro `BatchJob.StartNew(x => x.Enqueue(...))` | `b := &kiln.Batch{}; b.Add(args); client.StartBatch(ctx, b)` |
+| Pro nested batches, `x.StartNew(...)` inside a batch | `outer.AddBatch(inner)`, or `client.StartBatch(ctx, &kiln.Batch{Parent: id})` |
 | Pro `BatchJob.ContinueBatchWith(batchId, ...)` | `b.Then(args)`, or `client.Enqueue(ctx, args, kiln.AfterBatch(batchID))` |
 | `CancellationToken` parameter | the handler's `ctx`, cancelled with cause `kiln.ErrCanceled` on `Delete` |
 | Hangfire.Console `context.WriteLine("...")` / `WriteProgressBar()` | `j.Logf("...")` / `j.SetProgress(n)` |
