@@ -2,9 +2,12 @@ package drivertest
 
 import (
 	"errors"
+	"fmt"
 	"maps"
 	"slices"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/rafaelaugustos/kiln/driver"
 )
@@ -19,6 +22,14 @@ var batchTests = []test{
 	{"Counts", testBatchCounts},
 	{"NotFound", testBatchNotFound},
 	{"List", testBatchList},
+	{"Nested", testBatchNested},
+	{"NestedChain", testBatchNestedChain},
+	{"NestedOpen", testBatchNestedOpen},
+	{"NestedFailed", testBatchNestedFailed},
+	{"NestedEmpty", testBatchNestedEmpty},
+	{"NestedList", testBatchNestedList},
+	{"NestedConcurrent", testBatchNestedConcurrent},
+	{"NestedPrune", testBatchNestedPrune},
 }
 
 func openBatch(t *testing.T, w driver.Writer) int64 {
@@ -26,6 +37,15 @@ func openBatch(t *testing.T, w driver.Writer) int64 {
 	id, err := w.OpenBatch(t.Context(), driver.NewBatch{Description: "import"})
 	if err != nil {
 		t.Fatalf("open batch: %v", err)
+	}
+	return id
+}
+
+func nest(t *testing.T, w driver.Writer, parent int64) int64 {
+	t.Helper()
+	id, err := w.OpenBatch(t.Context(), driver.NewBatch{Description: "part", Parent: parent})
+	if err != nil {
+		t.Fatalf("open batch in %d: %v", parent, err)
 	}
 	return id
 }
@@ -281,4 +301,249 @@ func testBatchList(t *testing.T, s driver.Store) {
 	if !slices.Equal(got, ids) {
 		t.Fatalf("batches %v, want %v", got, ids)
 	}
+}
+
+func testBatchNested(t *testing.T, s driver.Store) {
+	outer := openBatch(t, s)
+	inner := nest(t, s, outer)
+	if b := batch(t, s, inner); b.Parent != outer || b.Nested != 0 || b.Description != "part" {
+		t.Fatalf("nested batch %+v", b)
+	}
+	if b := batch(t, s, outer); b.Parent != 0 || b.Nested != 1 || b.NestedFinished != 0 || b.Total != 0 {
+		t.Fatalf("outer batch %+v", b)
+	}
+	m := add(t, s, members("m", inner, 1)[0])
+	next := add(t, s, afterBatch("next", outer))
+	seal(t, s, outer)
+	seal(t, s, inner)
+	sweep(t, s)
+	wantFinished(t, s, inner, false)
+	wantFinished(t, s, outer, false)
+	wantState(t, s, driver.Awaiting, next)
+
+	apply(t, s, outcome(claimOne(t, s, "m", m), driver.Succeeded))
+	if b := wantFinished(t, s, inner, true); b.Total != 1 || b.Counts[driver.Succeeded] != 1 {
+		t.Fatalf("nested batch %+v", b)
+	}
+	b := wantFinished(t, s, outer, true)
+	if b.Total != 0 || len(b.Counts) != 0 || b.Nested != 1 || b.NestedFinished != 1 {
+		t.Fatalf("outer batch %+v", b)
+	}
+	wantState(t, s, driver.Enqueued, next)
+}
+
+func testBatchNestedChain(t *testing.T, s driver.Store) {
+	top := openBatch(t, s)
+	mid := nest(t, s, top)
+	low := nest(t, s, mid)
+	m := add(t, s, members("m", low, 1)[0])
+	var next []int64
+	for _, id := range []int64{top, mid, low} {
+		next = append(next, add(t, s, afterBatch("next", id)))
+		seal(t, s, id)
+	}
+	wantFinished(t, s, top, false)
+	apply(t, s, outcome(claimOne(t, s, "m", m), driver.Succeeded))
+	for _, id := range []int64{low, mid, top} {
+		wantFinished(t, s, id, true)
+	}
+	wantState(t, s, driver.Enqueued, next...)
+}
+
+func testBatchNestedOpen(t *testing.T, s driver.Store) {
+	ctx := t.Context()
+	_, err := s.OpenBatch(ctx, driver.NewBatch{Parent: 1 << 40})
+	wantErr(t, err, driver.ErrNotFound)
+	done := openBatch(t, s)
+	seal(t, s, done)
+	_, err = s.OpenBatch(ctx, driver.NewBatch{Parent: done})
+	wantErr(t, err, driver.ErrClosed)
+
+	outer := openBatch(t, s)
+	inner := nest(t, s, outer)
+	seal(t, s, outer)
+	m := add(t, s, members("m", outer, 1)[0])
+	late := nest(t, s, outer)
+	if b := batch(t, s, outer); b.Total != 1 || b.Nested != 2 {
+		t.Fatalf("outer batch %+v", b)
+	}
+	seal(t, s, inner)
+	seal(t, s, late)
+	wantFinished(t, s, late, true)
+	wantFinished(t, s, outer, false)
+	apply(t, s, outcome(claimOne(t, s, "m", m), driver.Succeeded))
+	wantFinished(t, s, outer, true)
+	_, err = s.OpenBatch(ctx, driver.NewBatch{Parent: outer})
+	wantErr(t, err, driver.ErrClosed)
+
+	p, err := s.Batches(ctx, driver.BatchQuery{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Batches) != 4 {
+		t.Fatalf("%d batches after refused opens, want 4", len(p.Batches))
+	}
+}
+
+func testBatchNestedFailed(t *testing.T, s driver.Store) {
+	outer := openBatch(t, s)
+	inner := nest(t, s, outer)
+	m := add(t, s, members("m", inner, 1)[0])
+	seal(t, s, inner)
+	seal(t, s, outer)
+	apply(t, s, outcome(claimOne(t, s, "m", m), driver.Failed))
+	sweep(t, s)
+	wantFinished(t, s, inner, false)
+	wantFinished(t, s, outer, false)
+	deleteIDs(t, s, m)
+	wantFinished(t, s, inner, true)
+	wantFinished(t, s, outer, true)
+}
+
+func testBatchNestedEmpty(t *testing.T, s driver.Store) {
+	outer := openBatch(t, s)
+	inner := nest(t, s, outer)
+	next := add(t, s, afterBatch("next", outer))
+	seal(t, s, outer)
+	wantFinished(t, s, outer, false)
+	wantState(t, s, driver.Awaiting, next)
+	seal(t, s, inner)
+	wantFinished(t, s, inner, true)
+	wantFinished(t, s, outer, true)
+	wantState(t, s, driver.Enqueued, next)
+
+	first := openBatch(t, s)
+	seal(t, s, nest(t, s, first))
+	wantFinished(t, s, first, false)
+	seal(t, s, first)
+	wantFinished(t, s, first, true)
+}
+
+func testBatchNestedList(t *testing.T, s driver.Store) {
+	outer := openBatch(t, s)
+	other := openBatch(t, s)
+	var ids []int64
+	for i := range 5 {
+		id := nest(t, s, outer)
+		if i < 2 {
+			seal(t, s, id)
+		}
+		ids = append(ids, id)
+	}
+	stray := nest(t, s, other)
+	if b := batch(t, s, outer); b.Nested != 5 || b.NestedFinished != 2 || b.Parent != 0 {
+		t.Fatalf("outer batch %+v", b)
+	}
+	slices.Reverse(ids)
+	var got []int64
+	q := driver.BatchQuery{Parent: outer, Limit: 2}
+	for range 10 {
+		p, err := s.Batches(t.Context(), q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(p.Batches) > q.Limit {
+			t.Fatalf("page of %d batches, limit %d", len(p.Batches), q.Limit)
+		}
+		for _, b := range p.Batches {
+			if b.Parent != outer {
+				t.Fatalf("batch %d of parent %d listed under %d", b.ID, b.Parent, outer)
+			}
+			got = append(got, b.ID)
+		}
+		if p.Next == "" {
+			break
+		}
+		q.Cursor = p.Next
+	}
+	if !slices.Equal(got, ids) {
+		t.Fatalf("nested batches %v, want %v", got, ids)
+	}
+	p, err := s.Batches(t.Context(), driver.BatchQuery{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Batches) != 8 || p.Batches[0].ID != stray || p.Batches[0].Parent != other {
+		t.Fatalf("all batches %+v, want 8 starting with %d", p.Batches, stray)
+	}
+}
+
+func testBatchNestedConcurrent(t *testing.T, s driver.Store) {
+	const width = 16
+	outer := openBatch(t, s)
+	for range width {
+		inner := nest(t, s, outer)
+		add(t, s, members("m", inner, 1)[0])
+		seal(t, s, inner)
+	}
+	seal(t, s, outer)
+	next := add(t, s, afterBatch("next", outer))
+	js := claimN(t, s, width, "m")
+	ctx := t.Context()
+	deadline := time.Now().Add(15 * time.Second)
+	begin := make(chan struct{})
+	var wg sync.WaitGroup
+	for i, j := range js {
+		wg.Go(func() {
+			<-begin
+			srv := fmt.Sprintf("s%d", i+2)
+			for time.Now().Before(deadline) {
+				rs, err := s.Finish(ctx, srv, []driver.Outcome{outcome(j, driver.Succeeded)})
+				if err != nil || len(rs) != 1 {
+					t.Errorf("finish job %d: %v %v", j.ID, rs, err)
+					return
+				}
+				if rs[0] != driver.Busy {
+					if rs[0] != driver.Applied {
+						t.Errorf("finish job %d: %d, want applied", j.ID, rs[0])
+					}
+					return
+				}
+				time.Sleep(time.Millisecond)
+			}
+			t.Errorf("job %d still busy after 15s", j.ID)
+		})
+	}
+	close(begin)
+	wg.Wait()
+	if t.Failed() {
+		return
+	}
+	if b := wantFinished(t, s, outer, true); b.Nested != width || b.NestedFinished != width {
+		t.Fatalf("outer batch %+v", b)
+	}
+	wantState(t, s, driver.Enqueued, next)
+}
+
+func testBatchNestedPrune(t *testing.T, s driver.Store) {
+	ctx := t.Context()
+	outer := openBatch(t, s)
+	inner := nest(t, s, outer)
+	m := add(t, s, members("m", inner, 1)[0])
+	seal(t, s, inner)
+	seal(t, s, outer)
+	apply(t, s, outcome(claimOne(t, s, "m", m), driver.Succeeded))
+	wantFinished(t, s, outer, true)
+	prune(t, s, keep())
+	batch(t, s, inner)
+	batch(t, s, outer)
+
+	time.Sleep(20 * time.Millisecond)
+	pp := keep()
+	pp.Succeeded = 5 * time.Millisecond
+	for range 5 {
+		prune(t, s, pp)
+		_, errInner := s.Batch(ctx, inner)
+		_, errOuter := s.Batch(ctx, outer)
+		switch {
+		case errOuter == nil:
+		case errInner == nil:
+			t.Fatalf("batch %d pruned before the batch %d nested in it", outer, inner)
+		default:
+			wantErr(t, errInner, driver.ErrNotFound)
+			wantErr(t, errOuter, driver.ErrNotFound)
+			return
+		}
+	}
+	t.Fatalf("batches %d and %d left after 5 prunes", outer, inner)
 }

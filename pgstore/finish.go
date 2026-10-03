@@ -191,7 +191,7 @@ const batchDeps = `, r AS MATERIALIZED (
 SELECT u.queue, u.state::text, coalesce(u.limit_key, '') FROM u`
 
 const completeWhere = `) AND b.sealed AND b.finished_at IS NULL
-		AND NOT EXISTS (SELECT 1 FROM {s}.jobs j WHERE j.batch_id = b.id)
+		AND NOT EXISTS (SELECT 1 FROM {s}.jobs j WHERE j.batch_id = b.id) AND NOT ` + unfinishedNested + `
 	RETURNING b.id
 )`
 
@@ -202,6 +202,44 @@ const sqlCompleteFinished = `WITH b AS (
 const sqlComplete = `WITH b AS (
 	UPDATE {s}.batches b SET finished_at = now()
 	WHERE b.id = ANY($1::bigint[]` + completeWhere + batchDeps
+
+const upFrom = `WITH RECURSIVE up(id) AS (
+	SELECT b.parent_id FROM {s}.batches b
+	WHERE b.id = ANY(`
+
+const upTail = `) AND b.finished_at = now() AND b.parent_id IS NOT NULL
+	UNION
+	SELECT b.parent_id FROM up JOIN {s}.batches b ON b.id = up.id
+	WHERE b.finished_at IS NULL AND b.parent_id IS NOT NULL
+)`
+
+const lockUp = `
+SELECT b.id FROM {s}.batches b WHERE b.id IN (SELECT id FROM up) AND b.finished_at IS NULL
+ORDER BY b.id
+FOR NO KEY UPDATE`
+
+const completeUp = `, a AS MATERIALIZED (
+	SELECT b.id, b.parent_id FROM {s}.batches b WHERE b.id IN (SELECT id FROM up) AND b.finished_at IS NULL
+), w(id) AS (
+	SELECT a.id FROM a JOIN {s}.batches b ON b.id = a.id
+	WHERE NOT b.sealed OR EXISTS (SELECT 1 FROM {s}.jobs j WHERE j.batch_id = b.id)
+		OR EXISTS (SELECT 1 FROM {s}.batches n WHERE n.parent_id = b.id AND n.finished_at IS NULL
+			AND n.id NOT IN (SELECT id FROM a))
+	UNION
+	SELECT a.parent_id FROM w JOIN a ON a.id = w.id WHERE a.parent_id IS NOT NULL
+), b AS (
+	UPDATE {s}.batches b SET finished_at = now()
+	WHERE b.id IN (SELECT id FROM a) AND b.id NOT IN (SELECT id FROM w)
+	RETURNING b.id
+)` + batchDeps
+
+const sqlLockAncestors = upFrom + `$1::bigint[]` + upTail + lockUp
+
+const sqlCompleteAncestors = upFrom + `$1::bigint[]` + upTail + completeUp
+
+const sqlLockFinishedAncestors = upFrom + `ARRAY(` + finishedBatches + `)` + upTail + lockUp
+
+const sqlCompleteFinishedAncestors = upFrom + `ARRAY(` + finishedBatches + `)` + upTail + completeUp
 
 const sqlReleaseBatches = `WITH b AS (
 	SELECT t.id FROM unnest($1::bigint[]) AS t(id)
@@ -308,6 +346,8 @@ func (s *Store) finishOnce(ctx context.Context, server string, outs []driver.Out
 	b.Queue(s.q.admitFinished, ids).Query(local.scanAdmitted)
 	b.Queue(s.q.lockFinishedBatches, ids)
 	b.Queue(s.q.completeFinished, ids).Query(local.scanStates)
+	b.Queue(s.q.lockFinishedAncestors, ids)
+	b.Queue(s.q.completeFinishedAncestors, ids).Query(local.scanStates)
 	b.Queue(s.q.busy, ids, claims).Query(func(rows pgx.Rows) error {
 		var (
 			id    int64

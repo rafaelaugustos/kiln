@@ -54,6 +54,7 @@ const sqlPruneBatches = `DELETE FROM {p}batches WHERE id IN (
 	WHERE b.finished_at IS NOT NULL
 		AND NOT EXISTS (SELECT 1 FROM {p}jobs j WHERE j.batch_id = b.id)
 		AND NOT EXISTS (SELECT 1 FROM {p}archive a WHERE a.batch_id = b.id)
+		AND NOT EXISTS (SELECT 1 FROM {p}batches n WHERE n.parent_id = b.id)
 	LIMIT ?)`
 
 // Prune deletes old rows as [driver.Coordinator.Prune] describes, in a short transaction for each

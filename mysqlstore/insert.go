@@ -60,7 +60,7 @@ SET j.state = v.state, j.run_at = COALESCE(v.run_at, j.run_at), j.args = v.args,
 	j.title = v.title, j.priority = v.priority`
 
 const sqlLockBatches = `SELECT b.id, b.finished_at IS NULL AND (NOT b.sealed OR EXISTS (
-	SELECT 1 FROM {p}jobs j WHERE j.batch_id = b.id))
+	SELECT 1 FROM {p}jobs j WHERE j.batch_id = b.id) OR ` + unfinishedNested + `)
 FROM {p}batches b FORCE INDEX (PRIMARY) WHERE b.id IN (?) ORDER BY b.id FOR UPDATE OF b`
 
 const sqlNow = `SELECT UTC_TIMESTAMP(6)`

@@ -99,11 +99,16 @@ const batchColumns = `b.id, b.description, b.meta, b.total, b.sealed, b.created_
 			SELECT state, COUNT(*) AS n FROM {p}jobs WHERE batch_id = b.id GROUP BY state
 			UNION ALL
 			SELECT state, COUNT(*) FROM {p}archive WHERE batch_id = b.id GROUP BY state) x
-		GROUP BY x.state) c)`
+		GROUP BY x.state) c),
+	COALESCE(b.parent_id, 0), (SELECT COUNT_BIG(*) FROM {p}batches x WHERE x.parent_id = b.id),
+	(SELECT COUNT_BIG(*) FROM {p}batches x WHERE x.parent_id = b.id AND x.finished_at IS NOT NULL)`
 
 const sqlBatch = `SELECT ` + batchColumns + ` FROM {p}batches b WHERE b.id = @id`
 
 const sqlBatches = `SELECT TOP (@n) ` + batchColumns + ` FROM {p}batches b WHERE b.id < @before ORDER BY b.id DESC`
+
+const sqlNestedBatches = `SELECT TOP (@n) ` + batchColumns + ` FROM {p}batches b
+WHERE b.parent_id = @parent AND b.id < @before ORDER BY b.id DESC`
 
 // Job returns the job id, live or archived, with its history, output, children and pending
 // dependencies, or an error wrapping [driver.ErrNotFound].
@@ -480,7 +485,8 @@ func (s *Store) Batch(ctx context.Context, id int64) (driver.Batch, error) {
 	return bs[0], nil
 }
 
-// Batches returns a page of batches, newest first.
+// Batches returns a page of batches, newest first, or of the batches nested directly in q.Parent
+// when it is set.
 func (s *Store) Batches(ctx context.Context, q driver.BatchQuery) (driver.BatchPage, error) {
 	limit := q.Limit
 	switch {
@@ -497,7 +503,11 @@ func (s *Store) Batches(ctx context.Context, q driver.BatchQuery) (driver.BatchP
 		}
 		before = id
 	}
-	rows, err := s.db.QueryContext(ctx, s.q.batches, sql.Named("before", before), sql.Named("n", limit+1))
+	stmt, args := s.q.batches, []any{sql.Named("before", before), sql.Named("n", limit+1)}
+	if q.Parent > 0 {
+		stmt, args = s.q.nestedBatches, append(args, sql.Named("parent", q.Parent))
+	}
+	rows, err := s.db.QueryContext(ctx, stmt, args...)
 	if err != nil {
 		return driver.BatchPage{}, fmt.Errorf("kiln: batches: %w", err)
 	}
@@ -523,7 +533,8 @@ func scanBatches(rows *sql.Rows) ([]driver.Batch, error) {
 			meta, counts      sql.RawBytes
 			created, finished moment
 		)
-		if err := rows.Scan(&b.ID, &b.Description, &meta, &b.Total, &b.Sealed, &created, &finished, &counts); err != nil {
+		if err := rows.Scan(&b.ID, &b.Description, &meta, &b.Total, &b.Sealed, &created, &finished, &counts,
+			&b.Parent, &b.Nested, &b.NestedFinished); err != nil {
 			return nil, err
 		}
 		b.Meta = decodeMeta(meta)

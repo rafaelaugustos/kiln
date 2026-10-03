@@ -69,6 +69,40 @@ ANALYZE {s}.uniques;`
 	}
 }
 
+func TestNestedBatchPlans(t *testing.T) {
+	t.Parallel()
+	s := open(t)
+	ctx := context.Background()
+	gen := `
+INSERT INTO {s}.batches (id, sealed, finished_at, parent_id)
+SELECT g, g > 100, CASE WHEN g > 100 AND g % 10 <> 0 THEN now() END, CASE WHEN g > 100 THEN g % 100 + 1 END
+FROM generate_series(1, 50000) g;
+SELECT setval('{s}.batch_ids', 50000);
+ANALYZE {s}.batches;`
+	if _, err := s.pool.Exec(ctx, strings.ReplaceAll(gen, "{s}", s.schema)); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name, index, sql string
+		args             []any
+	}{
+		{"complete", "batches_unfinished", s.q.complete, []any{[]int64{7, 9}}},
+		{"complete ancestors", "batches_unfinished", s.q.completeAncestors, []any{[]int64{150, 250}}},
+		{"open nested", "batches_unfinished", s.q.openNested, []any{"part", "", int64(7)}},
+		{"nested batches", "batches_parent", s.q.nestedBatches, []any{int64(1 << 62), 21, int64(7)}},
+		{"batch", "batches_parent", s.q.batch, []any{int64(7)}},
+	}
+	for _, c := range cases {
+		text := explain(t, s, c.name, c.sql, c.args...)
+		if !strings.Contains(text, c.index) {
+			t.Errorf("%s does not use %s:\n%s", c.name, c.index, text)
+		}
+		if strings.Contains(text, "Seq Scan on batches") {
+			t.Errorf("%s scans batches sequentially:\n%s", c.name, text)
+		}
+	}
+}
+
 func explain(t *testing.T, s *Store, name, sql string, args ...any) string {
 	t.Helper()
 	ctx := context.Background()

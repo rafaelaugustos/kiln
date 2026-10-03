@@ -57,11 +57,18 @@ FROM OPENJSON(@advance) WITH (id BIGINT '$.id', pending INT '$.n', state VARCHAR
 JOIN {p}jobs j WITH (FORCESEEK) ON j.id = v.id;
 `
 
+const unfinishedNested = `EXISTS (SELECT 1 FROM {p}batches n WHERE n.parent_id = b.id AND n.finished_at IS NULL)`
+
 const sqlCompleteBatches = `UPDATE b SET finished_at = @now
-OUTPUT inserted.id
+OUTPUT inserted.id, COALESCE(inserted.parent_id, 0)
 FROM OPENJSON(@ids) WITH (id BIGINT '$') v
-JOIN {p}batches b WITH (READPAST, ROWLOCK, FORCESEEK) ON b.id = v.id
-WHERE b.sealed = 1 AND b.finished_at IS NULL AND NOT EXISTS (SELECT 1 FROM {p}jobs j WHERE j.batch_id = b.id)`
+JOIN {p}batches b WITH (READPAST, ROWLOCK, FORCESEEK, INDEX(1)) ON b.id = v.id
+WHERE b.sealed = 1 AND b.finished_at IS NULL AND NOT EXISTS (SELECT 1 FROM {p}jobs j WHERE j.batch_id = b.id)
+	AND NOT ` + unfinishedNested
+
+const sqlLockParentBatches = `SELECT b.id FROM OPENJSON(@ids) WITH (id BIGINT '$') v
+JOIN {p}batches b WITH (UPDLOCK, ROWLOCK, FORCESEEK) ON b.id = v.id
+ORDER BY b.id`
 
 const sqlCount = `MERGE {p}stats WITH (HOLDLOCK) AS s
 USING (SELECT @bucket AS bucket, @server COLLATE Latin1_General_100_BIN2 AS server) AS n
@@ -351,26 +358,44 @@ func (s *Store) advance(ctx context.Context, q querier, f *fallout, children []i
 func (s *Store) complete(ctx context.Context, q querier, f *fallout) error {
 	ids := slices.Sorted(slices.Values(f.batches))
 	f.batches = nil
-	rows, err := q.QueryContext(ctx, s.q.completeBatches, sql.Named("now", stamp(f.now)), sql.Named("ids", idList(ids)))
-	if err != nil {
-		return err
-	}
-	var done []int64
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
+	for len(ids) > 0 {
+		done, parents, err := s.completeBatches(ctx, q, f, ids)
+		if err != nil || len(done) == 0 {
 			return err
 		}
-		done = append(done, id)
+		f.changed += len(done)
+		if len(parents) > 0 {
+			if _, err := q.ExecContext(ctx, s.q.lockParentBatches, sql.Named("ids", idList(parents))); err != nil {
+				return err
+			}
+		}
+		if err := s.releaseBatches(ctx, q, f, done); err != nil {
+			return err
+		}
+		ids = parents
 	}
-	rows.Close()
-	if err := rows.Err(); err != nil || len(done) == 0 {
-		return err
+	return nil
+}
+
+func (s *Store) completeBatches(ctx context.Context, q querier, f *fallout, ids []int64) (done, parents []int64, err error) {
+	rows, err := q.QueryContext(ctx, s.q.completeBatches, sql.Named("now", stamp(f.now)), sql.Named("ids", idList(ids)))
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, parent int64
+		if err := rows.Scan(&id, &parent); err != nil {
+			return nil, nil, err
+		}
+		done = append(done, id)
+		if parent != 0 {
+			parents = append(parents, parent)
+		}
 	}
 	slices.Sort(done)
-	f.changed += len(done)
-	return s.releaseBatches(ctx, q, f, done)
+	slices.Sort(parents)
+	return done, slices.Compact(parents), rows.Err()
 }
 
 func (s *Store) releaseBatches(ctx context.Context, q querier, f *fallout, ids []int64) error {

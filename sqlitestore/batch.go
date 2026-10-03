@@ -9,13 +9,14 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
-const sqlOpenBatch = `INSERT INTO {p}batches (description, meta, created_at) VALUES (?, ?, {now}) RETURNING id`
+const sqlOpenBatch = `INSERT INTO {p}batches (description, meta, parent_id, created_at) VALUES (?, ?, ?, {now}) RETURNING id`
 
 const sqlLockBatch = `SELECT sealed, finished_at IS NULL, {now} FROM {p}batches WHERE id = ?`
 
 const sqlSeal = `UPDATE {p}batches SET sealed = 1 WHERE id = ?`
 
-// OpenBatch creates an unsealed batch and returns its id.
+// OpenBatch creates an unsealed batch and returns its id. With nb.Parent set it nests the batch in
+// that one, or fails with [driver.ErrNotFound] or [driver.ErrClosed] as [driver.Batch] describes.
 func (s *Store) OpenBatch(ctx context.Context, nb driver.NewBatch) (int64, error) {
 	var id int64
 	err := s.write(ctx, func(ctx context.Context, q querier) (err error) {
@@ -29,13 +30,31 @@ func (s *Store) OpenBatch(ctx context.Context, nb driver.NewBatch) (int64, error
 }
 
 func (s *Store) openBatch(ctx context.Context, q querier, nb driver.NewBatch) (int64, error) {
+	var parent any
+	if nb.Parent > 0 {
+		var (
+			id   int64
+			open bool
+		)
+		err := q.QueryRowContext(ctx, s.q.openBatches, idList([]int64{nb.Parent})).Scan(&id, &open)
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			return 0, fmt.Errorf("%w: batch %d", driver.ErrNotFound, nb.Parent)
+		case err != nil:
+			return 0, err
+		case !open:
+			return 0, fmt.Errorf("%w: batch %d", driver.ErrClosed, nb.Parent)
+		}
+		parent = id
+	}
 	var id int64
-	err := q.QueryRowContext(ctx, s.q.openBatch, nb.Description, text(encodeMeta(nb.Meta))).Scan(&id)
+	err := q.QueryRowContext(ctx, s.q.openBatch, nb.Description, text(encodeMeta(nb.Meta)), parent).Scan(&id)
 	return id, err
 }
 
-// SealBatch seals the batch id and, when none of its members is live, finishes it and releases the
-// jobs that wait for it, in one transaction. It fails with [driver.ErrNotFound] for an unknown id.
+// SealBatch seals the batch id and, when none of its members is live and its nested batches have
+// finished, finishes it, with the batches it is nested in that can finish in turn, and releases the
+// jobs that wait for them, in one transaction. It fails with [driver.ErrNotFound] for an unknown id.
 func (s *Store) SealBatch(ctx context.Context, id int64) error {
 	var f *fallout
 	err := s.write(ctx, func(ctx context.Context, q querier) (err error) {

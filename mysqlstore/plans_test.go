@@ -74,9 +74,9 @@ SELECT UNHEX(SHA2(n, 256)), n, IF(n % 2 = 0, UTC_TIMESTAMP(6) + INTERVAL n SECON
 		`INSERT INTO kiln_stats (bucket, server, succeeded)
 WITH RECURSIVE g(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM g WHERE n < 2000)
 SELECT UTC_TIMESTAMP() - INTERVAL n MINUTE, CONCAT('srv', n % 7), n FROM g`,
-		`INSERT INTO kiln_batches (description, created_at, sealed, finished_at)
+		`INSERT INTO kiln_batches (description, created_at, sealed, finished_at, parent_id)
 WITH RECURSIVE g(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM g WHERE n < 2000)
-SELECT '', UTC_TIMESTAMP(6), TRUE, IF(n % 10 = 0, NULL, UTC_TIMESTAMP(6)) FROM g`,
+SELECT '', UTC_TIMESTAMP(6), TRUE, IF(n % 10 = 0, NULL, UTC_TIMESTAMP(6)), IF(n > 100, n % 100 + 1, NULL) FROM g`,
 		`INSERT INTO kiln_limits (limit_key, max, active, rate, per_us, burst, tat)
 WITH RECURSIVE g(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM g WHERE n < 2000)
 SELECT CONCAT('key', n), n % 3, 0, n % 2 * 10, 1000000, 1, IF(n % 4 = 0, UTC_TIMESTAMP(6), NULL) FROM g`,
@@ -117,6 +117,7 @@ SELECT CONCAT('key', n), n % 3, 0, n % 2 * 10, 1000000, 1, IF(n % 4 = 0, UTC_TIM
 		{"prune holders", "PRIMARY", render(s.q.dropHolders, [][]byte{{1}, {2}})},
 		{"prune stats", "PRIMARY", s.q.dropStats + string(appendSQL(nil, "(?, ?), (?, ?))", totals, "a", totals, "wörker"))},
 		{"prune batches", "batches_open", render(s.q.doneBatches, 100)},
+		{"nested batches", "batches_parent", render(s.q.nestedBatches, 7, 1<<62, 21)},
 	}
 	for _, c := range cases {
 		plan := explain(t, s, c.sql)
@@ -127,6 +128,12 @@ SELECT CONCAT('key', n), n % 3, 0, n % 2 * 10, 1000000, 1, IF(n % 4 = 0, UTC_TIM
 			if st.table == "kiln_jobs" && strings.Contains(st.extra, "filesort") {
 				t.Errorf("%s sorts jobs rows: %+v", c.name, plan)
 			}
+		}
+	}
+	nested := func(st step) bool { return st.table == "n" && st.key == "batches_unfinished" }
+	for _, q := range []string{render(s.q.completeBatches, []int64{7, 9}), render(s.q.lockBatches, []int64{7})} {
+		if plan := explain(t, s, q); !slices.ContainsFunc(plan, nested) {
+			t.Errorf("no probe of unfinished nested batches through batches_unfinished: %+v\n%s", plan, q)
 		}
 	}
 	reserve := "UPDATE (VALUES " + render("ROW(?, ?), ROW(?, ?)", 1048, nil, 2048, time.Now()) + s.q.reserveTail

@@ -93,7 +93,7 @@ WHERE v.debounce = 1 AND j.state = 'scheduled' AND j.granted = 0
 	OR v.debounce IS NULL AND j.state IN ('awaiting', 'scheduled', 'throttled', 'enqueued')`
 
 const sqlLockBatches = `SELECT b.id, CASE WHEN b.finished_at IS NULL AND (b.sealed = 0 OR EXISTS (
-	SELECT 1 FROM {p}jobs j WHERE j.batch_id = b.id)) THEN 1 ELSE 0 END
+	SELECT 1 FROM {p}jobs j WHERE j.batch_id = b.id) OR ` + unfinishedNested + `) THEN 1 ELSE 0 END
 FROM OPENJSON(@ids) WITH (id BIGINT '$') v
 JOIN {p}batches b WITH (UPDLOCK, ROWLOCK, FORCESEEK) ON b.id = v.id
 ORDER BY b.id`

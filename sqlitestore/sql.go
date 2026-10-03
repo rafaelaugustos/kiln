@@ -60,6 +60,7 @@ type statements struct {
 	limitPage         string
 	lockBatch         string
 	logs              string
+	nestedBatches     string
 	nextDue           string
 	now               string
 	openBatch         string
@@ -160,6 +161,7 @@ func render(prefix string) statements {
 		limitPage:         r(sqlLimitPage),
 		lockBatch:         r(sqlLockBatch),
 		logs:              r(sqlLogs),
+		nestedBatches:     r(sqlNestedBatches),
 		nextDue:           r(sqlNextDue),
 		now:               r(sqlNow),
 		openBatch:         r(sqlOpenBatch),

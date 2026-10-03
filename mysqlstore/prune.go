@@ -66,6 +66,7 @@ const sqlDoneBatches = `SELECT b.id FROM {p}batches b
 WHERE b.finished_at IS NOT NULL
 	AND NOT EXISTS (SELECT 1 FROM {p}jobs j WHERE j.batch_id = b.id)
 	AND NOT EXISTS (SELECT 1 FROM {p}archive a WHERE a.batch_id = b.id)
+	AND NOT EXISTS (SELECT 1 FROM {p}batches n WHERE n.parent_id = b.id)
 LIMIT ?
 FOR UPDATE SKIP LOCKED`
 

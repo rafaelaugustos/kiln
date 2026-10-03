@@ -103,11 +103,16 @@ const batchColumns = `b.id, b.description, b.meta, b.total, b.sealed, b.created_
 	(SELECT jsonb_object_agg(c.state, c.n) FROM (
 		SELECT state::text AS state, count(*) AS n FROM {s}.jobs WHERE batch_id = b.id GROUP BY state
 		UNION ALL
-		SELECT state::text, count(*) FROM {s}.archive WHERE batch_id = b.id GROUP BY state) c)`
+		SELECT state::text, count(*) FROM {s}.archive WHERE batch_id = b.id GROUP BY state) c),
+	coalesce(b.parent_id, 0), (SELECT count(*) FROM {s}.batches x WHERE x.parent_id = b.id),
+	(SELECT count(*) FROM {s}.batches x WHERE x.parent_id = b.id AND x.finished_at IS NOT NULL)`
 
 const sqlBatch = `SELECT ` + batchColumns + ` FROM {s}.batches b WHERE b.id = $1`
 
 const sqlBatches = `SELECT ` + batchColumns + ` FROM {s}.batches b WHERE b.id < $1 ORDER BY b.id DESC LIMIT $2`
+
+const sqlNestedBatches = `SELECT ` + batchColumns + ` FROM {s}.batches b
+WHERE b.parent_id = $3 AND b.id < $1 ORDER BY b.id DESC LIMIT $2`
 
 // Job returns the job id, live or archived, with its history, output, children and pending
 // dependencies, in one round trip, or an error wrapping [driver.ErrNotFound].
@@ -487,7 +492,8 @@ func (s *Store) Batch(ctx context.Context, id int64) (driver.Batch, error) {
 	return bs[0], nil
 }
 
-// Batches returns a page of batches, newest first.
+// Batches returns a page of batches, newest first, or of the batches nested directly in q.Parent
+// when it is set.
 func (s *Store) Batches(ctx context.Context, q driver.BatchQuery) (driver.BatchPage, error) {
 	limit := q.Limit
 	switch {
@@ -504,7 +510,15 @@ func (s *Store) Batches(ctx context.Context, q driver.BatchQuery) (driver.BatchP
 		}
 		before = id
 	}
-	rows, err := s.pool.Query(ctx, s.q.batches, before, limit+1)
+	var (
+		rows pgx.Rows
+		err  error
+	)
+	if q.Parent > 0 {
+		rows, err = s.pool.Query(ctx, s.q.nestedBatches, before, limit+1, q.Parent)
+	} else {
+		rows, err = s.pool.Query(ctx, s.q.batches, before, limit+1)
+	}
 	if err != nil {
 		return driver.BatchPage{}, fmt.Errorf("kiln: batches: %w", err)
 	}
@@ -530,7 +544,8 @@ func scanBatches(rows pgx.Rows) ([]driver.Batch, error) {
 			meta, counts []byte
 			finished     pgtype.Timestamptz
 		)
-		if err := rows.Scan(&b.ID, &b.Description, &meta, &b.Total, &b.Sealed, &b.CreatedAt, &finished, &counts); err != nil {
+		if err := rows.Scan(&b.ID, &b.Description, &meta, &b.Total, &b.Sealed, &b.CreatedAt, &finished, &counts,
+			&b.Parent, &b.Nested, &b.NestedFinished); err != nil {
 			return nil, err
 		}
 		b.Meta = decodeMeta(meta)

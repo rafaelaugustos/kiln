@@ -56,6 +56,8 @@ func (s *Store) cascade(ctx context.Context, c *pgxpool.Conn, b *pgx.Batch, pare
 	if len(batches) > 0 {
 		b.Queue(s.q.lockBatches, batches)
 		b.Queue(s.q.complete, batches).Query(counting(w, &changed))
+		b.Queue(s.q.lockAncestors, batches)
+		b.Queue(s.q.completeAncestors, batches).Query(counting(w, &changed))
 	}
 	if n := deleted + doomed; n > 0 {
 		b.Queue(s.q.countDeleted, "", n)

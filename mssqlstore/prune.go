@@ -76,7 +76,8 @@ WHERE l.active = 0 AND (l.declared_at IS NULL OR l.declared_at < DATEADD(HOUR, -
 const sqlPruneBatches = `DELETE TOP (@n) b FROM {p}batches b WITH (READPAST)
 WHERE b.finished_at IS NOT NULL
 	AND NOT EXISTS (SELECT 1 FROM {p}jobs j WHERE j.batch_id = b.id)
-	AND NOT EXISTS (SELECT 1 FROM {p}archive a WHERE a.batch_id = b.id)`
+	AND NOT EXISTS (SELECT 1 FROM {p}archive a WHERE a.batch_id = b.id)
+	AND NOT EXISTS (SELECT 1 FROM {p}batches n WHERE n.parent_id = b.id)`
 
 // Prune deletes old rows as [driver.Coordinator.Prune] describes, in a short transaction for each
 // kind of row. A failing step does not stop the others unless ctx is done; the error Prune returns

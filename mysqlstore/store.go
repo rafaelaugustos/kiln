@@ -175,10 +175,12 @@ type statements struct {
 	lockFailed          string
 	lockHolders         string
 	lockLimits          string
+	lockParentBatches   string
 	lockParents         string
 	lockRunning         string
 	lockTargets         string
 	logs                string
+	nestedBatches       string
 	nextDue             string
 	openBatch           string
 	openBatchDeps       string
@@ -298,10 +300,12 @@ func newStatements(prefix string) statements {
 		lockFailed:          r.Replace(sqlLockFailed),
 		lockHolders:         r.Replace(sqlLockHolders),
 		lockLimits:          r.Replace(sqlLockLimits),
+		lockParentBatches:   r.Replace(sqlLockParentBatches),
 		lockParents:         r.Replace(sqlLockParents),
 		lockRunning:         r.Replace(sqlLockRunning),
 		lockTargets:         r.Replace(sqlLockTargets),
 		logs:                r.Replace(sqlLogs),
+		nestedBatches:       r.Replace(sqlNestedBatches),
 		nextDue:             r.Replace(sqlNextDue),
 		openBatch:           r.Replace(sqlOpenBatch),
 		openBatchDeps:       r.Replace(sqlOpenBatchDeps),

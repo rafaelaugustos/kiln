@@ -25,12 +25,14 @@ type Writer interface {
 	// the commit, and may leave admission to [TxWriter.Notify] or a later Sweep.
 	Insert(ctx context.Context, jobs []InsertParams) ([]Inserted, error)
 
-	// OpenBatch creates an unsealed batch and returns its id. See [Batch] for its life.
+	// OpenBatch creates an unsealed batch and returns its id. See [Batch] for its life. With
+	// b.Parent set, it fails with [ErrNotFound] when the parent does not exist and with [ErrClosed]
+	// when it cannot take members.
 	OpenBatch(ctx context.Context, b NewBatch) (int64, error)
 
 	// SealBatch seals a batch, which allows it to finish: a sealed batch finishes as soon as none of
-	// its members is live, and an empty one finishes when sealed. Sealing again is not an error; an
-	// unknown id is [ErrNotFound].
+	// its members is live and its nested batches have finished, and an empty one finishes when
+	// sealed. Sealing again is not an error; an unknown id is [ErrNotFound].
 	SealBatch(ctx context.Context, id int64) error
 }
 
@@ -112,7 +114,8 @@ type Coordinator interface {
 	// Sweep repairs what other methods leave to it, changing at most limit rows. It resolves
 	// dependencies whose parent job or batch is already final, moves awaiting jobs with nothing
 	// pending out of awaiting, archives doomed children, finishes sealed batches with no live
-	// member, recounts the enqueued and processing jobs of every limit key and runs admission.
+	// member and no unfinished nested batch, recounts the enqueued and processing jobs of every
+	// limit key and runs admission.
 	// It returns the number of rows it changed, which is zero for a consistent store, reserved
 	// start times included. A few calls must be enough to leave no job stranded. A limit of 0 or
 	// less counts as 1.
@@ -123,8 +126,8 @@ type Coordinator interface {
 	// longer ago than p.Failed, servers silent for longer than p.Servers, per-minute statistics
 	// older than p.Stats once added to the all-time totals, expired unique keys, dependencies of
 	// jobs that are gone, limit keys that no remaining job refers to and whose reserved start
-	// times have all passed, and finished batches with no members left. A negative retention
-	// keeps the jobs of that state.
+	// times have all passed, and finished batches with no members and no nested batches left. A
+	// negative retention keeps the jobs of that state.
 	Prune(ctx context.Context, p PruneParams) (int, error)
 
 	// Due returns up to limit recurring jobs that are not paused and whose NextRunAt has come,
@@ -217,7 +220,8 @@ type Inspector interface {
 	// Batch returns the batch id, or [ErrNotFound].
 	Batch(ctx context.Context, id int64) (Batch, error)
 
-	// Batches returns a page of batches, newest first.
+	// Batches returns a page of batches, newest first, or of the batches nested directly in
+	// q.Parent when it is set.
 	Batches(ctx context.Context, q BatchQuery) (BatchPage, error)
 }
 

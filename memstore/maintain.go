@@ -52,7 +52,7 @@ func (s *Store) Sweep(_ context.Context, limit int) (int, error) {
 		if n == limit {
 			break
 		}
-		if b.sealed && b.live == 0 && b.finished.IsZero() {
+		if b.idle() {
 			s.complete(b)
 			n++
 		}
@@ -82,8 +82,8 @@ func (s *Store) Sweep(_ context.Context, limit int) (int, error) {
 }
 
 // Prune deletes finished jobs past their retention, silent servers, old statistics, expired
-// unique keys, unused limit keys and finished batches with no members left, as
-// [driver.Coordinator.Prune] describes. It deletes at most p.Limit of each kind, counting
+// unique keys, unused limit keys and finished batches with no members and no nested batches left,
+// as [driver.Coordinator.Prune] describes. It deletes at most p.Limit of each kind, counting
 // succeeded and deleted jobs as one kind and failed jobs as another.
 func (s *Store) Prune(_ context.Context, p driver.PruneParams) (int, error) {
 	limit := limitOr(p.Limit, 1000)
@@ -109,10 +109,25 @@ func (s *Store) Prune(_ context.Context, p driver.PruneParams) (int, error) {
 	n += evict(s.limits, limit, func(_ string, l *throttle) bool {
 		return l.refs == 0 && !later(l.tat, l.admitTat).After(s.now)
 	})
-	n += evict(s.batches, limit, func(_ int64, b *batch) bool {
-		return !b.finished.IsZero() && b.members() == 0
-	})
-	return n, nil
+	return n + s.pruneBatches(limit), nil
+}
+
+func (s *Store) pruneBatches(limit int) int {
+	n := 0
+	for id, b := range s.batches {
+		if n == limit {
+			break
+		}
+		if b.finished.IsZero() || b.members() > 0 || b.nested > 0 {
+			continue
+		}
+		if p := s.batches[b.parent]; p != nil {
+			p.nested--
+		}
+		delete(s.batches, id)
+		n++
+	}
+	return n
 }
 
 func (s *Store) pruneJobs(limit int, r driver.Retention) int {

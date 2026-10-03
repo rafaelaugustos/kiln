@@ -180,12 +180,8 @@ func (s *Store) resolve(p *plan, ov *overlay) error {
 			it.deps = append(it.deps, dep{parent: id, batch: true, resolved: v.finished})
 		}
 		if id := it.p.BatchID; id != 0 {
-			v, ok := s.view(id, ov)
-			if !ok {
-				return fmt.Errorf("%w: batch %d", driver.ErrNotFound, id)
-			}
-			if v.finished || v.sealed && v.live == 0 {
-				return fmt.Errorf("%w: batch %d", driver.ErrClosed, id)
+			if err := s.joinable(id, ov); err != nil {
+				return err
 			}
 		}
 		p.res[i].State = s.initial(it)

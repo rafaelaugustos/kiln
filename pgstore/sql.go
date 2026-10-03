@@ -1,87 +1,93 @@
 package pgstore
 
 type statements struct {
-	admit               string
-	admitFinished       string
-	afterBatches        string
-	allocate            string
-	archivedParents     string
-	attach              string
-	batch               string
-	batches             string
-	busy                string
-	children            string
-	complete            string
-	completeFinished    string
-	countDeleted        string
-	counts              string
-	createRecurring     string
-	delete              string
-	due                 string
-	finish              string
-	finishDeps          string
-	finishedBatchDeps   string
-	fire                string
-	fired               string
-	hasRecurring        string
-	heartbeat           string
-	holders             string
-	idleBatches         string
-	insert              string
-	insertDeps          string
-	insertDoomed        string
-	job                 string
-	lead                string
-	leases              string
-	limitInfo           string
-	limits              string
-	lockBatches         string
-	lockFinishedBatches string
-	lockLimits          string
-	lockParents         string
-	lockRules           string
-	logs                string
-	missingLinks        string
-	nextDue             string
-	notify              string
-	now                 string
-	openBatch           string
-	orphans             string
-	pause               string
-	paused              string
-	promote             string
-	pruneArchive        string
-	pruneBatches        string
-	pruneFailed         string
-	pruneHolders        string
-	pruneLimits         string
-	pruneServers        string
-	pruneStats          string
-	pruneUniques        string
-	queues              string
-	readmit             string
-	reconcile           string
-	recurring           string
-	recurrings          string
-	releaseBatches      string
-	removeRecurring     string
-	replace             string
-	requeueArchived     string
-	requeueLive         string
-	resign              string
-	resolve             string
-	seal                string
-	series              string
-	servers             string
-	setMeta             string
-	setRules            string
-	strandedParents     string
-	stuck               string
-	throttledKeys       string
-	unregister          string
-	unusedLimits        string
-	updateRecurring     string
-	writeConsole        string
+	admit                     string
+	admitFinished             string
+	afterBatches              string
+	allocate                  string
+	archivedParents           string
+	attach                    string
+	batch                     string
+	batches                   string
+	busy                      string
+	children                  string
+	complete                  string
+	completeAncestors         string
+	completeFinished          string
+	completeFinishedAncestors string
+	countDeleted              string
+	counts                    string
+	createRecurring           string
+	delete                    string
+	due                       string
+	finish                    string
+	finishDeps                string
+	finishedBatchDeps         string
+	fire                      string
+	fired                     string
+	hasRecurring              string
+	heartbeat                 string
+	holders                   string
+	idleBatches               string
+	insert                    string
+	insertDeps                string
+	insertDoomed              string
+	job                       string
+	lead                      string
+	leases                    string
+	limitInfo                 string
+	limits                    string
+	lockAncestors             string
+	lockBatches               string
+	lockFinishedAncestors     string
+	lockFinishedBatches       string
+	lockLimits                string
+	lockParents               string
+	lockRules                 string
+	logs                      string
+	missingLinks              string
+	nestedBatches             string
+	nextDue                   string
+	notify                    string
+	now                       string
+	openBatch                 string
+	openNested                string
+	orphans                   string
+	pause                     string
+	paused                    string
+	promote                   string
+	pruneArchive              string
+	pruneBatches              string
+	pruneFailed               string
+	pruneHolders              string
+	pruneLimits               string
+	pruneServers              string
+	pruneStats                string
+	pruneUniques              string
+	queues                    string
+	readmit                   string
+	reconcile                 string
+	recurring                 string
+	recurrings                string
+	releaseBatches            string
+	removeRecurring           string
+	replace                   string
+	requeueArchived           string
+	requeueLive               string
+	resign                    string
+	resolve                   string
+	seal                      string
+	series                    string
+	servers                   string
+	setMeta                   string
+	setRules                  string
+	strandedParents           string
+	stuck                     string
+	throttledKeys             string
+	unregister                string
+	unusedLimits              string
+	updateRecurring           string
+	writeConsole              string
 }
 
 func (q *statements) each(fn func(p *string, text string)) {
@@ -96,7 +102,9 @@ func (q *statements) each(fn func(p *string, text string)) {
 	fn(&q.busy, sqlBusy)
 	fn(&q.children, sqlChildren)
 	fn(&q.complete, sqlComplete)
+	fn(&q.completeAncestors, sqlCompleteAncestors)
 	fn(&q.completeFinished, sqlCompleteFinished)
+	fn(&q.completeFinishedAncestors, sqlCompleteFinishedAncestors)
 	fn(&q.countDeleted, sqlCountDeleted)
 	fn(&q.counts, sqlCounts)
 	fn(&q.createRecurring, sqlCreateRecurring)
@@ -119,17 +127,21 @@ func (q *statements) each(fn func(p *string, text string)) {
 	fn(&q.leases, sqlLeases)
 	fn(&q.limitInfo, sqlLimitInfo)
 	fn(&q.limits, sqlLimits)
+	fn(&q.lockAncestors, sqlLockAncestors)
 	fn(&q.lockBatches, sqlLockBatches)
+	fn(&q.lockFinishedAncestors, sqlLockFinishedAncestors)
 	fn(&q.lockFinishedBatches, sqlLockFinishedBatches)
 	fn(&q.lockLimits, sqlLockLimits)
 	fn(&q.lockParents, sqlLockParents)
 	fn(&q.lockRules, sqlLockRules)
 	fn(&q.logs, sqlLogs)
 	fn(&q.missingLinks, sqlMissingLinks)
+	fn(&q.nestedBatches, sqlNestedBatches)
 	fn(&q.nextDue, sqlNextDue)
 	fn(&q.notify, sqlNotify)
 	fn(&q.now, sqlNow)
 	fn(&q.openBatch, sqlOpenBatch)
+	fn(&q.openNested, sqlOpenNested)
 	fn(&q.orphans, sqlOrphans)
 	fn(&q.pause, sqlPause)
 	fn(&q.paused, sqlPaused)

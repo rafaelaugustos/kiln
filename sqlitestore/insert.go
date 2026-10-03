@@ -42,7 +42,7 @@ const sqlHoldTail = `
 ON CONFLICT (unique_key) DO UPDATE SET job_id = excluded.job_id, expires_at = excluded.expires_at`
 
 const sqlOpenBatches = `SELECT b.id, b.finished_at IS NULL AND (NOT b.sealed OR EXISTS (
-	SELECT 1 FROM {p}jobs j WHERE j.batch_id = b.id))
+	SELECT 1 FROM {p}jobs j WHERE j.batch_id = b.id) OR ` + unfinishedNested + `)
 FROM {p}batches b WHERE b.id IN (SELECT value FROM json_each(?))`
 
 const sqlAttach = `UPDATE {p}batches SET total = total + ? WHERE id = ?`

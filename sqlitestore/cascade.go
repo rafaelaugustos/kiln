@@ -58,10 +58,12 @@ WHERE j.id IN (SELECT value FROM json_each(?)) AND j.state = 'awaiting'`
 
 const sqlAdvance = `UPDATE {p}jobs SET deps_pending = ?, state = ? WHERE id = ?`
 
+const unfinishedNested = `EXISTS (SELECT 1 FROM {p}batches n WHERE n.parent_id = b.id AND n.finished_at IS NULL)`
+
 const sqlComplete = `UPDATE {p}batches AS b SET finished_at = ?
 WHERE b.id IN (SELECT value FROM json_each(?)) AND b.sealed AND b.finished_at IS NULL
-	AND NOT EXISTS (SELECT 1 FROM {p}jobs j WHERE j.batch_id = b.id)
-RETURNING id`
+	AND NOT EXISTS (SELECT 1 FROM {p}jobs j WHERE j.batch_id = b.id) AND NOT ` + unfinishedNested + `
+RETURNING id, COALESCE(parent_id, 0)`
 
 const sqlCount = `INSERT INTO {p}stats (bucket, server, succeeded, failed, deleted, retried) VALUES (?, ?, ?, ?, ?, ?)
 ON CONFLICT (bucket, server) DO UPDATE SET succeeded = succeeded + excluded.succeeded,
@@ -348,11 +350,12 @@ func (s *Store) complete(ctx context.Context, q querier, f *fallout) error {
 	var done []int64
 	rows, err := q.QueryContext(ctx, s.q.complete, f.now, idList(ids))
 	err = each(rows, err, func() error {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
+		var id, parent int64
+		if err := rows.Scan(&id, &parent); err != nil {
 			return err
 		}
 		done = append(done, id)
+		f.batch(parent)
 		return nil
 	})
 	if err != nil || len(done) == 0 {

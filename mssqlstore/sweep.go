@@ -29,6 +29,7 @@ WHERE state = 'awaiting' AND id > @after ORDER BY id`
 
 const sqlIdleBatches = `SELECT TOP (@n) b.id FROM {p}batches b
 WHERE b.finished_at IS NULL AND b.sealed = 1 AND NOT EXISTS (SELECT 1 FROM {p}jobs j WHERE j.batch_id = b.id)
+	AND NOT ` + unfinishedNested + `
 ORDER BY b.id`
 
 const sqlFinishedBatchDeps = `SELECT DISTINCT TOP (@n) d.parent_id FROM {p}deps d

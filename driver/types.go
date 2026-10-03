@@ -349,24 +349,35 @@ type LimitInfo struct {
 type NewBatch struct {
 	Description string
 	Meta        map[string]string
+	Parent      int64 // batch to nest the new one in, when above zero; see [Batch]
 }
 
 // Batch is a group of jobs. Jobs join it through [InsertParams.BatchID] until it finishes, which
-// happens once, when it is sealed and every member has succeeded or been deleted; a failed member
-// keeps it open. When it finishes, the jobs waiting for it through AfterBatch are released.
+// happens once, when it is sealed, every member has succeeded or been deleted and every batch
+// nested in it has finished; a failed member keeps it open. When it finishes, the jobs waiting for
+// it through AfterBatch are released.
+//
+// A batch opened with [NewBatch.Parent] is nested in that batch and keeps it open until it
+// finishes itself. The parent must be able to take members, as for a job joining it: a finished
+// parent, or a sealed one with nothing live left, is [ErrClosed]. When a nested batch finishes,
+// the store checks its parent in the same transaction, and so on upward.
 type Batch struct {
-	ID          int64
-	Description string
-	Meta        map[string]string
-	Total       int64 // jobs that ever joined
-	Sealed      bool
-	Counts      map[State]int64 // members by state, archived ones included
-	CreatedAt   time.Time
-	FinishedAt  time.Time // zero until the batch finishes
+	ID             int64
+	Description    string
+	Meta           map[string]string
+	Total          int64 // jobs that ever joined
+	Sealed         bool
+	Counts         map[State]int64 // members by state, archived ones included
+	CreatedAt      time.Time
+	FinishedAt     time.Time // zero until the batch finishes
+	Parent         int64     // the batch it is nested in; 0 for none
+	Nested         int64     // batches nested in it
+	NestedFinished int64     // nested batches that have finished
 }
 
 // BatchQuery asks [Inspector.Batches] for a page of batches.
 type BatchQuery struct {
+	Parent int64  // only the batches nested directly in this one, when above zero
 	Limit  int    // page size, 20 when 0 and at most 500
 	Cursor string // Next of the previous page; empty for the first
 }
