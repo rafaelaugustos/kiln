@@ -25,10 +25,11 @@ type harness struct {
 	dir    string
 	start  time.Time
 
-	out      sync.Mutex
-	kills    atomic.Int64
-	terms    atomic.Int64
-	restarts atomic.Int64
+	out       sync.Mutex
+	kills     atomic.Int64
+	terms     atomic.Int64
+	restarts  atomic.Int64
+	restarted []int64
 }
 
 func soak(o options) error {

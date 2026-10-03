@@ -95,19 +95,30 @@ const admitTail = `, g AS (
 	WHERE l.key = h.key AND (y.limit_key IS NOT NULL OR (l.max, l.rate, l.per_us, l.burst) <> (h.max, h.rate, h.per_us, h.burst))
 )`
 
-const sqlAdmit = `WITH RECURSIVE k AS MATERIALIZED (
+const admitHead = `WITH RECURSIVE k AS MATERIALIZED (
 	SELECT l.ctid, l.key, coalesce(r.max, l.max) AS max, coalesce(r.rate, l.rate) AS rate,
 		coalesce(r.per_us, l.per_us) AS per_us, coalesce(r.burst, l.burst) AS burst, l.active, l.tat, l.admit_tat
 	FROM {s}.limits l
-	LEFT JOIN unnest($1::text[], $2::bigint[], $3::bigint[], $4::bigint[], $5::bigint[])
-		AS r(key, max, rate, per_us, burst) ON r.key = l.key
+	LEFT JOIN `
+
+const admitRest = `
 	WHERE l.key = ANY($1)
 	ORDER BY l.key
 	FOR NO KEY UPDATE OF l SKIP LOCKED
 )` + admitTail + `
-SELECT count(*), coalesce(array_agg(DISTINCT queue), '{}'),
-	ARRAY(SELECT l.key FROM {s}.limits l WHERE l.key = ANY($1) AND l.key NOT IN (SELECT key FROM g) ORDER BY l.key)
-FROM e`
+SELECT (SELECT count(*) FROM e), (SELECT coalesce(array_agg(DISTINCT queue), '{}') FROM e),
+	array_agg(l.key), array_agg(l.max), array_agg(l.rate), array_agg(l.per_us), array_agg(l.burst)
+FROM {s}.limits l
+WHERE l.key = ANY($1) AND l.key NOT IN (SELECT key FROM g)`
+
+const sqlAdmit = admitHead + `unnest($1::text[], $2::bigint[], $3::bigint[], $4::bigint[], $5::bigint[])
+		AS r(key, max, rate, per_us, burst) ON r.key = l.key` + admitRest
+
+const seenRules = `unnest($1::text[], $2::bigint[], $3::bigint[], $4::bigint[], $5::bigint[]) AS r(key, max, rate, per_us, burst)
+JOIN unnest($6::text[], $7::bigint[], $8::bigint[], $9::bigint[], $10::bigint[]) AS o(key, max, rate, per_us, burst) ON o.key = r.key`
+
+const sqlReadmit = admitHead + `(` + seenRules + `)
+		ON r.key = l.key AND (l.max, l.rate, l.per_us, l.burst) = (o.max, o.rate, o.per_us, o.burst)` + admitRest
 
 const sqlAdmitFinished = `WITH RECURSIVE k AS MATERIALIZED (
 	SELECT l.ctid, l.key, l.max, l.rate, l.per_us, l.burst, l.active, l.tat, l.admit_tat FROM {s}.limits l
@@ -120,8 +131,9 @@ const sqlAdmitFinished = `WITH RECURSIVE k AS MATERIALIZED (
 )` + admitTail + `
 SELECT queue, count(*) FROM e GROUP BY queue`
 
-const changedRules = `unnest($1::text[], $2::bigint[], $3::bigint[], $4::bigint[], $5::bigint[]) AS r(key, max, rate, per_us, burst)
-WHERE l.key = r.key AND (l.max, l.rate, l.per_us, l.burst) <> (r.max, r.rate, r.per_us, r.burst)`
+const changedRules = seenRules + `
+WHERE l.key = r.key AND (l.max, l.rate, l.per_us, l.burst) = (o.max, o.rate, o.per_us, o.burst)
+	AND (l.max, l.rate, l.per_us, l.burst) <> (r.max, r.rate, r.per_us, r.burst)`
 
 const sqlLockRules = `SELECT l.key FROM {s}.limits l, ` + changedRules + `
 ORDER BY l.key
@@ -198,17 +210,19 @@ func (w *wake) scanAdmitted(rows pgx.Rows) error {
 func (w *wake) admitted(r rules) func(pgx.Row) error {
 	return func(row pgx.Row) error {
 		var (
-			n               int
-			queues, skipped []string
+			n      int
+			queues []string
+			seen   rules
 		)
-		if err := row.Scan(&n, &queues, &skipped); err != nil {
+		if err := row.Scan(&n, &queues, &seen.keys, &seen.max, &seen.rate, &seen.per, &seen.burst); err != nil {
 			return err
 		}
 		w.moved += n
 		for _, q := range queues {
 			w.queue(q)
 		}
-		w.rules = r.only(skipped)
+		w.rules = r.only(seen.keys)
+		w.seen = seen
 		return nil
 	}
 }
@@ -238,6 +252,8 @@ func (s *Store) admitLate(ctx context.Context, w *wake) error {
 }
 
 func (s *Store) readmit(ctx context.Context, w *wake) error {
+	seen := w.seen
+	args := func() []any { return append(w.rules.args(), seen.args()...) }
 	for _, d := range backoff {
 		if len(w.keys) == 0 {
 			return nil
@@ -249,7 +265,7 @@ func (s *Store) readmit(ctx context.Context, w *wake) error {
 			return ctx.Err()
 		case <-t.C:
 		}
-		if err := w.admitted(w.rules)(s.pool.QueryRow(ctx, s.q.admit, w.rules.args()...)); err != nil {
+		if err := w.admitted(w.rules)(s.pool.QueryRow(ctx, s.q.readmit, args()...)); err != nil {
 			return err
 		}
 	}
@@ -257,7 +273,7 @@ func (s *Store) readmit(ctx context.Context, w *wake) error {
 		return nil
 	}
 	b := &pgx.Batch{}
-	b.Queue(s.q.lockRules, w.rules.args()...)
-	b.Queue(s.q.setRules, w.rules.args()...)
+	b.Queue(s.q.lockRules, args()...)
+	b.Queue(s.q.setRules, args()...)
 	return s.pool.SendBatch(ctx, b).Close()
 }

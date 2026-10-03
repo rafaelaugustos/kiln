@@ -54,5 +54,6 @@ func (h *harness) restart() {
 		return
 	}
 	h.restarts.Add(1)
+	h.restarted = append(h.restarted, time.Now().UnixMicro())
 	h.event("restarted %s in %s", h.o.container, time.Since(start).Round(100*time.Millisecond))
 }

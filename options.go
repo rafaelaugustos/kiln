@@ -134,9 +134,12 @@ type Unique struct {
 // Max caps how many of these jobs are enqueued or processing at the same time; the others wait in
 // [Throttled]. Rate caps how many start per Per, 1s when zero, and Burst how many of them can
 // start back to back, Rate when zero. A rate-limited job is given its start time when it is
-// admitted, so a backlog of any size is released at that pace and each job is written once. Max
-// and Rate combine: Max bounds how many run together, Rate how often they start. With Rate zero,
-// Max zero means 1 and the key works as a mutex; with a Rate, it means no cap on concurrency.
+// admitted, so a backlog of any size is released at that pace and each job is written once. The
+// pace is kept over admissions, the moments jobs become claimable: if the database stalls between
+// an admission and its commit, the jobs admitted just before the stall can start together with
+// those admitted right after it. Max and Rate combine: Max bounds how many run together, Rate how
+// often they start. With Rate zero, Max zero means 1 and the key works as a mutex; with a Rate, it
+// means no cap on concurrency.
 //
 // The numbers belong to the key: the job inserted last with the key sets them for all of its jobs,
 // and a change applies to start times given out after it.

@@ -32,5 +32,15 @@ heartbeat and the leader's periodic work. Each query is cheap, but they add up: 
 idle workers on MySQL ran about 70 queries per second with the default `PollInterval` and 200 with
 200ms. A `Bus` removes the 100ms check and lets `PollInterval` stay long.
 
+**Rate limits.** A key's `Rate` and `Burst` bound the times at which the store admits its jobs, that
+is, makes them claimable: no window of length `Per` admits more than `Rate + Burst` of them, even when
+admission falls behind and catches up. Admission reads the database clock when it runs, after any wait
+for a lock, so a slow admission does not bunch jobs up, and starts follow admissions by the claim
+latency. What admission cannot see is a stall between an admission and its commit, such as a slow disk
+flush or a paused database container: the jobs admitted just before the stall become claimable when it
+ends, together with those admitted right after it, and can start together, briefly above the rate.
+Checking the rate again at claim time would add a write to every claim of a rate-limited job, so kiln
+does not; leave the downstream some headroom over the configured rate.
+
 **Health.** `Server.Healthy()` fails when the server has fenced itself off, its heartbeat is stale or its
 results are piling up; use it for readiness and liveness probes. `Server.Stats()` has the counters.
