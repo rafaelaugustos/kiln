@@ -14,7 +14,8 @@ import (
 
 const jobColumns = `j.id, j.claim, j.kind, j.queue, j.args, j.meta, array_remove(j.tags, NULL), j.priority, j.attempt,
 	j.max_attempts, j.timeout_ms, j.run_at, j.created_at, j.attempted_at, coalesce(j.batch_id, 0),
-	coalesce(j.recurring_id, ''), array_remove(j.parents, NULL), coalesce(j.limit_key, '')`
+	coalesce(j.recurring_id, ''), array_remove(j.parents, NULL), coalesce(j.limit_key, ''),
+	coalesce(j.title, '')`
 
 type claimShape struct {
 	queues int
@@ -125,7 +126,8 @@ func scanJobs(rows pgx.Rows, hint int) ([]driver.Job, error) {
 	for rows.Next() {
 		var j driver.Job
 		err := rows.Scan(&j.ID, &j.Claim, &j.Kind, &j.Queue, &j.Args, &meta, &j.Tags, &j.Priority, &j.Attempt,
-			&j.MaxAttempts, &ms, &run, &created, &attempted, &j.BatchID, &j.RecurringID, &j.Parents, &j.LimitKey)
+			&j.MaxAttempts, &ms, &run, &created, &attempted, &j.BatchID, &j.RecurringID, &j.Parents, &j.LimitKey,
+			&j.Title)
 		if err != nil {
 			return jobs, err
 		}

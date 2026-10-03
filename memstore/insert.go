@@ -251,6 +251,7 @@ func (s *Store) apply(p *plan, admit bool) {
 			args:        slices.Clone(ps.Args),
 			meta:        maps.Clone(ps.Meta),
 			tags:        slices.Clone(ps.Tags),
+			title:       clip(ps.Title, maxTitle),
 			priority:    ps.Priority,
 			maxAttempts: ps.MaxAttempts,
 			timeout:     ps.Timeout,

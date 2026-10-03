@@ -11,7 +11,8 @@ import (
 )
 
 const jobColumns = `id, claim, kind, queue, args, meta, tags, priority, attempt, max_attempts, timeout_ms, run_at,
-	created_at, attempted_at, COALESCE(batch_id, 0), COALESCE(recurring_id, ''), parents, COALESCE(limit_key, '')`
+	created_at, attempted_at, COALESCE(batch_id, 0), COALESCE(recurring_id, ''), parents, COALESCE(limit_key, ''),
+	COALESCE(title, '')`
 
 const claimHead = `UPDATE {p}jobs SET state = 'processing', attempt = attempt + 1, claim = claim + 1,
 	attempted_at = {now}, server = ?, cancel_requested = 0
@@ -91,7 +92,8 @@ func scanJobs(rows *sql.Rows, err error, jobs []driver.Job) ([]driver.Job, error
 	err = each(rows, err, func() error {
 		var j driver.Job
 		err := rows.Scan(&j.ID, &j.Claim, &j.Kind, &j.Queue, &j.Args, &meta, &tags, &j.Priority, &j.Attempt,
-			&j.MaxAttempts, &ms, &run, &created, &attempted, &j.BatchID, &j.RecurringID, &parents, &j.LimitKey)
+			&j.MaxAttempts, &ms, &run, &created, &attempted, &j.BatchID, &j.RecurringID, &parents, &j.LimitKey,
+			&j.Title)
 		if err != nil {
 			return err
 		}

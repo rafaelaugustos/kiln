@@ -166,6 +166,7 @@ func (m *Mux) dispatch(ctx context.Context, args Args, opts ...InsertOption) (dr
 		Args:        p.Args,
 		Meta:        p.Meta,
 		Tags:        p.Tags,
+		Title:       p.Title,
 		Priority:    p.Priority,
 		Attempt:     1,
 		MaxAttempts: p.MaxAttempts,

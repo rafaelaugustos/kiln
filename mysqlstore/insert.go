@@ -11,16 +11,20 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
-const maxStatement = 8 << 20
+const (
+	maxStatement = 8 << 20
+	maxTitle     = 200
+)
 
 const sqlAllocate = `UPDATE {p}sequences SET last_id = LAST_INSERT_ID(last_id + ?) WHERE name = 'jobs'`
 
 const sqlInsertJobs = `INSERT INTO {p}jobs (id, state, queue, kind, priority, max_attempts, timeout_ms, deps_pending,
-	run_at, created_at, batch_id, after_batch, parents, recurring_id, unique_key, limit_key, args, meta, tags) VALUES `
+	run_at, created_at, batch_id, after_batch, parents, recurring_id, unique_key, limit_key, args, meta, tags,
+	title) VALUES `
 
 const sqlInsertDoomed = `INSERT INTO {p}archive (id, state, queue, kind, priority, attempt, max_attempts, claim,
 	timeout_ms, run_at, created_at, finalized_at, batch_id, after_batch, parents, recurring_id, limit_key, args, meta,
-	tags, history) VALUES `
+	tags, title, history) VALUES `
 
 const sqlInsertDeps = `INSERT INTO {p}deps (batch, parent_id, job_id, mask, resolved) VALUES `
 
@@ -648,6 +652,8 @@ func (in *inserter) jobRows(items []int, pending []int, parents []jsonText) []st
 		b = appendJSON(b, encodeMeta(p.Meta))
 		b = append(b, ',')
 		b = appendJSON(b, encodeStrings(p.Tags))
+		b = append(b, ',')
+		b = appendOptString(b, clean(p.Title, maxTitle))
 		c.b = append(b, ')')
 	}
 	return c.done()

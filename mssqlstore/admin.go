@@ -60,10 +60,10 @@ JOIN {p}jobs j WITH (FORCESEEK) ON j.id = v.id`
 
 const sqlRequeueArchived = `INSERT INTO {p}jobs (id, state, queue, kind, priority, attempt, max_attempts, claim, timeout_ms,
 	deps_pending, run_at, created_at, attempted_at, server, batch_id, after_batch, parents, recurring_id, unique_key,
-	limit_key, args, meta, tags, history, progress)
+	limit_key, args, meta, tags, history, progress, title)
 SELECT j.id, v.state, j.queue, j.kind, j.priority, v.attempt, j.max_attempts, j.claim, j.timeout_ms, 0, @now,
 	j.created_at, j.attempted_at, j.server, j.batch_id, j.after_batch, j.parents, j.recurring_id, j.unique_key,
-	j.limit_key, j.args, j.meta, j.tags, ` + pushHistory + `, j.progress` + requeueRows + `
+	j.limit_key, j.args, j.meta, j.tags, ` + pushHistory + `, j.progress, j.title` + requeueRows + `
 JOIN {p}archive j WITH (FORCESEEK) ON j.id = v.id;
 DELETE j FROM OPENJSON(@rows) WITH (id BIGINT '$.id') v JOIN {p}archive j WITH (FORCESEEK) ON j.id = v.id`
 

@@ -1,0 +1,3 @@
+ALTER TABLE {p}jobs ADD COLUMN title TEXT;
+
+ALTER TABLE {p}archive ADD COLUMN title TEXT;

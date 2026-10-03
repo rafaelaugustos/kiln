@@ -1,0 +1,3 @@
+ALTER TABLE {p}jobs ADD title NVARCHAR(200) NULL;
+
+ALTER TABLE {p}archive ADD title NVARCHAR(200) NULL;

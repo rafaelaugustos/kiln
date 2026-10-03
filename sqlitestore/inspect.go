@@ -19,9 +19,9 @@ const recordColumns = `j.id, j.claim, j.kind, j.queue, j.args, j.meta, j.tags, j
 	j.timeout_ms, j.run_at, j.created_at, j.attempted_at, COALESCE(j.batch_id, 0), COALESCE(j.recurring_id, ''),
 	j.parents, COALESCE(j.limit_key, ''), j.state, j.finalized_at, COALESCE(j.server, ''), COALESCE(j.after_batch, 0)`
 
-const liveRecord = recordColumns + `, j.cancel_requested, j.deps_pending, j.progress`
+const liveRecord = recordColumns + `, j.cancel_requested, j.deps_pending, j.progress, COALESCE(j.title, '')`
 
-const archivedRecord = recordColumns + `, 0, 0, j.progress`
+const archivedRecord = recordColumns + `, 0, 0, j.progress, COALESCE(j.title, '')`
 
 const childrenOf = `(SELECT json_group_array(d.job_id) FROM {p}deps d WHERE d.batch = 0 AND d.parent_id = j.id)`
 
@@ -113,7 +113,7 @@ func scanRecords(rows *sql.Rows, err error, full bool) ([]driver.Record, error) 
 		var r driver.Record
 		dst := []any{&r.ID, &r.Claim, &r.Kind, &r.Queue, &r.Args, &meta, &tags, &r.Priority, &r.Attempt,
 			&r.MaxAttempts, &ms, &run, &created, &attempted, &r.BatchID, &r.RecurringID, &parents, &r.LimitKey,
-			&state, &finished, &r.Server, &r.AfterBatch, &r.CancelRequested, &pending, &r.Progress}
+			&state, &finished, &r.Server, &r.AfterBatch, &r.CancelRequested, &pending, &r.Progress, &r.Title}
 		if full {
 			dst = append(dst, &hist, &r.Output, &children)
 		}

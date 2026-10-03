@@ -34,7 +34,8 @@ type InsertParams struct {
 	Args        []byte // JSON
 	Meta        map[string]string
 	Tags        []string
-	Priority    int16 // within a queue, higher is claimed first
+	Title       string // shown in place of the kind; stores keep 200 bytes of it, cut on a rune boundary
+	Priority    int16  // within a queue, higher is claimed first
 	MaxAttempts int
 	Timeout     time.Duration // per attempt; 0 leaves it to the handler or server, negative means none
 
@@ -82,6 +83,7 @@ type Job struct {
 	Args        []byte
 	Meta        map[string]string
 	Tags        []string
+	Title       string // empty for none
 	Priority    int16
 	Attempt     int // the number of this attempt, from 1
 	MaxAttempts int

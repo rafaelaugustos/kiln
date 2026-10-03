@@ -19,12 +19,13 @@ const liveRecord = `j.id, j.claim, j.kind, j.queue, j.args, j.meta, array_remove
 	j.max_attempts, j.timeout_ms, j.run_at, j.created_at, j.attempted_at, coalesce(j.batch_id, 0),
 	coalesce(j.recurring_id, ''), array_remove(j.parents, NULL), coalesce(j.limit_key, ''), j.state::text,
 	j.finalized_at, coalesce(j.server, ''), j.cancel_requested, coalesce(j.after_batch, 0), j.deps_pending,
-	j.progress`
+	j.progress, coalesce(j.title, '')`
 
 const archivedRecord = `j.id, j.claim, j.kind, j.queue, j.args, j.meta, array_remove(j.tags, NULL), j.priority, j.attempt,
 	j.max_attempts, j.timeout_ms, j.run_at, j.created_at, j.attempted_at, coalesce(j.batch_id, 0),
 	coalesce(j.recurring_id, ''), array_remove(j.parents, NULL), coalesce(j.limit_key, ''), j.state::text,
-	j.finalized_at, coalesce(j.server, ''), false, coalesce(j.after_batch, 0), 0, j.progress`
+	j.finalized_at, coalesce(j.server, ''), false, coalesce(j.after_batch, 0), 0, j.progress,
+	coalesce(j.title, '')`
 
 const sqlJob = `SELECT ` + liveRecord + `, j.history, NULL::json FROM {s}.jobs j WHERE j.id = $1
 UNION ALL
@@ -140,7 +141,7 @@ func scanRecords(rows pgx.Rows, full bool) ([]driver.Record, error) {
 		dst := []any{&r.ID, &r.Claim, &r.Kind, &r.Queue, &r.Args, &meta, &r.Tags, &r.Priority, &r.Attempt,
 			&r.MaxAttempts, &ms, &r.RunAt, &r.CreatedAt, &attempted, &r.BatchID, &r.RecurringID, &r.Parents,
 			&r.LimitKey, &state, &finished, &r.Server, &r.CancelRequested, &r.AfterBatch, &pending,
-			&r.Progress}
+			&r.Progress, &r.Title}
 		if full {
 			dst = append(dst, &hist, &output)
 		}

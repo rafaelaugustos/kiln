@@ -43,7 +43,8 @@ const (
 
 // Args is implemented by the types that carry the arguments of a job. The value is stored as
 // JSON, at most 1 MiB of it. A type can also have a method InsertOptions() []InsertOption, whose
-// options apply to every job of the type, ahead of the options passed with each call.
+// options apply to every job of the type, ahead of the options passed with each call, and a method
+// Title() string, which gives each job its [Title] unless an option sets one.
 type Args interface {
 	// Kind names the kind of job, which selects its handler: 1 to 128 bytes of letters, digits,
 	// '_', '.', ':' and '-', starting with a letter. It must return the same string for every value

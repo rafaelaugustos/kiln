@@ -3,6 +3,7 @@ package drivertest
 import (
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ var insertTests = []test{
 	{"States", testInsertStates},
 	{"LimitState", testInsertLimitState},
 	{"Fields", testInsertFields},
+	{"Title", testInsertTitle},
 	{"RunAt", testInsertRunAt},
 	{"Invalid", testInsertInvalid},
 }
@@ -165,6 +167,47 @@ func testInsertFields(t *testing.T, s driver.Store) {
 		t.Fatalf("after claim: state %s server %q claim %d attempt %d", r.State, r.Server, r.Claim, r.Attempt)
 	}
 	within(t, "record attempted at", r.AttemptedAt, n1, n2)
+}
+
+func testInsertTitle(t *testing.T, s driver.Store) {
+	const title = "Send the welcome email"
+	titled := func(queue, title string) driver.InsertParams {
+		p := task(queue)
+		p.Title = title
+		return p
+	}
+	ins := insert(t, s, titled("q", title), titled("long", strings.Repeat("a", 199)+"é"), task("plain"), titled("gone", title))
+	wantTitle := func(id int64, want string) {
+		t.Helper()
+		if got := record(t, s, id).Title; got != want {
+			t.Fatalf("job %d title %q, want %q", id, got, want)
+		}
+	}
+	wantTitle(ins[1].ID, strings.Repeat("a", 199))
+	wantTitle(ins[2].ID, "")
+
+	j := claimOne(t, s, "q", ins[0].ID)
+	if j.Title != title {
+		t.Fatalf("claimed job title %q, want %q", j.Title, title)
+	}
+	apply(t, s, outcome(j, driver.Succeeded))
+	wantTitle(ins[0].ID, title)
+	p, err := s.Jobs(t.Context(), driver.JobQuery{State: driver.Succeeded})
+	if err != nil || len(p.Records) != 1 || p.Records[0].Title != title {
+		t.Fatalf("succeeded jobs %+v, %v: want one titled %q", p.Records, err, title)
+	}
+	requeueIDs(t, s, ins[0].ID)
+	wantTitle(ins[0].ID, title)
+
+	deleteIDs(t, s, ins[3].ID)
+	wantTitle(ins[3].ID, title)
+	child := after("c", driver.OnSucceeded, ins[3].ID)
+	child.Title = title
+	in := insert(t, s, child)[0]
+	if in.State != driver.Deleted {
+		t.Fatalf("child of a deleted parent inserted as %s, want deleted", in.State)
+	}
+	wantTitle(in.ID, title)
 }
 
 func testInsertRunAt(t *testing.T, s driver.Store) {

@@ -15,6 +15,7 @@ const (
 	historyCap = 16
 	maxError   = 2 << 10
 	maxTrace   = 8 << 10
+	maxTitle   = 200
 )
 
 type job struct {
@@ -25,6 +26,7 @@ type job struct {
 	args        []byte
 	meta        map[string]string
 	tags        []string
+	title       string
 	priority    int16
 	attempt     int
 	maxAttempts int
@@ -129,6 +131,7 @@ func (j *job) view() driver.Job {
 		Args:        slices.Clone(j.args),
 		Meta:        maps.Clone(j.meta),
 		Tags:        slices.Clone(j.tags),
+		Title:       j.title,
 		Priority:    j.priority,
 		Attempt:     j.attempt,
 		MaxAttempts: j.maxAttempts,

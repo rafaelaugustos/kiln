@@ -12,6 +12,8 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
+const maxTitle = 200
+
 const sqlAllocate = `DECLARE @f SQL_VARIANT;
 EXEC sp_sequence_get_range @sequence_name = N'{p}job_ids', @range_size = @n, @range_first_value = @f OUTPUT;
 SELECT CAST(@f AS BIGINT), CAST(SYSUTCDATETIME() AS DATETIME2(6))`
@@ -23,19 +25,19 @@ FROM OPENJSON(@jobs) WITH (
 	batch_id BIGINT '$.b', after_batch BIGINT '$.a', parents NVARCHAR(MAX) '$.pa' AS JSON,
 	recurring_id NVARCHAR(MAX) '$.rc', unique_key VARCHAR(130) '$.u', limit_key NVARCHAR(MAX) '$.l',
 	args NVARCHAR(MAX) '$.args', meta NVARCHAR(MAX) '$.meta' AS JSON, tags NVARCHAR(MAX) '$.tags' AS JSON,
-	doomed BIT '$.x', history NVARCHAR(MAX) '$.h' AS JSON
+	title NVARCHAR(200) '$.ti', doomed BIT '$.x', history NVARCHAR(MAX) '$.h' AS JSON
 ) v
 CROSS APPLY (SELECT COALESCE(v.run_at, DATEADD(MICROSECOND, ISNULL(v.delay, 0) % 1000000,
 	DATEADD(SECOND, ISNULL(v.delay, 0) / 1000000, @now))) AS run_at) r`
 
 const sqlInsertJobs = `INSERT INTO {p}jobs (id, state, queue, kind, priority, max_attempts, timeout_ms, deps_pending,
-	run_at, created_at, batch_id, after_batch, parents, recurring_id, unique_key, limit_key, args, meta, tags)
+	run_at, created_at, batch_id, after_batch, parents, recurring_id, unique_key, limit_key, args, meta, tags, title)
 OUTPUT inserted.id, inserted.state
 SELECT @base + v.i, CASE WHEN ISNULL(v.pending, 0) > 0 THEN 'awaiting' WHEN r.run_at > @now THEN 'scheduled'
 		WHEN v.limit_key IS NOT NULL THEN 'throttled' ELSE 'enqueued' END,
 	v.queue, v.kind, v.priority, v.max_attempts, v.timeout_ms, ISNULL(v.pending, 0), r.run_at, @now, v.batch_id,
 	v.after_batch, v.parents, v.recurring_id, CONVERT(VARBINARY(64), v.unique_key, 2), v.limit_key, v.args, v.meta,
-	v.tags` + jobValues + `
+	v.tags, v.title` + jobValues + `
 WHERE v.doomed IS NULL`
 
 const sqlInsertPlain = `DECLARE @f SQL_VARIANT, @base BIGINT, @now DATETIME2(6) = SYSUTCDATETIME();
@@ -44,9 +46,11 @@ SET @base = CAST(@f AS BIGINT);
 ` + sqlInsertJobs
 
 const sqlInsertDoomed = `INSERT INTO {p}archive (id, state, queue, kind, priority, attempt, max_attempts, claim, timeout_ms,
-	run_at, created_at, finalized_at, batch_id, after_batch, parents, recurring_id, limit_key, args, meta, tags, history)
+	run_at, created_at, finalized_at, batch_id, after_batch, parents, recurring_id, limit_key, args, meta, tags, title,
+	history)
 SELECT @base + v.i, 'deleted', v.queue, v.kind, v.priority, 0, v.max_attempts, 0, v.timeout_ms, r.run_at, @now, @now,
-	v.batch_id, v.after_batch, v.parents, v.recurring_id, v.limit_key, v.args, v.meta, v.tags, v.history` + jobValues + `
+	v.batch_id, v.after_batch, v.parents, v.recurring_id, v.limit_key, v.args, v.meta, v.tags, v.title,
+	v.history` + jobValues + `
 WHERE v.doomed = 1;
 `
 
@@ -372,6 +376,7 @@ func (in *inserter) row(t *table, r, i, pending int, parents []byte) {
 	t.text("args", p.Args)
 	t.json("meta", encodeMeta(p.Meta))
 	t.json("tags", encodeStrings(p.Tags))
+	t.opt("ti", clean(p.Title, maxTitle))
 }
 
 func (in *inserter) claimUniques(ctx context.Context, q querier) error {

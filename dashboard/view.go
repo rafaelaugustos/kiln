@@ -12,6 +12,7 @@ type jobView struct {
 	ID              int64           `json:"id"`
 	State           driver.State    `json:"state"`
 	Kind            string          `json:"kind"`
+	Title           string          `json:"title,omitempty"`
 	Queue           string          `json:"queue"`
 	Priority        int16           `json:"priority"`
 	Attempt         int             `json:"attempt"`
@@ -54,6 +55,7 @@ func (h *handler) view(r *driver.Record) *jobView {
 		ID:              r.ID,
 		State:           r.State,
 		Kind:            r.Kind,
+		Title:           r.Title,
 		Queue:           r.Queue,
 		Priority:        r.Priority,
 		Attempt:         r.Attempt,

@@ -56,6 +56,11 @@ type (
 	// up, without duplicates, to at most 32 tags of 1 to 64 bytes.
 	Tags []string
 
+	// Title describes a job in a few words, which the dashboard shows in place of the kind. It is
+	// cut to 200 bytes. A job inserted without it takes the title its args return from a method
+	// Title() string, when they have one.
+	Title string
+
 	// Meta is string metadata stored with a job, which handlers read in [Job.Meta]. Keys from
 	// several options are merged, the later value winning, up to 64 keys and 16 KiB in all. kiln
 	// keeps its own entries under keys that start with "kiln.".
@@ -149,6 +154,7 @@ func (At) insertOption()            {}
 func (MaxAttempts) insertOption()   {}
 func (Timeout) insertOption()       {}
 func (Tags) insertOption()          {}
+func (Title) insertOption()         {}
 func (Meta) insertOption()          {}
 func (Unique) insertOption()        {}
 func (Limit) insertOption()         {}

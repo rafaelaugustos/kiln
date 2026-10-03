@@ -292,6 +292,8 @@ func (l *linker) appendDoomed(b []byte, r int) []byte {
 	b = append(b, ',')
 	b = appendJSON(b, encodeStrings(p.Tags))
 	b = append(b, ',')
+	b = appendOptString(b, clean(p.Title, maxTitle))
+	b = append(b, ',')
 	b = appendJSON(b, history)
 	return append(b, ')')
 }

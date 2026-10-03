@@ -11,14 +11,17 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
+const maxTitle = 200
+
 const sqlAllocate = `UPDATE {p}sequences SET last_id = last_id + ? WHERE name = 'jobs' RETURNING last_id, {now}`
 
 const sqlInsertJobs = `INSERT INTO {p}jobs (id, state, queue, kind, priority, max_attempts, timeout_ms, deps_pending,
-	run_at, created_at, batch_id, after_batch, parents, recurring_id, unique_key, limit_key, args, meta, tags) VALUES `
+	run_at, created_at, batch_id, after_batch, parents, recurring_id, unique_key, limit_key, args, meta, tags,
+	title) VALUES `
 
 const sqlInsertDoomed = `INSERT INTO {p}archive (id, state, queue, kind, priority, attempt, max_attempts, claim,
 	timeout_ms, run_at, created_at, finalized_at, batch_id, after_batch, parents, recurring_id, unique_key, limit_key,
-	args, meta, tags, history) VALUES `
+	args, meta, tags, title, history) VALUES `
 
 const sqlInsertDeps = `INSERT INTO {p}deps (batch, parent_id, job_id, mask, resolved) VALUES `
 
@@ -291,7 +294,7 @@ func (in *inserter) store(ctx context.Context, q querier) error {
 			doomed = append(doomed, id, string(driver.Deleted), p.Queue, p.Kind, p.Priority, 0, p.MaxAttempts, 0,
 				millis(p.Timeout), runAt, in.now, in.now, optInt(p.BatchID), optInt(p.AfterBatch), text(parents),
 				optString(p.RecurringID), key, optString(p.LimitKey), string(p.Args), text(encodeMeta(p.Meta)),
-				text(encodeStrings(p.Tags)), e.encode(in.now))
+				text(encodeStrings(p.Tags)), optString(clean(p.Title, maxTitle)), e.encode(in.now))
 		} else {
 			st := in.state(p, pending, runAt)
 			in.res[i] = driver.Inserted{ID: id, State: st}
@@ -300,7 +303,8 @@ func (in *inserter) store(ctx context.Context, q querier) error {
 			}
 			jobs = append(jobs, id, string(st), p.Queue, p.Kind, p.Priority, p.MaxAttempts, millis(p.Timeout), pending,
 				runAt, in.now, optInt(p.BatchID), optInt(p.AfterBatch), text(parents), optString(p.RecurringID), key,
-				optString(p.LimitKey), string(p.Args), text(encodeMeta(p.Meta)), text(encodeStrings(p.Tags)))
+				optString(p.LimitKey), string(p.Args), text(encodeMeta(p.Meta)), text(encodeStrings(p.Tags)),
+				optString(clean(p.Title, maxTitle)))
 		}
 		if us := micros(p.UniqueFor); len(p.UniqueKey) > 0 && (reason == "" || us > 0) {
 			var expires any
@@ -310,10 +314,10 @@ func (in *inserter) store(ctx context.Context, q querier) error {
 			keys = append(keys, p.UniqueKey, id, expires)
 		}
 	}
-	if err := insertRows(ctx, q, in.s.q.insertJobs, "", 19, jobs); err != nil {
+	if err := insertRows(ctx, q, in.s.q.insertJobs, "", 20, jobs); err != nil {
 		return err
 	}
-	if err := insertRows(ctx, q, in.s.q.insertDoomed, "", 22, doomed); err != nil {
+	if err := insertRows(ctx, q, in.s.q.insertDoomed, "", 23, doomed); err != nil {
 		return err
 	}
 	if l := in.link; l != nil && len(l.deps) > 0 {

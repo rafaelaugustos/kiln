@@ -11,7 +11,8 @@ import (
 )
 
 const jobColumns = `id, claim, kind, queue, args, meta, tags, priority, attempt, max_attempts, timeout_ms, run_at,
-	created_at, attempted_at, COALESCE(batch_id, 0), COALESCE(recurring_id, ''), parents, COALESCE(limit_key, '')`
+	created_at, attempted_at, COALESCE(batch_id, 0), COALESCE(recurring_id, ''), parents, COALESCE(limit_key, ''),
+	COALESCE(title, '')`
 
 const claimWhere = ` FROM {p}jobs FORCE INDEX (jobs_fetch)
 WHERE state = 'enqueued' AND queue = ? AND NOT EXISTS (SELECT 1 FROM {p}queues p WHERE p.name = ? AND p.paused)`
@@ -113,7 +114,8 @@ func scanClaimed(ctx context.Context, tx *sql.Tx, stmt string, jobs []driver.Job
 	for rows.Next() {
 		var j driver.Job
 		err := rows.Scan(&now, &j.ID, &j.Claim, &j.Kind, &j.Queue, &j.Args, &meta, &tags, &j.Priority, &j.Attempt,
-			&j.MaxAttempts, &ms, &run, &created, &attempted, &j.BatchID, &j.RecurringID, &parents, &j.LimitKey)
+			&j.MaxAttempts, &ms, &run, &created, &attempted, &j.BatchID, &j.RecurringID, &parents, &j.LimitKey,
+			&j.Title)
 		if err != nil {
 			return jobs, now.Time, err
 		}

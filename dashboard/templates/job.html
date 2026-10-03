@@ -2,7 +2,7 @@
 <div class="head">
 <div>
 <div class="crumbs"><a href="{{link "/jobs/" $j.State}}">{{label $j.State}} jobs</a><span aria-hidden="true">/</span><span class="mono">{{$j.ID}}</span></div>
-<h1 class="title"><span class="mono">{{$j.Kind}}</span>{{template "badge" $j.State}}</h1>
+<h1 class="title">{{with $j.Title}}<span>{{.}}</span>{{else}}<span class="mono">{{$j.Kind}}</span>{{end}}{{template "badge" $j.State}}</h1>
 <p class="sub">Job <span class="mono">{{$j.ID}}</span> in <a href="{{link "/jobs/" $j.State "?queue=" $j.Queue}}">{{$j.Queue}}</a> · attempt {{$j.Attempt}} of {{$j.MaxAttempts}}{{with $j.Server}} · <span class="mono">{{.}}</span>{{end}}</p>
 </div>
 {{- if $.Write}}
@@ -78,6 +78,7 @@
 <aside class="panel side">
 <dl class="props">
 <dt>State</dt><dd>{{template "badge" $j.State}}</dd>
+{{- if $j.Title}}<dt>Kind</dt><dd class="mono">{{$j.Kind}}</dd>{{end}}
 <dt>Queue</dt><dd><a class="chip" href="{{link "/jobs/" $j.State "?queue=" $j.Queue}}">{{$j.Queue}}</a></dd>
 <dt>Priority</dt><dd class="num">{{$j.Priority}}</dd>
 <dt>Attempts</dt><dd class="num">{{$j.Attempt}} of {{$j.MaxAttempts}}</dd>
