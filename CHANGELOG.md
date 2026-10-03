@@ -1,7 +1,30 @@
 # Changelog
 
-Every module in this repository (`kiln`, `pgstore`, `mysqlstore`, `sqlitestore`, `kilnotel`, `redisbus`) is
+Every module in this repository (`kiln`, `pgstore`, `mysqlstore`, `mssqlstore`, `sqlitestore`, `kilnotel`, `redisbus`) is
 released together under the same version. The GitHub releases have the full notes.
+
+## v0.8.0 (2026-10-03)
+
+### Added
+- Nested batches: `Batch.AddBatch` nests a batch in another, which then finishes only after every batch
+  nested in it, and `Batch.Parent` nests a new batch in one that is still open. `driver.NewBatch`,
+  `driver.BatchQuery` and `driver.Batch` gain `Parent`; `driver.Batch` gains `Nested` and `NestedFinished`.
+- The dashboard comes in English and Brazilian Portuguese, chosen from a picker in the header,
+  `dashboard.Options.Language` or the browser's language. The catalogs live in `dashboard/locales`.
+- The dashboard shows a batch's parent and the batches nested in it; `/api/batches?parent=ID` lists them.
+
+### Fixed
+- pgstore: a limit rule written after an admission retry no longer replaces a newer rule that another
+  insert wrote in the meantime.
+- mssqlstore: finishes running in parallel no longer leave each other's batches to the leader's sweep.
+
+### Changed
+- The rate limit docs say that the bound holds over admission times. soak reports a rate window over the
+  bound right after a database restart or stall as a warning.
+
+### Upgrading
+- Additive schema change `006_nested_batches`; v0.7 servers keep running next to v0.8 during a rolling
+  deploy, but nest batches only once every server runs v0.8.
 
 ## v0.7.0 (2026-10-03)
 

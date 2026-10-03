@@ -6,8 +6,8 @@ toolchain go1.27.1
 
 require (
 	github.com/jackc/pgx/v5 v5.11.0
-	github.com/rafaelaugustos/kiln v0.7.0
-	github.com/rafaelaugustos/kiln/pgstore v0.7.0
+	github.com/rafaelaugustos/kiln v0.8.0
+	github.com/rafaelaugustos/kiln/pgstore v0.8.0
 )
 
 require (

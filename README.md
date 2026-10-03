@@ -29,8 +29,8 @@ you already have, so they survive restarts and crashes, they can be enqueued in 
 data that produced them, and you can watch and retry them from a dashboard that comes with the library.
 
 - **Retries** with exponential or custom backoff, snoozes, timeouts and permanent failures
-- **Workflows**: jobs that wait for one or many other jobs and read their outputs, and batches with a job
-  that runs when the whole batch is done
+- **Workflows**: jobs that wait for one or many other jobs and read their outputs, and batches, nested if
+  needed, with a job that runs when the whole batch is done
 - **Limits** per key, across every server: how many jobs run at once and how many start per second
 - **Recurring jobs** from cron specs, with time zones, a policy for missed runs, and `SyncRecurring` to
   keep them in step with your code
@@ -38,7 +38,7 @@ data that produced them, and you can watch and retry them from a dashboard that 
 - **Unique jobs**, while a job is live or for a window of time, with replace and debounce
 - **Transactional enqueue**: the job exists only if your transaction commits
 - **Cancellation** of a running job from any process
-- **Dashboard** and JSON API, mounted on your own HTTP server
+- **Dashboard** in English or Brazilian Portuguese, and a JSON API, mounted on your own HTTP server
 - **OpenTelemetry** traces from the request that enqueued a job to the handler that ran it
 - **PostgreSQL, MySQL, SQL Server and SQLite**, plus an in-memory store for tests, all held to one
   conformance suite
@@ -261,6 +261,23 @@ b.Then(SendSummary{})
 client.StartBatch(ctx, b)
 ```
 
+Batches nest. An outer batch finishes once its own jobs are done and every batch nested in it has
+finished, and a nested batch's continuations count as part of the outer one:
+
+```go
+month := &kiln.Batch{Description: "monthly close"}
+for _, acct := range accounts {
+	b := &kiln.Batch{Description: acct.Name}
+	b.Add(CloseAccount{ID: acct.ID})
+	b.Then(EmailStatement{ID: acct.ID})
+	month.AddBatch(b)
+}
+month.Then(SendReport{})
+client.StartBatch(ctx, month)
+```
+
+A running job can also open a batch inside its own with `kiln.Batch{Parent: j.BatchID}`.
+
 ### Recurring
 
 `SetRecurring` schedules a job on a cron spec (standard 5/6-field syntax plus `L`, `W`, `#`,
@@ -438,6 +455,10 @@ args/meta/output and the live console,
 retries, recurring schedules and their groups, queues, servers, batches, and limits with what each key
 is running and holding back, and mirrors all of it under a JSON API at
 `<prefix>/api/...` for scripting. It's server-rendered with no external assets and a strict CSP.
+
+The dashboard speaks English and Brazilian Portuguese. A picker in the header remembers each person's
+choice; `Options.Language` sets the default, and without it the browser's language decides. Another
+language is one JSON file in `dashboard/locales`.
 
 ## How kiln compares
 
