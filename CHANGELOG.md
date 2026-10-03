@@ -3,6 +3,21 @@
 Every module in this repository (`kiln`, `pgstore`, `mysqlstore`, `sqlitestore`, `kilnotel`, `redisbus`) is
 released together under the same version. The GitHub releases have the full notes.
 
+## v0.6.0 (2026-10-02)
+
+### Added
+- Job console: `Job.Logf` and `Job.SetProgress` write log lines and a progress bar that the dashboard
+  shows live on the job's page, grouped by attempt. Stores implement the optional `driver.Console`;
+  `kilntest.Result` carries the lines and the progress.
+- `Client.SyncRecurring` keeps a group of recurring jobs in step with the code: it sets the ones it's
+  given and removes the rest of the group. `driver.Recurring` gains `Group`.
+- A Limits page in the dashboard, and `GET /api/limits`: per key, the rule and how many jobs are active,
+  throttled and holding a reserved start. Stores implement the optional `driver.LimitReader`.
+
+### Upgrading
+- Additive schema changes `003_console` and `004_recurring_group`; v0.5 servers keep running next to v0.6
+  during a rolling deploy.
+
 ## v0.5.0 (2026-10-02)
 
 ### Added

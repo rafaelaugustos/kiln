@@ -5,7 +5,7 @@ go 1.27.0
 toolchain go1.27.1
 
 require (
-	github.com/rafaelaugustos/kiln v0.5.0
+	github.com/rafaelaugustos/kiln v0.6.0
 	go.opentelemetry.io/otel v1.46.0
 	go.opentelemetry.io/otel/metric v1.46.0
 	go.opentelemetry.io/otel/sdk v1.46.0
