@@ -281,6 +281,13 @@
   "batch.done": "{done} of {total} jobs done",
   "batch.untitled": "Untitled",
   "batch.no_meta": "No metadata.",
+  "batch.parent": "Parent batch",
+  "batch.nested": "Nested batches",
+  "batch.nested_done": "{finished} of {total} nested batches finished",
+  "batch.view_all": "View all",
+  "batch.seg.finished": "Finished nested batches",
+  "batch.seg.running": "Unfinished nested batches",
+  "batches.nested_in": "Nested in batch {id}",
   "batches.empty": "No batches yet.",
 
   "queues.all": "All queues",

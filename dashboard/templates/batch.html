@@ -3,9 +3,9 @@
 {{define "content"}}{{$b := .Data}}
 <div class="head">
 <div>
-<div class="crumbs"><a href="{{link "/batches"}}">{{t "nav.batches"}}</a><span aria-hidden="true">/</span><span class="mono">{{$b.ID}}</span></div>
+<div class="crumbs"><a href="{{link "/batches"}}">{{t "nav.batches"}}</a><span aria-hidden="true">/</span>{{with $b.Parent}}<a class="mono" href="{{link "/batches/" .}}">{{.}}</a><span aria-hidden="true">/</span>{{end}}<span class="mono">{{$b.ID}}</span></div>
 <h1 class="title">{{if $b.Description}}{{$b.Description}}{{else}}{{t "batch.title" "id" $b.ID}}{{end}}{{if $b.Finished}}<span class="badge s-succeeded"><i></i>{{t "batch.finished"}}</span>{{else if $b.Sealed}}<span class="badge s-processing"><i></i>{{t "batch.running"}}</span>{{else}}<span class="badge s-awaiting"><i></i>{{t "batch.open"}}</span>{{end}}</h1>
-<p class="sub">{{t "batch.done" "done" (num $b.Done) "total" (num $b.Total)}} · {{$b.Percent}}%</p>
+<p class="sub">{{if or $b.Total (not $b.Nested)}}{{t "batch.done" "done" (num $b.Done) "total" (num $b.Total)}} · {{end}}{{if $b.Nested}}{{t "batch.nested_done" "finished" (num $b.NestedFinished) "total" (num $b.Nested)}} · {{end}}{{$b.Percent}}%</p>
 </div>
 </div>
 
@@ -17,6 +17,13 @@
 {{- end}}
 </div>
 </section>
+{{- with $b.Children}}
+
+<section class="panel">
+<div class="panel-head"><h2>{{t "batch.nested"}}</h2>{{if .Next}}<a class="more" href="{{link "/batches?parent=" $b.ID}}">{{t "batch.view_all"}}</a>{{end}}</div>
+{{template "batchtable" .}}
+</section>
+{{- end}}
 
 <div class="detail">
 <div class="stack">
@@ -35,7 +42,13 @@
 <aside class="panel side">
 <dl class="props">
 <dt>{{t "col.id"}}</dt><dd class="mono">{{$b.ID}}</dd>
+{{- with $b.Parent}}
+<dt>{{t "batch.parent"}}</dt><dd><a class="mono" href="{{link "/batches/" .}}">{{.}}</a></dd>
+{{- end}}
 <dt>{{t "col.total"}}</dt><dd class="num">{{num $b.Total}}</dd>
+{{- if $b.Nested}}
+<dt>{{t "batch.nested"}}</dt><dd class="num">{{num $b.NestedFinished}}<span class="of">/{{num $b.Nested}}</span></dd>
+{{- end}}
 <dt>{{t "col.sealed"}}</dt><dd>{{if $b.Sealed}}{{t "yes"}}{{else}}{{t "no"}}{{end}}</dd>
 <dt>{{t "col.created"}}</dt><dd>{{template "when" $b.CreatedAt}}</dd>
 <dt>{{t "col.finished"}}</dt><dd>{{template "when" $b.FinishedAt}}</dd>

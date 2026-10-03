@@ -281,6 +281,13 @@
   "batch.done": "{done} de {total} jobs concluídos",
   "batch.untitled": "Sem título",
   "batch.no_meta": "Sem metadados.",
+  "batch.parent": "Lote pai",
+  "batch.nested": "Lotes aninhados",
+  "batch.nested_done": "{finished} de {total} lotes aninhados concluídos",
+  "batch.view_all": "Ver todos",
+  "batch.seg.finished": "Lotes aninhados concluídos",
+  "batch.seg.running": "Lotes aninhados em andamento",
+  "batches.nested_in": "Aninhado no lote {id}",
   "batches.empty": "Nenhum lote ainda.",
 
   "queues.all": "Todas as filas",
