@@ -10,10 +10,11 @@ import (
 )
 
 var (
-	_ driver.Store      = (*Store)(nil)
-	_ driver.Notifier   = (*Store)(nil)
-	_ driver.Transactor = (*Store)(nil)
-	_ driver.TxWriter   = (*Tx)(nil)
+	_ driver.Store       = (*Store)(nil)
+	_ driver.Notifier    = (*Store)(nil)
+	_ driver.Transactor  = (*Store)(nil)
+	_ driver.LimitReader = (*Store)(nil)
+	_ driver.TxWriter    = (*Tx)(nil)
 )
 
 const nstates = len(driver.States)
@@ -28,10 +29,10 @@ func Clock(now func() time.Time) Option {
 	return func(s *Store) { s.clock = now }
 }
 
-// Store is a [driver.Store] kept in memory, which also implements [driver.Notifier] and
-// [driver.Transactor]. It is safe for concurrent use. Every write runs under one lock, so it
-// takes effect all at once, even a Delete or Requeue of many jobs. The store copies the values it
-// is given and those it returns, so callers may change them afterwards.
+// Store is a [driver.Store] kept in memory, which also implements [driver.Notifier],
+// [driver.Transactor] and [driver.LimitReader]. It is safe for concurrent use. Every write runs
+// under one lock, so it takes effect all at once, even a Delete or Requeue of many jobs. The store
+// copies the values it is given and those it returns, so callers may change them afterwards.
 type Store struct {
 	mu    sync.Mutex
 	clock func() time.Time

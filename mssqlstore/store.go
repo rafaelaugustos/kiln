@@ -11,14 +11,16 @@ import (
 )
 
 var (
-	_ driver.Store      = (*Store)(nil)
-	_ driver.Notifier   = (*Store)(nil)
-	_ driver.Transactor = (*Store)(nil)
-	_ driver.TxWriter   = (*TxWriter)(nil)
+	_ driver.Store       = (*Store)(nil)
+	_ driver.Notifier    = (*Store)(nil)
+	_ driver.Transactor  = (*Store)(nil)
+	_ driver.LimitReader = (*Store)(nil)
+	_ driver.TxWriter    = (*TxWriter)(nil)
 )
 
-// Store is a [driver.Store] on SQL Server. It also implements [driver.Transactor], and
-// [driver.Notifier] through the bus given with [Bus]. It is safe for concurrent use.
+// Store is a [driver.Store] on SQL Server. It also implements [driver.Transactor] and
+// [driver.LimitReader], and [driver.Notifier] through the bus given with [Bus]. It is safe for
+// concurrent use.
 type Store struct {
 	db     *sql.DB
 	prefix string
@@ -117,6 +119,7 @@ type statements struct {
 	insertPlain       string
 	job               string
 	lead              string
+	limitInfo         string
 	limitPage         string
 	lockArchived      string
 	lockBatch         string
@@ -208,6 +211,7 @@ func newStatements(prefix string) statements {
 		insertPlain:       r.Replace(sqlInsertPlain),
 		job:               r.Replace(sqlJob),
 		lead:              r.Replace(sqlLead),
+		limitInfo:         r.Replace(sqlLimitInfo),
 		limitPage:         r.Replace(sqlLimitPage),
 		lockArchived:      r.Replace(sqlLockArchived),
 		lockBatch:         r.Replace(sqlLockBatch),

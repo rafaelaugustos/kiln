@@ -1,0 +1,32 @@
+{{define "content"}}{{$l := .Data}}
+<div class="head">
+<div>
+<h1>Limits</h1>
+</div>
+</div>
+
+<section class="panel">
+{{- if $l.Limits}}
+<div class="tbl">
+<table class="grid">
+<thead><tr><th>Key</th><th class="r">Max</th><th class="r">Rate</th><th class="r">Burst</th><th class="r">Active</th><th class="r">Throttled</th><th class="r">Reserved</th><th class="r">Next start</th></tr></thead>
+<tbody>
+{{- range $l.Limits}}
+<tr>
+<td><span class="mono strong">{{.Key}}</span></td>
+<td class="r num">{{if .Max}}{{num .Max}}{{else}}<span class="none">—</span>{{end}}</td>
+<td class="r num nowrap">{{if .Rate}}{{num .Rate}}<span class="of"> per {{dur .Per}}</span>{{else}}<span class="none">—</span>{{end}}</td>
+<td class="r num">{{if .Rate}}{{num .Burst}}{{else}}<span class="none">—</span>{{end}}</td>
+<td class="r num">{{template "n" .Active}}</td>
+<td class="r num">{{template "n" .Throttled}}</td>
+<td class="r num">{{template "n" .Reserved}}</td>
+<td class="r nowrap">{{template "when" .NextStart}}</td>
+</tr>
+{{- end}}
+</tbody>
+</table>
+</div>
+{{- else}}{{template "empty" "No limits yet."}}{{end}}
+{{template "pager" $l}}
+</section>
+{{end}}

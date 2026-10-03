@@ -19,6 +19,7 @@ type rule struct {
 type throttle struct {
 	rule
 	active   int
+	reserved int
 	refs     int
 	tat      time.Time
 	admitTat time.Time

@@ -10,11 +10,12 @@
 {{- if $l.Recurring}}
 <div class="tbl">
 <table class="grid">
-<thead><tr><th>ID</th><th>Job</th><th>Schedule</th><th>Next run</th><th>Last run</th>{{if $.Write}}<th class="r">Actions</th>{{end}}</tr></thead>
+<thead><tr><th>ID</th><th>Group</th><th>Job</th><th>Schedule</th><th>Next run</th><th>Last run</th>{{if $.Write}}<th class="r">Actions</th>{{end}}</tr></thead>
 <tbody>
 {{- range $l.Recurring}}
 <tr{{if .Paused}} class="paused"{{end}}>
 <td class="nowrap"><span class="mono strong">{{.ID}}</span>{{if .Paused}} <span class="badge s-paused"><i></i>Paused</span>{{end}}</td>
+<td>{{with .Group}}<span class="chip plain">{{.}}</span>{{else}}<span class="none">—</span>{{end}}</td>
 <td class="nowrap"><span class="kind">{{.Kind}}</span> <a class="chip" href="{{link "/jobs/enqueued?queue=" .Queue}}">{{.Queue}}</a></td>
 <td class="nowrap"><code class="cron">{{.Spec}}</code> <span class="dim">{{.Location}}</span></td>
 <td class="nowrap">{{if .Paused}}<span class="none">Paused</span>{{else}}{{template "stamp" .NextRunAt}}{{end}}</td>

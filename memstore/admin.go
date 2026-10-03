@@ -63,10 +63,11 @@ func (s *Store) Requeue(_ context.Context, f driver.Filter) (int, error) {
 			j.attempt = 0
 		}
 		j.maxAttempts = max(j.maxAttempts, j.attempt+1)
-		j.cancel, j.granted, j.output = false, false, nil
+		j.cancel, j.output = false, nil
 		j.runAt = s.now
 		s.log(j, driver.Entry{State: to, Reason: "requeued"})
 		s.enqueue(j)
+		j.granted = false
 		n++
 	}
 	s.settle()

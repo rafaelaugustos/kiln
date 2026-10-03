@@ -48,6 +48,7 @@ ANALYZE {s}.uniques;`
 		{"reconcile", "jobs_limit", s.q.reconcile, []any{[]string{"key48", "key98"}}},
 		{"unused limits", "archive_limit", s.q.unusedLimits, []any{100}},
 		{"prune limits", "jobs_limit", s.q.pruneLimits, []any{[]string{"key48", "key98"}}},
+		{"limit info", "jobs_limit", s.q.limitInfo, []any{"key10", 100}},
 		{"stranded parents", "deps_open", s.q.strandedParents, []any{int64(0), 100}},
 		{"resolve", "deps_open", s.q.resolve, []any{[]int64{49, 99}}},
 		{"prune uniques", "uniques_expires", s.q.pruneUniques, []any{100}},

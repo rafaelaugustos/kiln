@@ -139,7 +139,8 @@ SELECT CONCAT('key', n), n % 3, 0, n % 2 * 10, 1000000, 1, IF(n % 4 = 0, UTC_TIM
 	if plan := explain(t, s, s.q.pending); !slices.ContainsFunc(plan, granted) {
 		t.Errorf("pending does not read throttled grants in key order through jobs_granted: %+v", plan)
 	}
-	for _, q := range []string{s.q.counts, s.q.nextDue, s.q.pending, render(s.q.orphans, 1000000, 100)} {
+	for _, q := range []string{s.q.counts, s.q.nextDue, s.q.pending, render(s.q.orphans, 1000000, 100),
+		render(s.q.limitInfo, "key10", 100)} {
 		for _, st := range explain(t, s, q) {
 			if st.table == "kiln_jobs" && st.key == "" {
 				t.Errorf("full scan of jobs: %+v\n%s", st, q)

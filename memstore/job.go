@@ -185,8 +185,11 @@ func (s *Store) index(j *job) {
 		}
 	case driver.Scheduled:
 		heap.Push(&s.due, j)
-		if j.granted && !slices.Contains(s.ready, j.queue) {
-			s.ready = append(s.ready, j.queue)
+		if j.granted {
+			s.limits[j.limit].reserved++
+			if !slices.Contains(s.ready, j.queue) {
+				s.ready = append(s.ready, j.queue)
+			}
 		}
 	case driver.Throttled:
 		heap.Push(&s.limits[j.limit].waiting, j)
@@ -213,6 +216,9 @@ func (s *Store) unindex(j *job) {
 	}
 	if j.heap != nil {
 		heap.Remove(j.heap, j.slot)
+	}
+	if j.state == driver.Scheduled && j.granted {
+		s.limits[j.limit].reserved--
 	}
 	if j.state == driver.Processing {
 		m := s.running[j.server]

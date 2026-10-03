@@ -208,3 +208,38 @@ func (s *Store) Queues(context.Context) ([]driver.QueueInfo, error) {
 	}
 	return out, nil
 }
+
+// Limits returns the limit keys after the given key, in key order, at most limit of them, 100
+// when limit is 0 or less, as [driver.LimitReader] describes.
+func (s *Store) Limits(_ context.Context, after string, limit int) ([]driver.LimitInfo, error) {
+	s.begin()
+	defer s.end()
+	var keys []string
+	for key := range s.limits {
+		if key > after {
+			keys = append(keys, key)
+		}
+	}
+	slices.Sort(keys)
+	keys = keys[:min(len(keys), limitOr(limit, 100))]
+	out := make([]driver.LimitInfo, len(keys))
+	for i, key := range keys {
+		l := s.limits[key]
+		out[i] = driver.LimitInfo{
+			Key:       key,
+			Max:       l.max,
+			Rate:      l.rate,
+			Per:       l.per,
+			Burst:     l.burst,
+			Active:    l.active,
+			Throttled: l.waiting.Len(),
+			Reserved:  l.reserved,
+		}
+		if l.rate > 0 {
+			if next := l.slot(s.now); next.After(s.now) {
+				out[i].NextStart = next
+			}
+		}
+	}
+	return out, nil
+}

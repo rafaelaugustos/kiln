@@ -31,6 +31,7 @@ var views = map[string]string{
 	"servers":   "servers",
 	"batches":   "batches",
 	"batch":     "batch",
+	"limits":    "limits",
 	"error":     "error",
 }
 
@@ -158,6 +159,9 @@ func (h *handler) nav(view string, s *snapshot) []navItem {
 		{Label: "Queues", URL: h.link("/queues"), Key: "queues", On: section == "queues"},
 		{Label: "Servers", URL: h.link("/servers"), Key: "servers", On: section == "servers"},
 		{Label: "Batches", URL: h.link("/batches"), On: section == "batches"},
+	}
+	if h.lr != nil {
+		items = append(items, navItem{Label: "Limits", URL: h.link("/limits"), On: section == "limits"})
 	}
 	if s != nil {
 		for i := range items {

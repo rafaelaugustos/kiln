@@ -33,6 +33,7 @@ type statements struct {
 	job                 string
 	lead                string
 	leases              string
+	limitInfo           string
 	limits              string
 	lockBatches         string
 	lockFinishedBatches string
@@ -112,6 +113,7 @@ func (q *statements) each(fn func(p *string, text string)) {
 	fn(&q.job, sqlJob)
 	fn(&q.lead, sqlLead)
 	fn(&q.leases, sqlLeases)
+	fn(&q.limitInfo, sqlLimitInfo)
 	fn(&q.limits, sqlLimits)
 	fn(&q.lockBatches, sqlLockBatches)
 	fn(&q.lockFinishedBatches, sqlLockFinishedBatches)

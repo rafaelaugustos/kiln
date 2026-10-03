@@ -13,14 +13,15 @@ import (
 )
 
 var (
-	_ driver.Store      = (*Store)(nil)
-	_ driver.Notifier   = (*Store)(nil)
-	_ driver.Transactor = (*Store)(nil)
-	_ driver.TxWriter   = (*TxWriter)(nil)
+	_ driver.Store       = (*Store)(nil)
+	_ driver.Notifier    = (*Store)(nil)
+	_ driver.Transactor  = (*Store)(nil)
+	_ driver.LimitReader = (*Store)(nil)
+	_ driver.TxWriter    = (*TxWriter)(nil)
 )
 
 // Store is a [driver.Store] on PostgreSQL. It also implements [driver.Notifier], through LISTEN
-// and NOTIFY, and [driver.Transactor], and is safe for concurrent use.
+// and NOTIFY, [driver.Transactor] and [driver.LimitReader], and is safe for concurrent use.
 type Store struct {
 	pool   *pgxpool.Pool
 	schema string

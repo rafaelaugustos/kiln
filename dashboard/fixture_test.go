@@ -67,7 +67,9 @@ func seed(t *testing.T) *fixture {
 	if f.batch, err = f.c.StartBatch(ctx, b); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.c.SetRecurring(ctx, "nightly", "0 3 * * *", email{To: "ops@example.com"}, kiln.Queue("mailers")); err != nil {
+	nightly := kiln.RecurringSpec{ID: "nightly", Spec: "0 3 * * *", Args: email{To: "ops@example.com"},
+		Options: []kiln.RecurringOption{kiln.Queue("mailers")}}
+	if err := f.c.SyncRecurring(ctx, "reports", nightly); err != nil {
 		t.Fatal(err)
 	}
 	if err := f.c.PauseQueue(ctx, "low"); err != nil {
