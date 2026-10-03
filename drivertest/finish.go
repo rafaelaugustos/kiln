@@ -24,6 +24,8 @@ var finishTests = []test{
 	{"History", testFinishHistory},
 	{"Truncate", testFinishTruncate},
 	{"Rejected", testFinishRejected},
+	{"RejectedState", testFinishRejectedState},
+	{"Output", testFinishOutput},
 	{"SetMeta", testSetMeta},
 }
 
@@ -341,6 +343,38 @@ func testFinishRejected(t *testing.T, s driver.Store) {
 	failed.Reason, failed.Error = "permanent", "kiln: outcome rejected"
 	apply(t, s, failed)
 	wantState(t, s, driver.Failed, a.ID)
+}
+
+func testFinishRejectedState(t *testing.T, s driver.Store) {
+	for i, st := range []driver.State{driver.Throttled, driver.Awaiting, driver.Processing} {
+		j := start(t, s, task(fmt.Sprintf("q%d", i)))
+		if rs := finish(t, s, outcome(j, st)); rs[0] != driver.Rejected {
+			t.Fatalf("%s outcome: result %d, want rejected", st, rs[0])
+		}
+		wantState(t, s, driver.Processing, j.ID)
+	}
+}
+
+func testFinishOutput(t *testing.T, s driver.Store) {
+	output := []byte(`{"n":1}`)
+	for i, st := range []driver.State{driver.Succeeded, driver.Deleted, driver.Failed, driver.Scheduled, driver.Enqueued} {
+		j := start(t, s, task(fmt.Sprintf("q%d", i)))
+		out := outcome(j, st)
+		out.Delay, out.Output = time.Hour, output
+		apply(t, s, out)
+		got := record(t, s, j.ID).Output
+		switch {
+		case !st.Archived() && len(got) != 0:
+			t.Fatalf("%s outcome stored output %s, want none", st, got)
+		case st.Archived() && !sameJSON(got, output):
+			t.Fatalf("%s outcome stored output %s, want %s", st, got, output)
+		case st.Archived():
+			requeueIDs(t, s, j.ID)
+			if got := record(t, s, j.ID).Output; len(got) != 0 {
+				t.Fatalf("job %d kept output %s after requeue", j.ID, got)
+			}
+		}
+	}
 }
 
 func testSetMeta(t *testing.T, s driver.Store) {

@@ -43,7 +43,7 @@ func (s *Store) Finish(ctx context.Context, server string, outs []driver.Outcome
 	idx := make([]int, 0, len(outs))
 	for i := range outs {
 		switch o := &outs[i]; o.State {
-		case driver.Succeeded, driver.Failed, driver.Deleted, driver.Scheduled, driver.Enqueued, driver.Throttled:
+		case driver.Succeeded, driver.Failed, driver.Deleted, driver.Scheduled, driver.Enqueued:
 			if len(o.Output) == 0 || json.Valid(o.Output) {
 				idx = append(idx, i)
 				continue
@@ -140,9 +140,6 @@ func (s *Store) apply(ctx context.Context, q querier, f *fallout, outs []driver.
 			attempt = max(attempt-1, 0)
 		}
 		want := o.State
-		if want == driver.Throttled {
-			want = driver.Enqueued
-		}
 		canceled := r.cancel && want != driver.Succeeded && want != driver.Deleted
 		delay := max(micros(o.Delay), 0)
 		var fin driver.State

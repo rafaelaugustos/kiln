@@ -131,7 +131,7 @@ type Outcome struct {
 	Reason string        // history reason; empty adds no entry
 	Error  string
 	Trace  string
-	Output []byte // JSON stored with the job when not nil
+	Output []byte // JSON stored with a job that ends succeeded or deleted
 }
 
 // Result is what [Worker.Finish] did with an outcome. kiln drops Stale outcomes, sends Busy ones
@@ -213,7 +213,7 @@ type PruneParams struct {
 	Retention
 	Servers time.Duration // servers silent for longer than this; 0 means 1h
 	Stats   time.Duration // per-minute statistics older than this; 0 means 14 days
-	Limit   int           // rows per table and call; 0 means 1000
+	Limit   int           // rows per table and call; 0 or less means 1000
 }
 
 // Recurring is a recurring job as the store keeps it. Package kiln computes its occurrences; the

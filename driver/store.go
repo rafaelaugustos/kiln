@@ -47,17 +47,18 @@ type Worker interface {
 
 	// Finish applies the outcomes of attempts and returns one [Result] per outcome, in the same
 	// order. Outcomes are independent of each other. An outcome applies only while its job is
-	// processing under the outcome's claim; otherwise it is [Stale].
+	// processing under the outcome's claim; otherwise it is [Stale]. An outcome with a State other
+	// than Succeeded, Failed, Deleted, Scheduled or Enqueued is [Rejected].
 	//
 	// Applying an outcome moves the job to its State, with three adjustments: the job becomes
 	// deleted if its deletion was requested and the outcome is not succeeded, a scheduled outcome
 	// with no positive Delay makes it enqueued, and enqueued becomes throttled for a job with a
 	// limit key. A scheduled job runs Delay after now, Refund decrements Attempt, and an Output
-	// that is not nil is stored. In the same transaction the store appends the history entry,
-	// releases the unique key, frees the job's place under its limit and admits the next jobs,
-	// resolves or dooms the job's dependents, finishes batches that can finish, and counts the
-	// outcome in the statistics of server for the current minute: succeeded, failed, deleted, or
-	// retried for a scheduled outcome without Refund.
+	// that is not empty is stored when the job ends succeeded or deleted, until it is requeued. In
+	// the same transaction the store appends the history entry, releases the unique key, frees the
+	// job's place under its limit and admits the next jobs, resolves or dooms the job's dependents,
+	// finishes batches that can finish, and counts the outcome in the statistics of server for the
+	// current minute: succeeded, failed, deleted, or retried for a scheduled outcome without Refund.
 	//
 	// An error means that nothing is known about any of the outcomes. The caller may send the same
 	// outcomes again, so this must be safe: outcomes applied the first time come back Stale.
@@ -98,12 +99,13 @@ type Coordinator interface {
 	// that have granted jobs waiting in throttled. It returns how many jobs it moved, the queues that
 	// received enqueued jobs, and the time until the earliest job still scheduled. Every server
 	// calls it, so a store with row locks should skip rows that other transactions hold instead of
-	// waiting for them. A store that can notify publishes [JobsReady] after the commit.
+	// waiting for them. A store that can notify publishes [JobsReady] after the commit. A limit of 0
+	// or less counts as 1.
 	Promote(ctx context.Context, limit int) (Promoted, error)
 
 	// Orphans returns up to limit processing jobs whose server has no row or has not sent a
 	// heartbeat for deadAfter. It changes nothing: the caller turns each orphan into an outcome and
-	// applies it with [Worker.Finish], fenced by its claim.
+	// applies it with [Worker.Finish], fenced by its claim. A limit of 0 or less counts as 1.
 	Orphans(ctx context.Context, deadAfter time.Duration, limit int) ([]Orphan, error)
 
 	// Sweep repairs what other methods leave to it, changing at most limit rows. It resolves
@@ -111,7 +113,8 @@ type Coordinator interface {
 	// pending out of awaiting, archives doomed children, finishes sealed batches with no live
 	// member, recounts the enqueued and processing jobs of every limit key and runs admission.
 	// It returns the number of rows it changed, which is zero for a consistent store, reserved
-	// start times included. A few calls must be enough to leave no job stranded.
+	// start times included. A few calls must be enough to leave no job stranded. A limit of 0 or
+	// less counts as 1.
 	Sweep(ctx context.Context, limit int) (int, error)
 
 	// Prune deletes old rows, at most p.Limit from each table, and returns how many it deleted:
@@ -124,7 +127,7 @@ type Coordinator interface {
 	Prune(ctx context.Context, p PruneParams) (int, error)
 
 	// Due returns up to limit recurring jobs that are not paused and whose NextRunAt has come,
-	// with the store's current time.
+	// with the store's current time. A limit of 0 or less counts as 1.
 	Due(ctx context.Context, limit int) ([]Recurring, time.Time, error)
 
 	// Fire applies f in one transaction if the recurring job is still at f.Version: it inserts
@@ -192,9 +195,10 @@ type Inspector interface {
 	// scheduled jobs that are retries, and the all-time totals of succeeded and deleted jobs.
 	Counts(ctx context.Context) (Counts, error)
 
-	// Series returns the statistics of the period between from and to in buckets of step, which
-	// must be a positive multiple of a minute ([ErrInvalid] otherwise). Buckets start at multiples
-	// of step since the Unix epoch and come in ascending order; empty ones are left out.
+	// Series returns the statistics of the minutes that start before to, from the start of the
+	// bucket that holds from, in buckets of step, which must be a positive multiple of a minute
+	// ([ErrInvalid] otherwise). Buckets start at multiples of step since the Unix epoch and come in
+	// ascending order; empty ones are left out.
 	Series(ctx context.Context, from, to time.Time, step time.Duration) ([]Point, error)
 
 	// Servers returns the registered servers, including those that stopped heartbeating, until

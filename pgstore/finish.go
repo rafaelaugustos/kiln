@@ -223,7 +223,7 @@ func (s *Store) Finish(ctx context.Context, server string, outs []driver.Outcome
 	idx := make([]int, 0, len(outs))
 	for i := range outs {
 		switch outs[i].State {
-		case driver.Succeeded, driver.Failed, driver.Deleted, driver.Scheduled, driver.Enqueued, driver.Throttled:
+		case driver.Succeeded, driver.Failed, driver.Deleted, driver.Scheduled, driver.Enqueued:
 			if bytes.IndexByte(outs[i].Output, 0) < 0 {
 				idx = append(idx, i)
 				continue
@@ -275,9 +275,6 @@ func (s *Store) finishOnce(ctx context.Context, server string, outs []driver.Out
 		o := &outs[i]
 		ids[k], claims[k] = o.ID, o.Claim
 		wants[k] = string(o.State)
-		if o.State == driver.Throttled {
-			wants[k] = string(driver.Enqueued)
-		}
 		delays[k] = micros(o.Delay)
 		refunds[k] = o.Refund
 		reasons[k] = clean(o.Reason, 256)
