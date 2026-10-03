@@ -21,6 +21,18 @@ before rescuing anything, which adds about 20 seconds. Lower `DeadAfter` to noti
 must stay above `3*HeartbeatInterval + KillGrace + 5s`), and keep long jobs resumable with `SetParam`
 checkpoints.
 
+**Deploys.** On SIGTERM a server stops claiming and waits up to `ShutdownTimeout` for its running jobs.
+A job still running after that is cancelled with `ErrShutdown` and goes back to its queue without using
+up an attempt, so another server runs it again from the start (or from its `SetParam` checkpoints). Set `ShutdownTimeout` above your longest job, and give your orchestrator a
+grace period longer than `ShutdownTimeout + KillGrace` (Kubernetes' `terminationGracePeriodSeconds`,
+Docker's `stop_grace_period`), or the process is killed first and its jobs wait `DeadAfter` to be
+rescued.
+
+**One queue per service.** A server claims only the kinds it has handlers for, so two services can share
+a database and even a queue without running each other's jobs. Sharing the queue has a cost, though: the
+claim query walks past the other service's ready jobs to reach its own kinds, about 34ms per 100,000 of
+them on PostgreSQL. Give each service its own queues, and the walk disappears.
+
 **Connections.** `pgstore` opens its own pool (`MaxConns`, 8 by default) plus one connection for
 `LISTEN`, on top of your application's pool: budget up to 9 connections per process that opens a store.
 `mysqlstore` and `sqlitestore` use the `*sql.DB` you pass, keeping one of its connections for their own

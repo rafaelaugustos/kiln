@@ -243,6 +243,12 @@ func (in *inserter) writePlain(ctx context.Context) error {
 
 func (in *inserter) write(ctx context.Context, q querier) error {
 	in.reset()
+	if in.linked {
+		in.link = newLinker(in)
+		if err := in.link.fetch(ctx, q); err != nil {
+			return err
+		}
+	}
 	if len(in.keys) > 0 {
 		if err := in.claimUniques(ctx, q); err != nil {
 			return err
@@ -258,12 +264,7 @@ func (in *inserter) write(ctx context.Context, q querier) error {
 			return err
 		}
 	}
-	if in.linked {
-		in.link = newLinker(in)
-		if err := in.link.fetch(ctx, q); err != nil {
-			return err
-		}
-	} else if in.timed && in.now.IsZero() {
+	if !in.linked && in.timed && in.now.IsZero() {
 		if err := in.fetchNow(ctx, q); err != nil {
 			return err
 		}
