@@ -25,11 +25,16 @@ const sqlInsertDoomed = `INSERT INTO {p}archive (id, state, queue, kind, priorit
 
 const sqlInsertDeps = `INSERT INTO {p}deps (batch, parent_id, job_id, mask, resolved) VALUES `
 
-const sqlHolder = `SELECT u.job_id, u.expires_at, COALESCE(j.state, a.state, '')
+const sqlHolder = `SELECT u.job_id, u.expires_at, COALESCE(j.state, a.state, ''), COALESCE(j.granted, 0),
+	j.limit_key IS NOT NULL
 FROM {p}uniques u
 LEFT JOIN {p}jobs j ON j.id = u.job_id
 LEFT JOIN {p}archive a ON a.id = u.job_id
 WHERE u.unique_key = ?`
+
+const sqlReplace = `UPDATE {p}jobs SET state = ?, run_at = COALESCE(?, run_at), args = ?, meta = ?, tags = ?, title = ?,
+	priority = ?
+WHERE id = ?`
 
 const sqlHold = `INSERT INTO {p}uniques (unique_key, job_id, expires_at) VALUES `
 
@@ -43,8 +48,10 @@ FROM {p}batches b WHERE b.id IN (SELECT value FROM json_each(?))`
 const sqlAttach = `UPDATE {p}batches SET total = total + ? WHERE id = ?`
 
 type holder struct {
-	id    int64
-	state driver.State
+	id      int64
+	state   driver.State
+	granted bool
+	limited bool
 }
 
 type inserter struct {
@@ -58,6 +65,8 @@ type inserter struct {
 	won     []bool
 	keys    [][]byte
 	holders map[string]holder
+	swaps   []int
+	swapped []int
 	linked  bool
 	batched bool
 	now     int64
@@ -106,6 +115,9 @@ func (s *Store) plan(jobs []driver.InsertParams) *inserter {
 			seen[string(p.UniqueKey)] = i
 			in.first[i] = i
 			in.keys = append(in.keys, p.UniqueKey)
+			if p.UniqueReplace || p.UniqueDebounce > 0 {
+				in.swaps = append(in.swaps, i)
+			}
 		}
 		in.pos[i] = len(in.live)
 		in.live = append(in.live, i)
@@ -116,7 +128,7 @@ func (s *Store) plan(jobs []driver.InsertParams) *inserter {
 func (in *inserter) write(ctx context.Context, q querier) error {
 	in.res = make([]driver.Inserted, len(in.jobs))
 	in.won = make([]bool, len(in.live))
-	in.holders, in.link = nil, nil
+	in.holders, in.link, in.swapped = nil, nil, in.swapped[:0]
 	var last int64
 	if err := q.QueryRowContext(ctx, in.s.q.allocate, len(in.live)).Scan(&last, &in.now); err != nil {
 		return err
@@ -129,6 +141,11 @@ func (in *inserter) write(ctx context.Context, q querier) error {
 	}
 	if len(in.keys) > 0 {
 		if err := in.claim(ctx, q); err != nil {
+			return err
+		}
+	}
+	if len(in.swaps) > 0 {
+		if err := in.replace(ctx, q); err != nil {
 			return err
 		}
 	}
@@ -191,7 +208,7 @@ func (s *Store) holding(ctx context.Context, q querier, now int64, keys [][]byte
 			expires sql.NullInt64
 			state   string
 		)
-		switch err := st.QueryRowContext(ctx, key).Scan(&h.id, &expires, &state); {
+		switch err := st.QueryRowContext(ctx, key).Scan(&h.id, &expires, &state, &h.granted, &h.limited); {
 		case errors.Is(err, sql.ErrNoRows):
 			continue
 		case err != nil:
@@ -203,6 +220,50 @@ func (s *Store) holding(ctx context.Context, q querier, now int64, keys [][]byte
 		}
 	}
 	return holders, nil
+}
+
+func (in *inserter) replace(ctx context.Context, q querier) error {
+	var stmt *sql.Stmt
+	for _, i := range in.swaps {
+		p := &in.jobs[i]
+		key := string(p.UniqueKey)
+		h, held := in.holders[key]
+		if !held || !replaces(h, p) {
+			continue
+		}
+		var at any
+		switch runAt := in.runAt(p); {
+		case h.granted || h.state == driver.Enqueued && h.limited:
+		case h.state == driver.Awaiting || h.state == driver.Scheduled:
+			at = runAt
+		case runAt > in.now:
+			h.state, at = driver.Scheduled, runAt
+		}
+		if stmt == nil {
+			st, done, err := prepare(ctx, q, in.s.q.replace)
+			if err != nil {
+				return err
+			}
+			defer done()
+			stmt = st
+		}
+		_, err := stmt.ExecContext(ctx, string(h.state), at, string(p.Args), text(encodeMeta(p.Meta)),
+			text(encodeStrings(p.Tags)), optString(clean(p.Title, maxTitle)), p.Priority, h.id)
+		if err != nil {
+			return err
+		}
+		in.holders[key] = h
+		in.swapped = append(in.swapped, i)
+	}
+	return nil
+}
+
+func replaces(h holder, p *driver.InsertParams) bool {
+	if p.UniqueDebounce > 0 {
+		return h.state == driver.Scheduled && !h.granted
+	}
+	return p.UniqueReplace && (h.state == driver.Awaiting || h.state == driver.Scheduled ||
+		h.state == driver.Throttled || h.state == driver.Enqueued)
 }
 
 func (in *inserter) attach(ctx context.Context, q querier) error {
@@ -250,7 +311,10 @@ func (in *inserter) attach(ctx context.Context, q querier) error {
 }
 
 func (in *inserter) runAt(p *driver.InsertParams) int64 {
-	if !p.RunAt.IsZero() {
+	switch {
+	case p.UniqueDebounce > 0:
+		return in.now + micros(p.UniqueDebounce)
+	case !p.RunAt.IsZero():
 		return p.RunAt.UnixMicro()
 	}
 	return in.now + max(micros(p.Delay), 0)
@@ -379,13 +443,14 @@ func (in *inserter) settle() {
 	for i, f := range in.first {
 		if f == i && in.res[i].ID == 0 {
 			h := in.holders[string(in.jobs[i].UniqueKey)]
-			in.res[i] = driver.Inserted{ID: h.id, State: h.state, Duplicate: true}
+			in.res[i] = driver.Inserted{ID: h.id, State: h.state, Duplicate: true,
+				Replaced: slices.Contains(in.swapped, i)}
 		}
 	}
 	for i, f := range in.first {
 		if f >= 0 && f != i {
 			r := in.res[f]
-			r.Duplicate = true
+			r.Duplicate, r.Replaced = true, false
 			in.res[i] = r
 		}
 	}

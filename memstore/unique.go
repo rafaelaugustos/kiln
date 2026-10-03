@@ -1,6 +1,8 @@
 package memstore
 
 import (
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/rafaelaugustos/kiln/driver"
@@ -33,6 +35,34 @@ func (s *Store) hold(j *job) {
 	default:
 		s.uniques[j.unique] = &uniq{job: j.id}
 	}
+}
+
+func replaces(j *job, p *driver.InsertParams) bool {
+	if p.UniqueDebounce > 0 {
+		return j.state == driver.Scheduled && !j.granted
+	}
+	return p.UniqueReplace && (j.state == driver.Awaiting || j.state == driver.Scheduled ||
+		j.state == driver.Throttled || j.state == driver.Enqueued)
+}
+
+func (s *Store) replaced(j *job, at time.Time) (driver.State, time.Time) {
+	switch {
+	case j.granted || j.state == driver.Enqueued && j.limit != "":
+		return j.state, j.runAt
+	case j.state == driver.Awaiting || j.state == driver.Scheduled:
+		return j.state, at
+	case at.After(s.now):
+		return driver.Scheduled, at
+	}
+	return j.state, j.runAt
+}
+
+func (s *Store) replace(j *job, p *driver.InsertParams) {
+	st, at := s.replaced(j, runAt(p, s.now))
+	s.unindex(j)
+	j.args, j.meta, j.tags = slices.Clone(p.Args), maps.Clone(p.Meta), slices.Clone(p.Tags)
+	j.title, j.priority, j.state, j.runAt = clip(p.Title, maxTitle), p.Priority, st, at
+	s.index(j)
 }
 
 func (s *Store) release(j *job) {

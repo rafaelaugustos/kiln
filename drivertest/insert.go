@@ -241,6 +241,10 @@ func testInsertInvalid(t *testing.T, s driver.Store) {
 		{"parent without mask", func(p *driver.InsertParams) { p.Parents = []driver.Parent{{Index: 0}} }},
 		{"after its own batch", func(p *driver.InsertParams) { p.BatchID, p.AfterBatch = 1, 1 }},
 		{"args not json", func(p *driver.InsertParams) { p.Args = []byte("{") }},
+		{"negative debounce", func(p *driver.InsertParams) { p.UniqueKey, p.UniqueDebounce = key("d"), -time.Second }},
+		{"replace and debounce", func(p *driver.InsertParams) {
+			p.UniqueKey, p.UniqueReplace, p.UniqueDebounce = key("d"), true, time.Second
+		}},
 	}
 	for _, c := range cases {
 		bad := task("q")

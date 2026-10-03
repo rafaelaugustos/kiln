@@ -42,12 +42,22 @@ ON DUPLICATE KEY UPDATE
 		OR {p}uniques.expires_at IS NULL AND v.gone AND {p}uniques.job_id <=> v.seen, v.id, {p}uniques.job_id),
 	expires_at = IF({p}uniques.job_id = v.id, v.exp, {p}uniques.expires_at)`
 
-const sqlHolders = `SELECT u.unique_key, u.job_id, COALESCE(j.state, a.state, ''), UTC_TIMESTAMP(6)
+const sqlHolders = `SELECT u.unique_key, u.job_id, COALESCE(j.state, a.state, ''), UTC_TIMESTAMP(6),
+	COALESCE(j.granted, FALSE), j.limit_key IS NOT NULL
 FROM {p}uniques u
 LEFT JOIN {p}jobs j ON j.id = u.job_id
 LEFT JOIN {p}archive a ON a.id = u.job_id
 WHERE u.unique_key IN (?)
 FOR SHARE OF u`
+
+const sqlLockHolders = sqlHolders + ` FOR UPDATE OF j`
+
+const sqlReplace = `UPDATE (VALUES `
+
+const sqlReplaceTail = `) AS v (id, state, run_at, args, meta, tags, title, priority)
+STRAIGHT_JOIN {p}jobs j FORCE INDEX (PRIMARY) ON j.id = v.id
+SET j.state = v.state, j.run_at = COALESCE(v.run_at, j.run_at), j.args = v.args, j.meta = v.meta, j.tags = v.tags,
+	j.title = v.title, j.priority = v.priority`
 
 const sqlLockBatches = `SELECT b.id, b.finished_at IS NULL AND (NOT b.sealed OR EXISTS (
 	SELECT 1 FROM {p}jobs j WHERE j.batch_id = b.id))
@@ -56,8 +66,10 @@ FROM {p}batches b FORCE INDEX (PRIMARY) WHERE b.id IN (?) ORDER BY b.id FOR UPDA
 const sqlNow = `SELECT UTC_TIMESTAMP(6)`
 
 type holder struct {
-	id    int64
-	state driver.State
+	id      int64
+	state   driver.State
+	granted bool
+	limited bool
 }
 
 type inserter struct {
@@ -72,6 +84,8 @@ type inserter struct {
 	won     []bool
 	keys    [][]byte
 	holders map[string]holder
+	swaps   []int
+	swapped []int
 	limits  []string
 	rules   map[string]rule
 	late    []string
@@ -167,6 +181,9 @@ func (in *inserter) plan() {
 			seen[string(p.UniqueKey)] = i
 			in.first[i] = i
 			in.keys = append(in.keys, p.UniqueKey)
+			if p.UniqueReplace || p.UniqueDebounce > 0 {
+				in.swaps = append(in.swaps, i)
+			}
 		}
 		if p.LimitKey != "" {
 			if in.rules == nil {
@@ -202,6 +219,7 @@ func (in *inserter) reset() {
 		in.won[r] = len(in.jobs[i].UniqueKey) == 0
 	}
 	in.holders = nil
+	in.swapped = in.swapped[:0]
 	in.link = nil
 	in.queues = in.queues[:0]
 }
@@ -227,6 +245,11 @@ func (in *inserter) write(ctx context.Context, q querier) error {
 	in.reset()
 	if len(in.keys) > 0 {
 		if err := in.claimUniques(ctx, q); err != nil {
+			return err
+		}
+	}
+	if len(in.swaps) > 0 {
+		if err := in.replace(ctx, q); err != nil {
 			return err
 		}
 	}
@@ -351,7 +374,11 @@ func (in *inserter) claimUniques(ctx context.Context, q querier) error {
 	if _, err := q.ExecContext(ctx, string(b)); err != nil {
 		return wrap("insert", err)
 	}
-	rows, err := q.QueryContext(ctx, render(in.s.q.holders, in.keys))
+	holders := in.s.q.holders
+	if len(in.swaps) > 0 {
+		holders = in.s.q.lockHolders
+	}
+	rows, err := q.QueryContext(ctx, render(holders, in.keys))
 	if err != nil {
 		return wrap("insert", err)
 	}
@@ -364,7 +391,7 @@ func (in *inserter) claimUniques(ctx context.Context, q querier) error {
 			state string
 			now   stamp
 		)
-		if err := rows.Scan(&key, &h.id, &state, &now); err != nil {
+		if err := rows.Scan(&key, &h.id, &state, &now, &h.granted, &h.limited); err != nil {
 			return wrap("insert", err)
 		}
 		h.state = driver.State(state)
@@ -380,6 +407,67 @@ func (in *inserter) claimUniques(ctx context.Context, q querier) error {
 		}
 	}
 	return nil
+}
+
+func (in *inserter) replace(ctx context.Context, q querier) error {
+	var b []byte
+	for _, i := range in.swaps {
+		p := &in.jobs[i]
+		key := string(p.UniqueKey)
+		h := in.holders[key]
+		if in.won[in.pos[i]] || !replaces(h, p) {
+			continue
+		}
+		st, at := h.state, in.runAt(p)
+		switch {
+		case h.granted || h.state == driver.Enqueued && h.limited:
+			at = time.Time{}
+		case h.state == driver.Awaiting || h.state == driver.Scheduled:
+		case at.After(in.now):
+			st = driver.Scheduled
+		default:
+			at = time.Time{}
+		}
+		if b == nil {
+			b = append(b, in.s.q.replace...)
+		} else {
+			b = append(b, ',')
+		}
+		var title any
+		if t := clean(p.Title, maxTitle); t != "" {
+			title = t
+		}
+		b = appendSQL(b, "ROW(?, ?, CAST(? AS DATETIME(6)), ?, ?, ?, ?, ?)", h.id, st, at, p.Args, encodeMeta(p.Meta),
+			encodeStrings(p.Tags), title, p.Priority)
+		h.state = st
+		in.holders[key] = h
+		in.swapped = append(in.swapped, i)
+	}
+	if b == nil {
+		return nil
+	}
+	if _, err := q.ExecContext(ctx, string(append(b, in.s.q.replaceTail...))); err != nil {
+		return wrap("insert", err)
+	}
+	return nil
+}
+
+func replaces(h holder, p *driver.InsertParams) bool {
+	if p.UniqueDebounce > 0 {
+		return h.state == driver.Scheduled && !h.granted
+	}
+	return p.UniqueReplace && (h.state == driver.Awaiting || h.state == driver.Scheduled ||
+		h.state == driver.Throttled || h.state == driver.Enqueued)
+}
+
+func (in *inserter) runAt(p *driver.InsertParams) time.Time {
+	switch {
+	case micros(p.UniqueDebounce) > 0:
+		return in.now.Add(p.UniqueDebounce).Truncate(time.Microsecond)
+	case !p.RunAt.IsZero():
+		return p.RunAt.Truncate(time.Microsecond)
+	}
+	return in.now.Add(max(p.Delay, 0)).Truncate(time.Microsecond)
 }
 
 func (in *inserter) attach(ctx context.Context, q querier) error {
@@ -482,13 +570,14 @@ func (in *inserter) settle() {
 	for i, f := range in.first {
 		if f == i && in.res[i].ID == 0 {
 			h := in.holders[string(in.jobs[i].UniqueKey)]
-			in.res[i] = driver.Inserted{ID: h.id, State: h.state, Duplicate: true}
+			in.res[i] = driver.Inserted{ID: h.id, State: h.state, Duplicate: true,
+				Replaced: slices.Contains(in.swapped, i)}
 		}
 	}
 	for i, f := range in.first {
 		if f >= 0 && f != i {
 			r := in.res[f]
-			r.Duplicate = true
+			r.Duplicate, r.Replaced = true, false
 			in.res[i] = r
 		}
 	}
@@ -498,6 +587,8 @@ func (in *inserter) state(p *driver.InsertParams, pending int) driver.State {
 	switch {
 	case pending > 0:
 		return driver.Awaiting
+	case micros(p.UniqueDebounce) > 0:
+		return driver.Scheduled
 	case !p.RunAt.IsZero() && p.RunAt.Truncate(time.Microsecond).After(in.now):
 		return driver.Scheduled
 	case p.RunAt.IsZero() && micros(p.Delay) > 0:
@@ -510,6 +601,10 @@ func (in *inserter) state(p *driver.InsertParams, pending int) driver.State {
 
 func appendRunAt(b []byte, p *driver.InsertParams) []byte {
 	switch {
+	case micros(p.UniqueDebounce) > 0:
+		b = append(b, "UTC_TIMESTAMP(6) + INTERVAL "...)
+		b = strconv.AppendInt(b, micros(p.UniqueDebounce), 10)
+		return append(b, " MICROSECOND"...)
 	case !p.RunAt.IsZero():
 		return appendTime(b, p.RunAt)
 	case micros(p.Delay) > 0:

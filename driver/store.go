@@ -11,9 +11,10 @@ import (
 type Writer interface {
 	// Insert inserts jobs and returns one result per job, in the same order. It is all or nothing
 	// except for duplicates: a job whose unique key is held is skipped and reported as a duplicate
-	// (see [InsertParams.UniqueKey]) while the others are inserted, and any error means nothing was.
-	// New jobs get ids above zero that increase with their position in jobs, and the first state
-	// described in the package documentation.
+	// (see [InsertParams.UniqueKey]) while the others are inserted, and any error means nothing was
+	// inserted or replaced (see [InsertParams.UniqueReplace]). New jobs get ids above zero that
+	// increase with their position in jobs, and the first state described in the package
+	// documentation.
 	//
 	// Besides the checks of [CheckInsert], Insert fails with [ErrNotFound] when a parent job or a
 	// batch does not exist, with [ErrClosed] when the job would join a finished batch, and with

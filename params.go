@@ -239,12 +239,16 @@ func (b *builder) finish() (driver.InsertParams, error) {
 		return p, err
 	}
 	if u := b.unique; u != nil {
+		if u.Replace && u.Debounce > 0 {
+			return p, fmt.Errorf("%w: unique replace and debounce together", ErrInvalid)
+		}
 		key := u.Key
 		if key == "" {
 			key = string(p.Args)
 		}
 		p.UniqueKey = uniqueKey(p.Kind, key)
 		p.UniqueFor = max(u.For, 0)
+		p.UniqueReplace, p.UniqueDebounce = u.Replace, max(u.Debounce, 0)
 	}
 	if l := b.limit; l != nil {
 		p.LimitKey, p.LimitMax = l.Key, l.Max

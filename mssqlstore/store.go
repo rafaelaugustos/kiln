@@ -152,6 +152,7 @@ type statements struct {
 	recurrings        string
 	releaseUniques    string
 	removeRecurring   string
+	replace           string
 	requeueArchived   string
 	requeueLive       string
 	resign            string
@@ -246,6 +247,7 @@ func newStatements(prefix string) statements {
 		recurrings:        r.Replace(sqlRecurrings),
 		releaseUniques:    r.Replace(sqlReleaseUniques),
 		removeRecurring:   r.Replace(sqlRemoveRecurring),
+		replace:           r.Replace(sqlReplace),
 		requeueArchived:   r.Replace(sqlRequeueArchived),
 		requeueLive:       r.Replace(sqlRequeueLive),
 		resign:            r.Replace(sqlResign),

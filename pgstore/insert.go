@@ -79,6 +79,30 @@ SELECT t.id, 'deleted', t.queue, t.kind, coalesce(t.priority, 0), 0, t.max_attem
 	nullif(t.title, ''), jsonb_build_array({s}.entry('deleted', 0, r.reason, '', '', NULL))` + insertRows + `
 JOIN unnest($21::text[]) WITH ORDINALITY AS r(reason, ord) ON r.ord = t.ord`
 
+const sqlReplace = `WITH n AS (
+	SELECT t.ord, t.ukey, d.debounce, t.args, t.meta, t.tags, t.title, coalesce(t.priority, 0) AS priority,
+		coalesce(t.at, statement_timestamp() + coalesce(t.delay, 0) * interval '1 microsecond') AS run_at` + insertRows + `
+	JOIN unnest($21::bool[]) WITH ORDINALITY AS d(debounce, ord) ON d.ord = t.ord
+), h AS MATERIALIZED (
+	SELECT n.ord, j.id FROM n
+	JOIN {s}.uniques u ON u.key = n.ukey
+	JOIN {s}.jobs j ON j.id = u.job_id
+	WHERE (u.expires_at IS NULL OR u.expires_at > now()) AND CASE WHEN n.debounce
+		THEN j.state = 'scheduled' AND NOT j.granted
+		ELSE j.state IN ('awaiting', 'scheduled', 'throttled', 'enqueued') END
+	ORDER BY j.id
+	FOR NO KEY UPDATE OF j
+)
+UPDATE {s}.jobs j SET args = n.args::json, meta = nullif(n.meta, '')::jsonb, tags = nullif(n.tags, '')::text[],
+	title = nullif(n.title, ''), priority = n.priority,
+	state = CASE WHEN NOT j.granted AND n.run_at > statement_timestamp()
+		AND (j.state = 'throttled' OR j.state = 'enqueued' AND j.limit_key IS NULL) THEN 'scheduled' ELSE j.state END,
+	run_at = CASE WHEN j.granted OR j.state = 'enqueued' AND j.limit_key IS NOT NULL THEN j.run_at
+		WHEN j.state IN ('awaiting', 'scheduled') OR n.run_at > statement_timestamp() THEN n.run_at ELSE j.run_at END
+FROM h JOIN n ON n.ord = h.ord
+WHERE j.id = h.id
+RETURNING n.ord`
+
 const sqlAllocate = `WITH v AS MATERIALIZED (
 	SELECT nextval('{s}.job_ids') AS id, t.ord, t.ukey, coalesce(t.ufor, 0) AS ufor
 	FROM unnest($1::bytea[], $2::bigint[]) WITH ORDINALITY AS t(ukey, ufor, ord)
@@ -175,6 +199,8 @@ type inserter struct {
 	live    []int
 	keys    [][]byte
 	holders map[string]holder
+	swaps   []int
+	swapped []int
 	linked  bool
 	batched bool
 	w       wake
@@ -243,6 +269,9 @@ func (in *inserter) plan() {
 			seen[string(p.UniqueKey)] = i
 			in.first[i] = i
 			in.keys = append(in.keys, p.UniqueKey)
+			if p.UniqueReplace || p.UniqueDebounce > 0 {
+				in.swaps = append(in.swaps, i)
+			}
 		}
 		in.live = append(in.live, i)
 	}
@@ -285,6 +314,7 @@ func (in *inserter) runPlain(ctx context.Context) error {
 			return err
 		}
 	}
+	in.queueReplace(b)
 	cols := in.columns(in.live, nil, nil)
 	b.Queue(in.s.q.insert, cols.params(true)...).Query(in.scanInserted(in.live))
 	if len(in.keys) > 0 {
@@ -351,16 +381,38 @@ func (in *inserter) settle() {
 	for i, f := range in.first {
 		if f == i && in.res[i].ID == 0 {
 			h := in.holders[string(in.jobs[i].UniqueKey)]
-			in.res[i] = driver.Inserted{ID: h.id, State: h.state, Duplicate: true}
+			in.res[i] = driver.Inserted{ID: h.id, State: h.state, Duplicate: true,
+				Replaced: slices.Contains(in.swapped, i)}
 		}
 	}
 	for i, f := range in.first {
 		if f >= 0 && f != i {
 			r := in.res[f]
-			r.Duplicate = true
+			r.Duplicate, r.Replaced = true, false
 			in.res[i] = r
 		}
 	}
+}
+
+func (in *inserter) queueReplace(b *pgx.Batch) {
+	if len(in.swaps) == 0 {
+		return
+	}
+	debounce := make([]bool, len(in.swaps))
+	for k, i := range in.swaps {
+		debounce[k] = in.jobs[i].UniqueDebounce > 0
+	}
+	c := in.columns(in.swaps, nil, nil)
+	b.Queue(in.s.q.replace, c.params(debounce)...).Query(func(rows pgx.Rows) error {
+		var ord int
+		for rows.Next() {
+			if err := rows.Scan(&ord); err != nil {
+				return err
+			}
+			in.swapped = append(in.swapped, in.swaps[ord-1])
+		}
+		return rows.Err()
+	})
 }
 
 func (in *inserter) inserted() []int {
@@ -462,9 +514,12 @@ func (in *inserter) columns(items []int, ids []int64, pending []int32) *columns 
 		if p.Timeout != 0 {
 			put(&c.timeout, n, r, millis(p.Timeout))
 		}
-		if !p.RunAt.IsZero() {
+		switch {
+		case p.UniqueDebounce > 0:
+			put(&c.delay, n, r, micros(p.UniqueDebounce))
+		case !p.RunAt.IsZero():
 			put(&c.at, n, r, pgtype.Timestamptz{Time: p.RunAt, Valid: true})
-		} else if p.Delay > 0 {
+		case p.Delay > 0:
 			put(&c.delay, n, r, micros(p.Delay))
 		}
 		if p.BatchID != 0 {

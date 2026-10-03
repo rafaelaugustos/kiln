@@ -64,6 +64,7 @@ type statements struct {
 	recurrings          string
 	releaseBatches      string
 	removeRecurring     string
+	replace             string
 	requeueArchived     string
 	requeueLive         string
 	resign              string
@@ -146,6 +147,7 @@ func (q *statements) each(fn func(p *string, text string)) {
 	fn(&q.recurrings, sqlRecurrings)
 	fn(&q.releaseBatches, sqlReleaseBatches)
 	fn(&q.removeRecurring, sqlRemoveRecurring)
+	fn(&q.replace, sqlReplace)
 	fn(&q.requeueArchived, sqlRequeueArchived)
 	fn(&q.requeueLive, sqlRequeueLive)
 	fn(&q.resign, sqlResign)
