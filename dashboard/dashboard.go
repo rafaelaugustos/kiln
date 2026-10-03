@@ -94,6 +94,7 @@ func loopback(host string) bool {
 type handler struct {
 	c      *kiln.Client
 	store  driver.Store
+	lr     driver.LimitReader
 	opt    Options
 	prefix string
 	mux    http.ServeMux
@@ -118,6 +119,7 @@ func New(c *kiln.Client, o Options) http.Handler {
 		opt:    o,
 		prefix: strings.TrimRight(o.Prefix, "/"),
 	}
+	h.lr, _ = h.store.(driver.LimitReader)
 	if h.prefix != "" && h.prefix[0] != '/' {
 		h.prefix = "/" + h.prefix
 	}
@@ -148,6 +150,9 @@ func (h *handler) routes() {
 		m.HandleFunc("GET "+p+"/servers", h.servers)
 		m.HandleFunc("GET "+p+"/batches", h.batches)
 		m.HandleFunc("GET "+p+"/batches/{id}", h.batch)
+		if h.lr != nil {
+			m.HandleFunc("GET "+p+"/limits", h.limits)
+		}
 		m.HandleFunc("POST "+p+"/jobs/{op}", h.bulk)
 		m.HandleFunc("POST "+p+"/jobs/{id}/{op}", h.jobAction)
 		m.HandleFunc("POST "+p+"/recurring/{id}/{op}", h.recurringAction)

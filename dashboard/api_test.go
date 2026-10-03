@@ -242,6 +242,58 @@ func TestAPI(t *testing.T) {
 	}
 }
 
+func TestLimitsAPI(t *testing.T) {
+	t.Parallel()
+	f := seed(t)
+	for range 2 {
+		f.enqueue(resize{Key: "paced.png"}, kiln.Queue("paced"), kiln.Limit{Key: "pace", Rate: 1, Per: time.Minute})
+	}
+	h := New(f.c, Options{Authorize: grant(ReadOnly)})
+	type apiLimits struct {
+		Limits []struct {
+			Key       string     `json:"key"`
+			Max       int        `json:"max"`
+			Rate      int        `json:"rate"`
+			PerMS     int64      `json:"per_ms"`
+			Burst     int        `json:"burst"`
+			Active    int        `json:"active"`
+			Throttled int        `json:"throttled"`
+			Reserved  int        `json:"reserved"`
+			NextStart *time.Time `json:"next_start"`
+		} `json:"limits"`
+		Next string `json:"next"`
+	}
+	all := decodeJSON[apiLimits](t, h, "/api/limits")
+	if len(all.Limits) != 2 || all.Next != "" {
+		t.Fatalf("limits %+v", all)
+	}
+	if l := all.Limits[0]; l.Key != "lk" || l.Max != 1 || l.Rate != 0 || l.Active != 1 || l.Throttled != 1 || l.Reserved != 0 || l.NextStart != nil {
+		t.Errorf("lk %+v", l)
+	}
+	if l := all.Limits[1]; l.Key != "pace" || l.Rate != 1 || l.PerMS != 60000 || l.Burst != 1 || l.Active != 1 || l.Reserved != 1 || l.NextStart == nil {
+		t.Errorf("pace %+v", l)
+	}
+	first := decodeJSON[apiLimits](t, h, "/api/limits?limit=1")
+	if len(first.Limits) != 1 || first.Limits[0].Key != "lk" || first.Next != "lk" {
+		t.Fatalf("first page %+v", first)
+	}
+	second := decodeJSON[apiLimits](t, h, "/api/limits?limit=1&after="+url.QueryEscape(first.Next))
+	if len(second.Limits) != 1 || second.Limits[0].Key != "pace" || second.Next != "" {
+		t.Fatalf("second page %+v", second)
+	}
+	if res := get(h, "/api/limits?limit=501"); res.code != http.StatusBadRequest {
+		t.Errorf("limit 501: %d", res.code)
+	}
+
+	bare := New(kiln.NewClient(struct{ driver.Store }{f.store}), Options{Authorize: grant(ReadOnly)})
+	if res := get(bare, "/api/limits"); res.code != http.StatusNotFound {
+		t.Errorf("limits of a store without LimitReader: %d", res.code)
+	}
+	if res := get(bare, "/queues"); strings.Contains(res.body, `href="/limits"`) {
+		t.Error("nav links to limits for a store without LimitReader")
+	}
+}
+
 func TestRetriesScan(t *testing.T) {
 	t.Parallel()
 	s := memstore.New()

@@ -1,6 +1,7 @@
 // Package dashboard serves a web interface for a kiln store: live counts and a chart of finished
 // jobs, jobs by state with filters and bulk actions, job details with args, meta, output and
-// history, retries, recurring jobs, queues, servers and batches.
+// history, retries, recurring jobs, queues, servers, batches, and the limit keys of a store that
+// implements [driver.LimitReader].
 //
 //	http.Handle("/kiln/", dashboard.New(client, dashboard.Options{
 //		Prefix:    "/kiln",
@@ -19,6 +20,7 @@
 //	GET  /api/jobs/{id}               one job with its history
 //	GET  /api/retries                 scheduled jobs with Attempt above 0; query: limit, cursor
 //	GET  /api/recurring, /api/queues, /api/servers, /api/batches, /api/batches/{id}
+//	GET  /api/limits                  limit keys in key order, with their jobs; query: after, limit
 //	POST /api/jobs/requeue            body {"ids": [...]} or {"state", "queue", "kind", "batch"}
 //	POST /api/jobs/delete             same body
 //	POST /api/jobs/{id}/requeue       also /delete

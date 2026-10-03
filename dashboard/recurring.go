@@ -11,6 +11,7 @@ import (
 
 type recurringView struct {
 	ID        string          `json:"id"`
+	Group     string          `json:"group,omitempty"`
 	Spec      string          `json:"spec"`
 	Location  string          `json:"location"`
 	Kind      string          `json:"kind"`
@@ -51,6 +52,7 @@ func (h *handler) recurring(w http.ResponseWriter, r *http.Request) {
 		t := &rc.Template
 		l.Recurring[i] = recurringView{
 			ID:        rc.ID,
+			Group:     rc.Group,
 			Spec:      rc.Spec,
 			Location:  rc.Location,
 			Kind:      t.Kind,
