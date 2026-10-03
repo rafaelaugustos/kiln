@@ -32,7 +32,9 @@ data that produced them, and you can watch and retry them from a dashboard that 
 - **Workflows**: jobs that wait for one or many other jobs, and batches with a job that runs when the
   whole batch is done
 - **Limits** per key, across every server: how many jobs run at once and how many start per second
-- **Recurring jobs** from cron specs, with time zones and a policy for runs missed while nothing was up
+- **Recurring jobs** from cron specs, with time zones, a policy for missed runs, and `SyncRecurring` to
+  keep them in step with your code
+- **Job console**: log lines and a progress bar from inside a handler, live in the dashboard
 - **Unique jobs**, while a job is live or for a window of time
 - **Transactional enqueue**: the job exists only if your transaction commits
 - **Cancellation** of a running job from any process
@@ -259,6 +261,17 @@ client.StartBatch(ctx, b)
 while no server was running: `MisfireOnce` (default, catch up once), `MisfireAll` (run every
 missed occurrence, capped), or `MisfireSkip` (drop stale ones).
 
+`SyncRecurring` declares a group of recurring jobs at once: it sets the ones it's given and removes the
+ones of that group that are no longer there, so deleting a schedule from your code deletes it from the
+store on the next deploy. Jobs set with `SetRecurring` belong to no group and are left alone.
+
+```go
+client.SyncRecurring(ctx, "reports",
+	kiln.RecurringSpec{ID: "daily-sales", Spec: "0 7 * * *", Args: SalesReport{}, Options: []kiln.RecurringOption{kiln.TZ("America/Sao_Paulo")}},
+	kiln.RecurringSpec{ID: "weekly-stock", Spec: "@weekly", Args: StockReport{}},
+)
+```
+
 ### Unique jobs
 
 `Unique{Key}` makes `Enqueue` return the id of a live job with the same kind and key instead of
@@ -337,10 +350,30 @@ unregister, err := kilnotel.Observe(server, store)
 It depends only on the OpenTelemetry API, so it reports through whatever SDK and exporters the
 application already has. `Server.Stats()` and `Server.Healthy()` cover the same ground without it.
 
+### Console
+
+A handler can write log lines and a progress bar that show up on the job's page in the dashboard while it
+runs, like Hangfire.Console:
+
+```go
+func importRows(ctx context.Context, j *kiln.Job[Import]) error {
+	for i, row := range j.Args.Rows {
+		j.Logf("importing %s", row.ID)
+		j.SetProgress(100 * i / len(j.Args.Rows))
+	}
+	return nil
+}
+```
+
+Neither call takes a context or returns an error. kiln buffers them and writes them in the background,
+and once more after the handler returns, so the console is complete when the job finishes. An attempt
+keeps up to 1000 lines, each line up to 4 KiB; lines stay with the job, grouped by attempt, until it is
+pruned.
+
 ### Testing with kilntest
 
 `kilntest.Work` drives a job through the real frozen middleware chain and classification logic
-without a server, for handler unit tests. `RequireEnqueued`/`RequireNotEnqueued` assert on what a
+without a server, for handler unit tests; its result includes the console lines and the progress. `RequireEnqueued`/`RequireNotEnqueued` assert on what a
 piece of code actually enqueued. `drivertest.Run` is the conformance suite a `driver.Store`
 implementation must pass.
 
@@ -374,8 +407,9 @@ mux.Handle("/kiln/", dashboard.New(client, dashboard.Options{
 control plugs into whatever auth your app already has. `dashboard.AllowAll` is for local
 development: it grants read/write access only to requests addressed to `localhost` or a loopback
 IP, and denies everything else. The dashboard shows live counts and a succeeded/failed chart, jobs by
-state with filtering and bulk actions, job detail with redactable args/meta/output, retries,
-recurring schedules, queues, servers and batches, and mirrors all of it under a JSON API at
+state with filtering and bulk actions, job detail with redactable args/meta/output and the live console,
+retries, recurring schedules and their groups, queues, servers, batches, and limits with what each key
+is running and holding back, and mirrors all of it under a JSON API at
 `<prefix>/api/...` for scripting. It's server-rendered with no external assets and a strict CSP.
 
 ## How kiln compares

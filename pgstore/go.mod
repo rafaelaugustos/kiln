@@ -6,7 +6,7 @@ toolchain go1.27.1
 
 require (
 	github.com/jackc/pgx/v5 v5.11.0
-	github.com/rafaelaugustos/kiln v0.5.0
+	github.com/rafaelaugustos/kiln v0.6.0
 )
 
 require (

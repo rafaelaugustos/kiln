@@ -18,3 +18,8 @@ still on v0.3 release jobs whose start time has come without the check that keep
 together after a stall.
 
 v0.5 has no schema changes for the existing stores. `mssqlstore` is new in it.
+
+v0.6 adds two changes, both additive: a log table and a `progress` column for the job console
+(`003_console`), and a nullable group column on recurring jobs (`004_recurring_group`). On SQL Server
+Standard edition, adding the `progress` column with its default may touch every row of the jobs and
+archive tables; on Enterprise, Developer and Azure SQL it only changes metadata.
