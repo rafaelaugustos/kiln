@@ -12,6 +12,7 @@ import (
 	"maps"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -77,17 +78,26 @@ type errorView struct {
 	Message string
 }
 
+var static = regexp.MustCompile(`\{\{t "([^"]+)"\}\}`)
+
 func (h *handler) parse() map[*locale]map[string]*template.Template {
 	out := make(map[*locale]map[string]*template.Template, len(locales))
 	for _, lc := range locales {
-		base := template.Must(template.New("").Funcs(h.funcs(lc)).ParseFS(templateFS, "templates/layout.html"))
+		base := template.Must(template.New("").Funcs(h.funcs(lc)).Parse(lc.bake("layout")))
 		set := make(map[string]*template.Template, len(views))
 		for v, file := range views {
-			set[v] = template.Must(template.Must(base.Clone()).ParseFS(templateFS, "templates/"+file+".html"))
+			set[v] = template.Must(template.Must(base.Clone()).Parse(lc.bake(file)))
 		}
 		out[lc] = set
 	}
 	return out
+}
+
+func (lc *locale) bake(file string) string {
+	b, _ := templateFS.ReadFile("templates/" + file + ".html")
+	return static.ReplaceAllStringFunc(string(b), func(m string) string {
+		return template.HTMLEscapeString(lc.text(static.FindStringSubmatch(m)[1]))
+	})
 }
 
 func (h *handler) funcs(lc *locale) template.FuncMap {
