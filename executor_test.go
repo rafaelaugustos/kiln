@@ -129,7 +129,7 @@ func TestDispatch(t *testing.T) {
 		{ping{N: 0}, []InsertOption{Deadline(time.Now().Add(-time.Second))}, Deleted, 0, false, nil},
 	}
 	for i, tc := range cases {
-		o, err := m.dispatch(context.Background(), tc.args, tc.opts...)
+		o, _, _, err := m.dispatch(context.Background(), tc.args, tc.opts...)
 		if o.State != tc.state || o.Delay != tc.delay || o.Refund != tc.refund {
 			t.Errorf("%d: outcome %+v", i, o)
 		}
@@ -137,7 +137,7 @@ func TestDispatch(t *testing.T) {
 			t.Errorf("%d: err = %v, want %v", i, err, tc.is)
 		}
 	}
-	if o, _ := m.dispatch(context.Background(), ping{N: 0}); string(o.Output) != `{"N":0}` {
+	if o, _, _, _ := m.dispatch(context.Background(), ping{N: 0}); string(o.Output) != `{"N":0}` {
 		t.Errorf("output = %s", o.Output)
 	}
 	if n := calls.Load(); n != int32(len(cases)) {
@@ -149,7 +149,7 @@ func TestUnknownKind(t *testing.T) {
 	t.Parallel()
 	m := NewMux()
 	m.HandleFunc("known", func(context.Context, *RawJob) error { return nil })
-	o, err := m.dispatch(context.Background(), ping{})
+	o, _, _, err := m.dispatch(context.Background(), ping{})
 	if err == nil || o.State != Scheduled || !o.Refund || o.Delay != time.Minute || o.Reason != "unknown kind" {
 		t.Fatalf("outcome %+v err %v", o, err)
 	}
@@ -243,7 +243,7 @@ func TestOutcomeRecoversPanics(t *testing.T) {
 		return e
 	})
 	for _, kind := range []string{"backoff", "nil"} {
-		o, err := m.dispatch(context.Background(), testArgs{K: kind})
+		o, _, _, err := m.dispatch(context.Background(), testArgs{K: kind})
 		var pe *PanicError
 		if o.State != Scheduled || o.Reason != "retry" || o.Delay <= 0 || !strings.Contains(o.Error, "kiln: panic") || !strings.Contains(o.Trace, "goroutine") || !errors.As(err, &pe) {
 			t.Errorf("%s: outcome %+v err %v", kind, o, err)

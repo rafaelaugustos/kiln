@@ -76,6 +76,34 @@ func TestWork(t *testing.T) {
 	}
 }
 
+type report struct{ Lines int }
+
+func (report) Kind() string { return "report" }
+
+func TestWorkConsole(t *testing.T) {
+	t.Parallel()
+	m := kiln.NewMux()
+	kiln.Handle(m, func(ctx context.Context, j *kiln.Job[report]) error {
+		j.Logf("%s\n", strings.Repeat("x", 5000))
+		for i := range j.Args.Lines {
+			j.Logf("line %d", i)
+		}
+		j.SetProgress(250)
+		return nil
+	})
+	r := kilntest.Work(context.Background(), m, report{Lines: 1200})
+	if r.State != kiln.Succeeded || r.Progress != 100 {
+		t.Fatalf("state %s progress %d", r.State, r.Progress)
+	}
+	if len(r.Logs) != 1001 || r.Logs[0] != strings.Repeat("x", 4<<10) || r.Logs[999] != "line 998" ||
+		r.Logs[1000] != "kiln: console truncated" {
+		t.Fatalf("%d lines, last %q", len(r.Logs), r.Logs[len(r.Logs)-1])
+	}
+	if r := kilntest.Work(context.Background(), mux(), signup{Plan: "pro"}); len(r.Logs) > 0 || r.Progress != 0 {
+		t.Fatalf("logs %q progress %d from a handler that wrote none", r.Logs, r.Progress)
+	}
+}
+
 func TestRequireEnqueued(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

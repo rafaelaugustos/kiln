@@ -51,7 +51,7 @@ func (s *Server) start(p *producer, jobs []driver.Job) {
 	seq := s.seq.Load()
 	ts := p.tasks[:0]
 	for i := range jobs {
-		t := &task{client: s.client, job: rawJob(&jobs[i], s.store), ref: jobs[i].Ref, limited: jobs[i].LimitKey != "", timeout: jobs[i].Timeout, prod: p, seq: seq}
+		t := &task{client: s.client, job: rawJob(&jobs[i], s), ref: jobs[i].Ref, limited: jobs[i].LimitKey != "", timeout: jobs[i].Timeout, prod: p, seq: seq}
 		t.Context, t.cancel = context.WithCancelCause(s.base)
 		ts = append(ts, t)
 	}
@@ -74,6 +74,7 @@ func (s *Server) start(p *producer, jobs []driver.Job) {
 
 func (s *Server) work(t *task) {
 	o, err := s.mux.exec(t, &s.cfg)
+	t.job.run.end()
 	t.cancel(context.Canceled)
 	if t.settled.CompareAndSwap(false, true) {
 		if context.Cause(t) == errFenced && o.State != driver.Succeeded {
