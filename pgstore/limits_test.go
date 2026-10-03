@@ -382,10 +382,12 @@ func TestRuleFallback(t *testing.T) {
 	cases := []struct {
 		key     string
 		later   int
+		held    bool
 		wantMax int
 	}{
-		{"unchanged", 0, 2},
-		{"changed", 3, 3},
+		{"unchanged", 0, true, 2},
+		{"changed", 3, true, 3},
+		{"retried", 3, false, 3},
 	}
 	for _, c := range cases {
 		insert(t, s, job("a", limited(c.key, 1)))
@@ -398,7 +400,10 @@ func TestRuleFallback(t *testing.T) {
 		if c.later > 0 {
 			insert(t, s, job("a", limited(c.key, c.later)))
 		}
-		release, pid := hold(c.key)
+		release, pid := func() {}, int32(0)
+		if c.held {
+			release, pid = hold(c.key)
+		}
 		done := make(chan error, 1)
 		go func() { done <- s.readmit(ctx, &w) }()
 		for len(done) == 0 && !blocked(pid) {
@@ -408,12 +413,15 @@ func TestRuleFallback(t *testing.T) {
 		if err := <-done; err != nil {
 			t.Fatalf("%s: readmit: %v", c.key, err)
 		}
+		if left := len(w.keys) > 0; left != c.held {
+			t.Fatalf("%s: readmit left %v to the fallback", c.key, w.keys)
+		}
 		var got int
 		if err := s.pool.QueryRow(ctx, "SELECT max FROM "+s.schema+".limits WHERE key = $1", c.key).Scan(&got); err != nil {
 			t.Fatal(err)
 		}
 		if got != c.wantMax {
-			t.Errorf("%s: max is %d after the fallback, want %d", c.key, got, c.wantMax)
+			t.Errorf("%s: max is %d after readmit, want %d", c.key, got, c.wantMax)
 		}
 	}
 }

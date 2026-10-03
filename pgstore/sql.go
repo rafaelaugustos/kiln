@@ -59,6 +59,7 @@ type statements struct {
 	pruneStats          string
 	pruneUniques        string
 	queues              string
+	readmit             string
 	reconcile           string
 	recurring           string
 	recurrings          string
@@ -142,6 +143,7 @@ func (q *statements) each(fn func(p *string, text string)) {
 	fn(&q.pruneStats, sqlPruneStats)
 	fn(&q.pruneUniques, sqlPruneUniques)
 	fn(&q.queues, sqlQueues)
+	fn(&q.readmit, sqlReadmit)
 	fn(&q.reconcile, sqlReconcile)
 	fn(&q.recurring, sqlRecurring)
 	fn(&q.recurrings, sqlRecurrings)
