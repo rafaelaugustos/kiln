@@ -73,7 +73,7 @@ const sqlPruneBatches = `DELETE FROM {p}batches WHERE id IN (?)`
 
 // Prune deletes old rows as [driver.Coordinator.Prune] describes, in a short transaction for each
 // kind of row. A failing step does not stop the others unless ctx is done; the error Prune returns
-// joins those of every step that failed.
+// joins those of every step that failed, and the count leaves their rows out.
 func (s *Store) Prune(ctx context.Context, p driver.PruneParams) (int, error) {
 	limit := p.Limit
 	if limit <= 0 {
@@ -109,12 +109,13 @@ func (s *Store) Prune(ctx context.Context, p driver.PruneParams) (int, error) {
 	var errs []error
 	for _, step := range steps {
 		n, err := step()
-		total += n
-		if err != nil {
-			errs = append(errs, err)
-			if ctx.Err() != nil {
-				break
-			}
+		if err == nil {
+			total += n
+			continue
+		}
+		errs = append(errs, err)
+		if ctx.Err() != nil {
+			break
 		}
 	}
 	if len(errs) > 0 {

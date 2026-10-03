@@ -14,9 +14,10 @@ var errDone = errors.New("kiln: transaction already committed or rolled back")
 
 // Tx is a transaction on a [Store], and a [driver.TxWriter]. Each write is checked when it is
 // made, against the store and the earlier writes of the Tx, and checked again by Commit, which
-// applies them all or none. The unique keys of the jobs it inserts are taken at once: while the Tx
-// is open, an insert elsewhere with one of them is a duplicate of the Tx's job. Commit or Rollback
-// finishes the Tx; any write, Commit or Rollback after that fails.
+// applies them all or none. The unique keys of the jobs it inserts are taken at once, and a
+// UniqueFor window starts then: while the Tx is open, an insert elsewhere with one of them is a
+// duplicate of the Tx's job. Commit or Rollback finishes the Tx; any write, Commit or Rollback
+// after that fails.
 type Tx struct {
 	s    *Store
 	ov   overlay

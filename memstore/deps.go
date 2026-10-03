@@ -2,6 +2,7 @@ package memstore
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/rafaelaugustos/kiln/driver"
 )
@@ -15,7 +16,7 @@ func (s *Store) settle() {
 		case len(s.done) > 0:
 			s.unblock(pop(&s.done))
 		case len(s.admit) > 0:
-			s.admitKey(pop(&s.admit))
+			s.admitKey(pop(&s.admit), math.MaxInt)
 		default:
 			return
 		}

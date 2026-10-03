@@ -137,3 +137,32 @@ func TestPruneUniquesRacesReclaim(t *testing.T) {
 		t.Fatalf("%d live keys, want the 2 reclaimed ones", n)
 	}
 }
+
+func TestRolledBackWorkUncounted(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := open(t)
+	insert(t, s, job("l", func(p *driver.InsertParams) { p.LimitKey, p.LimitMax = "k", 1 }))
+	failed := claim(t, s, 1)[0]
+	finish(t, s, driver.Outcome{Ref: failed.Ref, State: driver.Failed})
+	enqueued := insert(t, s, job("p"))[0].ID
+	for _, stmt := range []string{
+		"CREATE TRIGGER kiln_no_stats BEFORE INSERT ON kiln_stats FOR EACH ROW SIGNAL SQLSTATE '45000'",
+		"CREATE TRIGGER kiln_no_limits BEFORE UPDATE ON kiln_limits FOR EACH ROW SIGNAL SQLSTATE '45000'",
+	} {
+		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, err := s.Delete(ctx, driver.Filter{IDs: []int64{enqueued}}); err == nil || n != 0 {
+		t.Errorf("delete returned %d, %v; want 0 and an error", n, err)
+	}
+	if n, err := s.Requeue(ctx, driver.Filter{IDs: []int64{failed.ID}}); err == nil || n != 0 {
+		t.Errorf("requeue returned %d, %v; want 0 and an error", n, err)
+	}
+	p := keepAll
+	p.Stats = time.Microsecond
+	if n, err := s.Prune(ctx, p); err == nil || n != 0 {
+		t.Errorf("prune returned %d, %v; want 0 and an error", n, err)
+	}
+}

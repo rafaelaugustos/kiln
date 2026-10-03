@@ -3,6 +3,7 @@ package memstore_test
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/rafaelaugustos/kiln/driver"
 )
@@ -124,4 +125,17 @@ func TestTxCommitAdmits(t *testing.T) {
 	}
 	expectState(t, s, res[0].ID, driver.Enqueued)
 	expectState(t, s, res[1].ID, driver.Throttled)
+}
+
+func TestTxUniqueWindow(t *testing.T) {
+	t.Parallel()
+	s, c := open(t)
+	tx := s.Begin()
+	insert(t, tx, params("a", unique("k", time.Hour)))
+	c.add(30 * time.Minute)
+	must(t, tx.Commit())
+	c.add(31 * time.Minute)
+	if res := insert(t, s, params("a", unique("k", time.Hour))); res[0].Duplicate {
+		t.Fatal("key still held an hour after the insert that took it")
+	}
 }

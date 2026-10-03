@@ -106,9 +106,9 @@ func filterSQL(f driver.Filter) (index, cond raw) {
 }
 
 // Delete deletes the jobs that match f, as [driver.Admin.Delete] describes, in transactions of up
-// to 1000 jobs taken in order of id, so an error leaves the earlier transactions applied. The
-// servers running jobs it marks for cancellation hear of it through the bus, or at their next
-// heartbeat.
+// to 1000 jobs taken in order of id, so an error leaves the earlier transactions applied, and the
+// count it returns with the error covers only those. The servers running jobs it marks for
+// cancellation hear of it through the bus, or at their next heartbeat.
 func (s *Store) Delete(ctx context.Context, f driver.Filter) (int, error) {
 	if err := driver.CheckFilter(f); err != nil {
 		return 0, err
@@ -121,10 +121,10 @@ func (s *Store) Delete(ctx context.Context, f driver.Filter) (int, error) {
 	var after int64
 	for {
 		n, seen, last, err := s.deleteChunk(ctx, render(s.q.lockTargets, index, cond, after))
-		total += n
 		if err != nil {
 			return total, fmt.Errorf("kiln: delete: %w", err)
 		}
+		total += n
 		if seen < chunk {
 			return total, nil
 		}
@@ -233,7 +233,8 @@ type requeued struct {
 
 // Requeue moves the jobs that match f back to their queues, as [driver.Admin.Requeue] describes,
 // in transactions of up to 1000 jobs, failed and scheduled ones before archived ones, so an error
-// leaves the earlier transactions applied.
+// leaves the earlier transactions applied, and the count it returns with the error covers only
+// those.
 func (s *Store) Requeue(ctx context.Context, f driver.Filter) (int, error) {
 	if err := driver.CheckFilter(f); err != nil {
 		return 0, err
@@ -244,10 +245,10 @@ func (s *Store) Requeue(ctx context.Context, f driver.Filter) (int, error) {
 		var after int64
 		for {
 			n, seen, last, err := s.requeueChunk(ctx, render(s.q.lockFailed, index, cond, after), false)
-			total += n
 			if err != nil {
 				return total, fmt.Errorf("kiln: requeue: %w", err)
 			}
+			total += n
 			if seen < chunk {
 				break
 			}
@@ -266,10 +267,10 @@ func (s *Store) Requeue(ctx context.Context, f driver.Filter) (int, error) {
 				where += raw(render(" AND (j.finalized_at < ? OR j.finalized_at = ? AND j.id < ?)", cursor.at, cursor.at, cursor.id))
 			}
 			n, seen, last, err := s.requeueChunk(ctx, render(s.q.lockArchived, index, where), true)
-			total += n
 			if err != nil {
 				return total, fmt.Errorf("kiln: requeue: %w", err)
 			}
+			total += n
 			if seen < chunk {
 				break
 			}
