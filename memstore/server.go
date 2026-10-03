@@ -94,7 +94,7 @@ func (s *Store) Orphans(_ context.Context, deadAfter time.Duration, limit int) (
 		}
 	}
 	slices.SortFunc(out, func(a, b driver.Orphan) int { return cmp.Compare(a.ID, b.ID) })
-	return out[:min(len(out), limitOr(limit, 1000))], nil
+	return out[:min(len(out), max(limit, 1))], nil
 }
 
 // Servers returns the registered servers, ordered by id.

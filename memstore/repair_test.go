@@ -103,3 +103,28 @@ func TestSweepRepairsMissingParents(t *testing.T) {
 		t.Fatalf("second sweep changed %d rows", n)
 	}
 }
+
+func TestSweepLimit(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := New()
+	for _, key := range []string{"a", "b", "c"} {
+		p := driver.InsertParams{Kind: "l", Queue: "q", Args: []byte(`{}`), MaxAttempts: 1, LimitKey: key, LimitMax: 1}
+		if _, err := s.Insert(ctx, []driver.InsertParams{p, p}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.begin()
+	for _, l := range s.limits {
+		l.active = 5
+	}
+	s.end()
+	for i := range 3 {
+		if n, err := s.Sweep(ctx, 1); err != nil || n != 1 {
+			t.Fatalf("sweep %d with limit 1 changed %d rows, %v", i, n, err)
+		}
+	}
+	if n, _ := s.Sweep(ctx, 1); n != 0 {
+		t.Fatalf("sweep after the repairs changed %d rows", n)
+	}
+}

@@ -40,6 +40,18 @@ func (w *wake) merge(o wake) {
 	maps.Copy(w.late, o.late)
 }
 
+func (w *wake) hold(keys []string) {
+	for _, key := range keys {
+		if _, ok := w.late[key]; ok {
+			continue
+		}
+		if w.late == nil {
+			w.late = make(map[string]rule, len(keys))
+		}
+		w.late[key] = rule{}
+	}
+}
+
 func (s *Store) admitLate(ctx context.Context, w *wake) error {
 	if len(w.late) == 0 {
 		return nil

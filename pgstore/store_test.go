@@ -112,6 +112,13 @@ func record(t testing.TB, s *Store, id int64) driver.Record {
 	return r
 }
 
+func TestCloseTwice(t *testing.T) {
+	t.Parallel()
+	s := open(t)
+	s.Close()
+	s.Close()
+}
+
 func TestStatementsPrepare(t *testing.T) {
 	t.Parallel()
 	s := open(t)

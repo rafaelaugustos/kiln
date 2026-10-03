@@ -25,7 +25,7 @@ func (s *Store) Due(_ context.Context, limit int) ([]driver.Recurring, time.Time
 	slices.SortFunc(due, func(a, b *driver.Recurring) int {
 		return cmp.Or(a.NextRunAt.Compare(b.NextRunAt), strings.Compare(a.ID, b.ID))
 	})
-	due = due[:min(len(due), limitOr(limit, 100))]
+	due = due[:min(len(due), max(limit, 1))]
 	out := make([]driver.Recurring, len(due))
 	for i, r := range due {
 		out[i] = cloneRecurring(r)

@@ -87,7 +87,7 @@ func New(ctx context.Context, db *sql.DB, opts ...Option) (*Store, error) {
 
 // Close publishes the events still pending, when the store has a bus, and gives back the
 // connection the store kept. It closes neither db nor the bus. Call it after nothing uses the
-// store any more.
+// store any more; calling it again does nothing.
 func (s *Store) Close() {
 	s.nt.close()
 	s.side.close()

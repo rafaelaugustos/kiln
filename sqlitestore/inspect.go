@@ -43,7 +43,7 @@ const sqlCounts = `SELECT
 	(SELECT COALESCE(sum(deleted), 0) FROM {p}stats)`
 
 const sqlSeries = `SELECT bucket, sum(succeeded), sum(failed), sum(deleted), sum(retried) FROM {p}stats
-WHERE bucket > 0 AND bucket >= ? AND bucket <= ?
+WHERE bucket > 0 AND bucket >= ? AND bucket < ?
 GROUP BY bucket
 ORDER BY bucket`
 

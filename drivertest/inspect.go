@@ -17,6 +17,7 @@ var inspectTests = []test{
 	{"JobsLimit", testJobsLimit},
 	{"Counts", testCounts},
 	{"Series", testSeries},
+	{"SeriesEnd", testSeriesEnd},
 	{"DeletedStats", testDeletedStats},
 	{"Queues", testQueues},
 }
@@ -264,6 +265,30 @@ func testSeries(t *testing.T, s driver.Store) {
 	ps, err := s.Series(t.Context(), n1.Add(time.Hour), n1.Add(2*time.Hour), time.Minute)
 	if err != nil || len(ps) != 0 {
 		t.Fatalf("future series %+v %v, want none", ps, err)
+	}
+}
+
+func testSeriesEnd(t *testing.T, s driver.Store) {
+	apply(t, s, outcome(start(t, s, task("q")), driver.Succeeded))
+	series := func(from, to time.Time) []driver.Point {
+		t.Helper()
+		ps, err := s.Series(t.Context(), from, to, time.Minute)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return ps
+	}
+	n := now(t, s)
+	ps := series(n.Add(-time.Hour), n.Add(time.Hour))
+	if len(ps) != 1 {
+		t.Fatalf("series %+v, want one bucket", ps)
+	}
+	at := ps[0].At
+	if ps := series(at.Add(-time.Hour), at); len(ps) != 0 {
+		t.Fatalf("series up to %v: %+v, want the minute that starts there left out", at, ps)
+	}
+	if ps := series(at, at.Add(time.Millisecond)); len(ps) != 1 || !ps[0].At.Equal(at) || ps[0].Succeeded != 1 {
+		t.Fatalf("series from %v: %+v, want its minute", at, ps)
 	}
 }
 

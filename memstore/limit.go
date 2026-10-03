@@ -80,10 +80,10 @@ func (s *Store) admitting(key string) {
 	}
 }
 
-func (s *Store) admitKey(key string) int {
+func (s *Store) admitKey(key string, most int) int {
 	l := s.limits[key]
 	n := 0
-	for ; l.rate == 0 || n < admitBatch; n++ {
+	for ; n < most && (l.rate == 0 || n < admitBatch); n++ {
 		j := l.waiting.peek()
 		if j == nil || j.granted && l.full() {
 			break

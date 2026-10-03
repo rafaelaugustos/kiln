@@ -186,9 +186,9 @@ const batchDeps = `, r AS MATERIALIZED (
 	UPDATE {s}.jobs j SET deps_pending = greatest(j.deps_pending - k.n, 0),
 		state = CASE WHEN j.deps_pending - k.n > 0 THEN 'awaiting' ELSE {s}.ready(j.run_at, j.limit_key) END
 	FROM k WHERE j.id = k.id
-	RETURNING j.queue, j.state
+	RETURNING j.queue, j.state, j.limit_key
 )
-SELECT u.queue, u.state::text FROM u`
+SELECT u.queue, u.state::text, coalesce(u.limit_key, '') FROM u`
 
 const completeWhere = `) AND b.sealed AND b.finished_at IS NULL
 		AND NOT EXISTS (SELECT 1 FROM {s}.jobs j WHERE j.batch_id = b.id)
@@ -223,7 +223,7 @@ func (s *Store) Finish(ctx context.Context, server string, outs []driver.Outcome
 	idx := make([]int, 0, len(outs))
 	for i := range outs {
 		switch outs[i].State {
-		case driver.Succeeded, driver.Failed, driver.Deleted, driver.Scheduled, driver.Enqueued, driver.Throttled:
+		case driver.Succeeded, driver.Failed, driver.Deleted, driver.Scheduled, driver.Enqueued:
 			if bytes.IndexByte(outs[i].Output, 0) < 0 {
 				idx = append(idx, i)
 				continue
@@ -275,9 +275,6 @@ func (s *Store) finishOnce(ctx context.Context, server string, outs []driver.Out
 		o := &outs[i]
 		ids[k], claims[k] = o.ID, o.Claim
 		wants[k] = string(o.State)
-		if o.State == driver.Throttled {
-			wants[k] = string(driver.Enqueued)
-		}
 		delays[k] = micros(o.Delay)
 		refunds[k] = o.Refund
 		reasons[k] = clean(o.Reason, 256)
@@ -356,13 +353,16 @@ func (w *wake) scanQueues(rows pgx.Rows) error {
 }
 
 func (w *wake) scanStates(rows pgx.Rows) error {
-	var q, state string
+	var q, state, key string
 	for rows.Next() {
-		if err := rows.Scan(&q, &state); err != nil {
+		if err := rows.Scan(&q, &state, &key); err != nil {
 			return err
 		}
-		if state == string(driver.Enqueued) {
+		switch driver.State(state) {
+		case driver.Enqueued:
 			w.queue(q)
+		case driver.Throttled:
+			w.hold(key)
 		}
 	}
 	return rows.Err()

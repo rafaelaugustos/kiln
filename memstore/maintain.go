@@ -12,7 +12,7 @@ import (
 // Promote moves up to limit scheduled jobs whose run time has come, earliest first, as
 // [driver.Coordinator.Promote] describes.
 func (s *Store) Promote(_ context.Context, limit int) (driver.Promoted, error) {
-	limit = limitOr(limit, 1000)
+	limit = max(limit, 1)
 	s.begin()
 	defer s.end()
 	var p driver.Promoted
@@ -32,11 +32,11 @@ func (s *Store) Promote(_ context.Context, limit int) (driver.Promoted, error) {
 	return p, nil
 }
 
-// Sweep repairs what other calls leave to it, as [driver.Coordinator.Sweep] describes, except
-// that limit caps only the awaiting jobs it repairs and the sealed batches it finishes: it then
-// recounts and admits every limit key, so the count it returns can exceed limit.
+// Sweep repairs what other calls leave to it, as [driver.Coordinator.Sweep] describes. What a
+// repair sets off in turn, such as the children of a job it archives, is not counted against
+// limit.
 func (s *Store) Sweep(_ context.Context, limit int) (int, error) {
-	limit = limitOr(limit, 1000)
+	limit = max(limit, 1)
 	s.begin()
 	defer s.end()
 	n := 0
@@ -68,11 +68,14 @@ func (s *Store) Sweep(_ context.Context, limit int) (int, error) {
 		}
 	}
 	for key, l := range s.limits {
+		if n == limit {
+			break
+		}
 		if l.active != active[key] {
 			l.active = active[key]
 			n++
 		}
-		n += s.admitKey(key)
+		n += s.admitKey(key, limit-n)
 	}
 	s.settle()
 	return n, nil

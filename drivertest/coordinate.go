@@ -16,6 +16,7 @@ var coordinateTests = []test{
 	{"Resign", testResign},
 	{"Promote", testPromote},
 	{"PromoteLimit", testPromoteLimit},
+	{"ZeroLimit", testZeroLimit},
 	{"PromoteConcurrent", testPromoteConcurrent},
 	{"Heartbeat", testHeartbeat},
 	{"HeartbeatStarted", testHeartbeatStarted},
@@ -231,6 +232,39 @@ func testPromoteLimit(t *testing.T, s driver.Store) {
 	}
 	if c := counts(t, s); total != 6 || c.Enqueued != 6 || c.Scheduled != 0 {
 		t.Fatalf("promoted %d, counts %+v", total, c)
+	}
+}
+
+func testZeroLimit(t *testing.T, s driver.Store) {
+	ps := tasks(2, "due")
+	for i := range ps {
+		ps[i].Delay = 10 * time.Millisecond
+	}
+	insert(t, s, ps...)
+	insert(t, s, tasks(2, "run")...)
+	if js := claim(t, s, 0, "run"); len(js) != 0 {
+		t.Fatalf("claimed %v with limit 0", jobIDs(js))
+	}
+	js := claimAs(t, s, "ghost", 2, "run")
+	if os := orphans(t, s, time.Hour, 0); len(os) != 1 {
+		t.Fatalf("%d orphans with limit 0, want 1", len(os))
+	}
+	n := now(t, s)
+	put(t, s, cron("a", n.Add(-time.Minute)))
+	put(t, s, cron("b", n.Add(-time.Minute)))
+	if rs, _, err := s.Due(t.Context(), 0); err != nil || len(rs) != 1 {
+		t.Fatalf("due with limit 0 returned %d rows, %v", len(rs), err)
+	}
+	apply(t, s, outcome(js[0], driver.Succeeded), outcome(js[1], driver.Succeeded))
+	time.Sleep(20 * time.Millisecond)
+	if p := promote(t, s, 0); p.Count != 1 {
+		t.Fatalf("promoted %d with limit 0, want 1", p.Count)
+	}
+	pp := keep()
+	pp.Succeeded, pp.Limit = time.Millisecond, -1
+	prune(t, s, pp)
+	if !gone(t, s, js[0].ID) || !gone(t, s, js[1].ID) {
+		t.Fatal("prune with limit -1 left a job past its retention")
 	}
 }
 

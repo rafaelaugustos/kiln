@@ -91,7 +91,7 @@ func TestRateBound(t *testing.T) {
 	if cs, _ := s.Counts(ctx); cs.Enqueued != 1 || cs.Scheduled != 999 || cs.Throttled != 500 {
 		t.Fatalf("after insert %+v, want 1000 jobs through one admission", cs)
 	}
-	if n, err := s.Sweep(ctx, 100); err != nil || n != 500 {
+	if n, err := s.Sweep(ctx, 1000); err != nil || n != 500 {
 		t.Fatalf("sweep = %d, %v, want the other 500 reserved", n, err)
 	}
 	for _, i := range []int{999, 1000, 1499} {

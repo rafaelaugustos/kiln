@@ -91,7 +91,8 @@ func New(ctx context.Context, pool *pgxpool.Pool, opts ...Option) (*Store, error
 
 // Close sends the notifications still pending and closes the store's pool, waiting for the
 // queries in progress. It closes neither the pool given to New nor the connections of Subscribe
-// calls, which end with their contexts. Call it only once, after nothing uses the store any more.
+// calls, which end with their contexts. Call it after nothing uses the store any more; calling it
+// again does nothing.
 func (s *Store) Close() {
 	s.nt.close()
 	s.pool.Close()

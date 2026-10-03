@@ -19,6 +19,7 @@ type notifier struct {
 	wake    chan struct{}
 	stop    chan struct{}
 	done    chan struct{}
+	once    sync.Once
 }
 
 func newNotifier(s *Store) *notifier {
@@ -106,8 +107,10 @@ func (n *notifier) flush() {
 }
 
 func (n *notifier) close() {
-	close(n.stop)
-	<-n.done
+	n.once.Do(func() {
+		close(n.stop)
+		<-n.done
+	})
 }
 
 func (s *Store) notifyNow(ctx context.Context, channel string, payloads []string) error {

@@ -53,10 +53,11 @@ func (s *Store) once(ctx context.Context, fn func(tx *sql.Tx) error) error {
 
 // TxWriter is a [driver.TxWriter] bound to an application's transaction, made by [Store.Tx]. Its
 // writes neither admit throttled jobs nor publish events from inside the transaction; after the
-// commit, [TxWriter.Notify] admits the throttled jobs of the limit keys its inserts used and
-// publishes the events. Each write runs under a savepoint, so one that fails is undone and leaves
-// the transaction usable, unless MySQL has rolled back the whole transaction, as it does after a
-// deadlock; every later write then fails. A TxWriter is not safe for concurrent use.
+// commit, [TxWriter.Notify] admits the throttled jobs of the limit keys its inserts used or its
+// seals released jobs under, and publishes the events. Each write runs under a savepoint, so one
+// that fails is undone and leaves the transaction usable, unless MySQL has rolled back the whole
+// transaction, as it does after a deadlock; every later write then fails. A TxWriter is not safe
+// for concurrent use.
 type TxWriter struct {
 	s    *Store
 	tx   *sql.Tx
@@ -92,7 +93,8 @@ func (w *TxWriter) OpenBatch(ctx context.Context, nb driver.NewBatch) (int64, er
 	return id, err
 }
 
-// SealBatch seals the batch id inside the transaction, or fails with [driver.ErrNotFound].
+// SealBatch seals the batch id inside the transaction, or fails with [driver.ErrNotFound], leaving
+// the admission of the jobs it releases to [TxWriter.Notify].
 func (w *TxWriter) SealBatch(ctx context.Context, id int64) error {
 	var f *fallout
 	err := w.atomic(ctx, func() (err error) {
@@ -103,15 +105,16 @@ func (w *TxWriter) SealBatch(ctx context.Context, id int64) error {
 		return err
 	}
 	w.wake.queues = merge(w.wake.queues, f.queues...)
+	w.wake.hold(f.throttle)
 	return nil
 }
 
-// Notify admits the throttled jobs of the limit keys the transaction's inserts used, in a
-// transaction of its own, and, when the store has a bus, publishes the queues that received jobs
-// to run. Call it after the transaction commits. Its error is advisory: the jobs are committed
-// either way, and without Notify they wait for the next sweep and the servers' next poll. Calling
-// it twice, or after a rollback, does no harm, but a second call does nothing, even after the
-// first failed.
+// Notify admits the throttled jobs of the limit keys the transaction's inserts used or its seals
+// released jobs under, in a transaction of its own, and, when the store has a bus, publishes the
+// queues that received jobs to run. Call it after the transaction commits. Its error is
+// advisory: the jobs are committed either way, and without Notify they wait for the next sweep and
+// the servers' next poll. Calling it twice, or after a rollback, does no harm, but a second call
+// does nothing, even after the first failed.
 func (w *TxWriter) Notify(ctx context.Context) error {
 	wk := w.wake
 	w.wake = wake{}
@@ -143,8 +146,8 @@ func (w *TxWriter) atomic(ctx context.Context, fn func() error) error {
 // InTx runs fn in a READ COMMITTED transaction and commits it if fn returns nil; otherwise it
 // rolls back and returns fn's error. A transaction that ends in a deadlock or a lock wait timeout
 // is retried with a new call to fn, up to five attempts in all, so fn must be safe to repeat.
-// After the commit InTx admits the throttled jobs of the limit keys fn's inserts used and
-// publishes events in the background; neither can fail the call.
+// After the commit InTx admits the throttled jobs of the limit keys fn's inserts used or its seals
+// released jobs under, and publishes events in the background; neither can fail the call.
 func (s *Store) InTx(ctx context.Context, fn func(w driver.Writer) error) error {
 	var w *TxWriter
 	err := s.txn(ctx, func(tx *sql.Tx) error {

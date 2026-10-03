@@ -139,12 +139,12 @@ func (s *Store) Series(_ context.Context, from, to time.Time, step time.Duration
 		return nil, fmt.Errorf("%w: step %s", driver.ErrInvalid, step)
 	}
 	sec := int64(step / time.Second)
-	lo, hi := floor(from.Unix(), sec), to.Unix()
+	lo := floor(from.Unix(), sec)
 	s.begin()
 	defer s.end()
 	sums := make(map[int64]*counters)
 	for k, c := range s.stats {
-		if k.at < lo || k.at > hi {
+		if k.at < lo || !time.Unix(k.at, 0).Before(to) {
 			continue
 		}
 		at := floor(k.at, sec)

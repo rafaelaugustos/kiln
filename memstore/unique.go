@@ -23,7 +23,11 @@ func (s *Store) holder(key string) *uniq {
 func (s *Store) hold(j *job) {
 	switch {
 	case j.uniqueFor > 0:
-		s.uniques[j.unique] = &uniq{job: j.id, expires: j.createdAt.Add(j.uniqueFor)}
+		u := &uniq{job: j.id, expires: j.createdAt.Add(j.uniqueFor)}
+		if t := s.uniques[j.unique]; t != nil && t.job == j.id {
+			u.expires = t.expires
+		}
+		s.uniques[j.unique] = u
 	case j.state == driver.Deleted:
 		s.release(j)
 	default:

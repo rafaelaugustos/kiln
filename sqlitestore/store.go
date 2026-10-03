@@ -26,6 +26,7 @@ type Store struct {
 	q      statements
 	w      *writer
 	hub    *hub
+	closed sync.Once
 
 	mu      sync.Mutex
 	cursors struct {
@@ -97,11 +98,13 @@ func configure(ctx context.Context, db *sql.DB) error {
 
 // Close publishes the events still pending, when the store has a bus, makes Subscribe calls
 // return with an error, and gives back the connection kept for writes once every Store on db is
-// closed. It closes neither db nor the bus. Call it only once, after nothing uses the store any
-// more.
+// closed. It closes neither db nor the bus. Call it after nothing uses the store any more; calling
+// it again does nothing.
 func (s *Store) Close() {
-	s.hub.close()
-	s.w.release()
+	s.closed.Do(func() {
+		s.hub.close()
+		s.w.release()
+	})
 }
 
 // Tx returns a writer that inserts jobs and opens and seals batches inside tx, so that they

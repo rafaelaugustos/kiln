@@ -23,12 +23,14 @@ func (s *Store) OpenBatch(ctx context.Context, nb driver.NewBatch) (int64, error
 }
 
 // SealBatch seals the batch id and, when none of its members is live, finishes it and releases the
-// jobs that wait for it, in one round trip. It fails with [driver.ErrNotFound] for an unknown id.
+// jobs that wait for it, in one round trip, and in a second one admits those of them that went to
+// throttled. It fails with [driver.ErrNotFound] for an unknown id.
 func (s *Store) SealBatch(ctx context.Context, id int64) error {
 	w, err := s.sealBatch(ctx, s.pool, id)
 	if err != nil {
 		return err
 	}
+	s.admitLate(ctx, &w)
 	s.nt.jobs(w.queues...)
 	return nil
 }

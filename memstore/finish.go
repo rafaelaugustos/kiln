@@ -53,7 +53,7 @@ func (s *Store) finish(o *driver.Outcome) driver.Result {
 	if o.Refund {
 		j.attempt = max(j.attempt-1, 0)
 	}
-	if o.Output != nil {
+	if len(o.Output) > 0 && to.Archived() {
 		j.output = slices.Clone(o.Output)
 	}
 	switch to {

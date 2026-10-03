@@ -132,6 +132,7 @@ type wake struct {
 	queues []string
 	moved  int
 	rules
+	held []string
 }
 
 func (w *wake) queue(q string) {
@@ -140,11 +141,20 @@ func (w *wake) queue(q string) {
 	}
 }
 
+func (w *wake) hold(key string) {
+	if !slices.Contains(w.held, key) {
+		w.held = append(w.held, key)
+	}
+}
+
 func (w *wake) merge(o wake) {
 	for _, q := range o.queues {
 		w.queue(q)
 	}
 	w.rules.merge(o.rules)
+	for _, key := range o.held {
+		w.hold(key)
+	}
 }
 
 type holder struct {

@@ -3,6 +3,7 @@ package sqlitestore
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/rafaelaugustos/kiln/driver"
@@ -19,14 +20,21 @@ const (
 var sentinels = []error{driver.ErrNotFound, driver.ErrConflict, driver.ErrLost, driver.ErrClosed, driver.ErrInvalid,
 	driver.ErrTooLarge, driver.ErrNilTx}
 
-type coded interface {
-	error
-	Code() int
-}
-
 func code(err error) int {
-	if e, ok := errors.AsType[coded](err); ok {
-		return e.Code() & 0xff
+	for ; err != nil; err = errors.Unwrap(err) {
+		v := reflect.ValueOf(err)
+		c := v.MethodByName("Code")
+		if c.IsValid() && c.Type().NumIn() == 0 && c.Type().NumOut() == 1 {
+			c = c.Call(nil)[0]
+		} else if v = reflect.Indirect(v); v.Kind() == reflect.Struct {
+			c = v.FieldByName("Code")
+		}
+		switch {
+		case c.CanInt():
+			return int(c.Int() & 0xff)
+		case c.CanUint():
+			return int(c.Uint() & 0xff)
+		}
 	}
 	return 0
 }
