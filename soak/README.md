@@ -53,7 +53,10 @@ After the drain (all jobs final, at most 10 minutes) the workers are stopped and
   by a shutdown);
 - every succeeded job has a run that returned nil;
 - a limit key never had more than Max runs at once, and no window of 1s, 10s or 1m held more
-  starts than Rate*(W+0.5s)/Per + Burst, the half second covering claim latency;
+  starts than Rate*(W+0.5s)/Per + Burst, the half second covering claim latency. A window over
+  that bound which starts within 5s after a database restart, or after a second in which no job
+  started anywhere (a store stall), is a warning instead: the rate is kept over admissions, and a
+  stall between an admission and its commit can let jobs admitted around it start together;
 - the limits' active, throttled and reserved counts are 0 and a Sweep finds nothing to repair;
 - no worker exited on its own, and every SIGTERM ended in a clean exit.
 
