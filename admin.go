@@ -71,8 +71,9 @@ func (c *Client) Get(ctx context.Context, id int64) (Record, error) {
 }
 
 // List returns a page of the jobs in q.State, which is required, optionally narrowed by queue,
-// kind and batch, in the order described at [driver.Inspector.Jobs]. To get the next page, pass
-// the returned Next as q.Cursor.
+// kind, batch and tag, in the order described at [driver.Inspector.Jobs]. To get the next page,
+// pass the returned Next as q.Cursor. A page narrowed by tag can be short, or empty, with more to
+// come.
 func (c *Client) List(ctx context.Context, q JobQuery) (Page, error) {
 	if !q.State.Valid() {
 		return Page{}, fmt.Errorf("%w: state %q", ErrInvalid, q.State)

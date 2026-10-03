@@ -23,6 +23,17 @@ const liveRecord = recordColumns + `, j.cancel_requested, j.deps_pending, j.prog
 
 const archivedRecord = recordColumns + `, FALSE, 0, j.progress, COALESCE(j.title, '')`
 
+const tagScan = 1000
+
+const sqlTagged = `SELECT %[1]s, t.n = %[2]d FROM (
+	SELECT j.id, j.hit, ROW_NUMBER() OVER (ORDER BY %[3]s) AS n FROM (
+		SELECT j.id, j.run_at, j.priority, j.finalized_at, %[4]s MEMBER OF (j.tags) AS hit%[5]s
+		ORDER BY %[3]s LIMIT %[2]d
+	) j
+) t STRAIGHT_JOIN %[6]s j ON j.id = t.id
+WHERE t.hit OR t.n = %[2]d
+ORDER BY t.n LIMIT %[7]d`
+
 const childrenOf = `(SELECT JSON_ARRAYAGG(d.job_id) FROM {p}deps d WHERE d.batch = FALSE AND d.parent_id = j.id)`
 
 const sqlJob = `SELECT ` + liveRecord + `, j.history, NULL, ` + childrenOf + ` FROM {p}jobs j WHERE j.id = ?
@@ -106,7 +117,7 @@ func (s *Store) Job(ctx context.Context, id int64) (driver.Record, error) {
 	return recs[0], nil
 }
 
-func scanRecords(rows *sql.Rows, full bool) ([]driver.Record, error) {
+func scanRecords(rows *sql.Rows, full bool, extra ...any) ([]driver.Record, error) {
 	defer rows.Close()
 	var (
 		out                                 []driver.Record
@@ -124,7 +135,7 @@ func scanRecords(rows *sql.Rows, full bool) ([]driver.Record, error) {
 		if full {
 			dst = append(dst, &hist, &r.Output, &children)
 		}
-		if err := rows.Scan(dst...); err != nil {
+		if err := rows.Scan(append(dst, extra...)...); err != nil {
 			return nil, err
 		}
 		r.Meta = decodeMeta(meta)
@@ -150,7 +161,9 @@ func scanRecords(rows *sql.Rows, full bool) ([]driver.Record, error) {
 }
 
 // Jobs returns a page of the jobs in q.State that match the rest of q, in the order
-// [driver.Inspector.Jobs] specifies. Its records leave out History, Output and Children.
+// [driver.Inspector.Jobs] specifies. Its records leave out History, Output and Children. With
+// q.Tag it looks at no more than 1000 jobs for a page, and sets Next when it stops there, even on a
+// short or empty page.
 func (s *Store) Jobs(ctx context.Context, q driver.JobQuery) (driver.Page, error) {
 	if !q.State.Valid() {
 		return driver.Page{}, fmt.Errorf("%w: state %q", driver.ErrInvalid, q.State)
@@ -174,8 +187,6 @@ func (s *Store) Jobs(ctx context.Context, q driver.JobQuery) (driver.Page, error
 		table, cols = "archive", archivedRecord
 	}
 	b := make([]byte, 0, 1024)
-	b = append(b, "SELECT "...)
-	b = append(b, cols...)
 	b = append(b, " FROM "...)
 	b = append(b, s.prefix...)
 	b = append(b, table...)
@@ -214,32 +225,53 @@ func (s *Store) Jobs(ctx context.Context, q driver.JobQuery) (driver.Page, error
 			b = appendSQL(b, " AND j.id < ?", c2)
 		}
 	}
-	b = appendSQL(b, " ORDER BY "+order+" LIMIT ?", limit+1)
-	rows, err := s.db.QueryContext(ctx, string(b))
+	var (
+		query string
+		edge  bool
+		extra []any
+	)
+	if q.Tag == "" {
+		query = string(appendSQL([]byte("SELECT "+cols+string(b)), " ORDER BY "+order+" LIMIT ?", limit+1))
+	} else {
+		tag := string(appendString(nil, q.Tag))
+		query = fmt.Sprintf(sqlTagged, cols, tagScan, order, tag, b, s.prefix+table, limit+1)
+		extra = append(extra, &edge)
+	}
+	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {
 		return driver.Page{}, fmt.Errorf("kiln: jobs: %w", err)
 	}
-	recs, err := scanRecords(rows, false)
+	recs, err := scanRecords(rows, false, extra...)
 	if err != nil {
 		return driver.Page{}, fmt.Errorf("kiln: jobs: %w", err)
 	}
-	var p driver.Page
-	if len(recs) > limit {
-		recs = recs[:limit]
-		last := recs[limit-1]
-		switch q.State {
-		case driver.Scheduled:
-			p.Next = encodeCursor(last.RunAt.UnixMicro(), last.ID)
-		case driver.Enqueued, driver.Throttled:
-			p.Next = encodeCursor(int64(last.Priority), last.ID)
-		case driver.Succeeded, driver.Deleted, driver.Failed:
-			p.Next = encodeCursor(last.FinalizedAt.UnixMicro(), last.ID)
-		default:
-			p.Next = encodeCursor(0, last.ID)
+	var next *driver.Record
+	if edge {
+		next = &recs[len(recs)-1]
+		if !slices.Contains(next.Tags, q.Tag) {
+			recs = recs[:len(recs)-1]
 		}
 	}
-	p.Records = recs
+	if len(recs) > limit {
+		recs, next = recs[:limit], &recs[limit-1]
+	}
+	p := driver.Page{Records: recs}
+	if next != nil {
+		p.Next = cursorOf(q.State, next)
+	}
 	return p, nil
+}
+
+func cursorOf(st driver.State, r *driver.Record) string {
+	switch st {
+	case driver.Scheduled:
+		return encodeCursor(r.RunAt.UnixMicro(), r.ID)
+	case driver.Enqueued, driver.Throttled:
+		return encodeCursor(int64(r.Priority), r.ID)
+	case driver.Succeeded, driver.Deleted, driver.Failed:
+		return encodeCursor(r.FinalizedAt.UnixMicro(), r.ID)
+	}
+	return encodeCursor(0, r.ID)
 }
 
 func encodeCursor(a, b int64) string {

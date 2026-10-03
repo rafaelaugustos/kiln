@@ -92,7 +92,7 @@
 {{- with $j.AfterBatch}}<dt>After batch</dt><dd><a class="mono" href="{{link "/batches/" .}}">{{.}}</a></dd>{{end}}
 {{- with $j.RecurringID}}<dt>Recurring</dt><dd><a class="mono" href="{{link "/recurring"}}">{{.}}</a></dd>{{end}}
 {{- with $j.LimitKey}}<dt>Limit</dt><dd class="mono">{{.}}</dd>{{end}}
-{{- with $j.Tags}}<dt>Tags</dt><dd class="chips">{{range .}}<span class="chip">{{.}}</span>{{end}}</dd>{{end}}
+{{- with $j.Tags}}<dt>Tags</dt><dd class="chips">{{range .}}<a class="chip" href="{{link "/jobs/" $j.State "?tag=" (query .)}}">{{.}}</a>{{end}}</dd>{{end}}
 {{- with $j.Parents}}<dt>Parents</dt><dd class="ids">{{range .}}<a class="mono" href="{{link "/jobs/" .}}">{{.}}</a>{{end}}</dd>{{end}}
 {{- with $j.PendingDeps}}<dt>Waiting on</dt><dd>{{.}} unresolved</dd>{{end}}
 {{- with $j.Children}}<dt>Children</dt><dd class="ids">{{range .}}<a class="mono" href="{{link "/jobs/" .}}">{{.}}</a>{{end}}</dd>{{end}}

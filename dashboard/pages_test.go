@@ -2,6 +2,7 @@ package dashboard
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -138,6 +139,75 @@ func TestEscaping(t *testing.T) {
 		if strings.Contains(res.body, "<script>alert") || strings.Contains(res.body, "<img src=x") {
 			t.Errorf("%s: unescaped args", path)
 		}
+	}
+}
+
+type report struct {
+	Day string `json:"day"`
+}
+
+func (report) Kind() string { return "report.build" }
+
+func (r report) Title() string { return "Report for " + r.Day }
+
+func TestTitlesAndTags(t *testing.T) {
+	t.Parallel()
+	s := memstore.New()
+	f := &fixture{t: t, store: s, c: kiln.NewClient(s)}
+	id := func(n int64) string { return strconv.FormatInt(n, 10) }
+	first := f.enqueue(report{Day: "monday"}, kiln.Tags{"reports", "a&b"})
+	monday := id(first)
+	weekly := id(f.enqueue(report{Day: "sunday"}, kiln.Title("Weekly digest"), kiln.Tags{"reports"}))
+	plain := id(f.enqueue(resize{Key: "plain.png"}))
+	h := New(f.c, Options{Authorize: grant(ReadWrite)})
+
+	for _, tt := range []struct {
+		path      string
+		want, not []string
+	}{
+		{"/jobs/enqueued", []string{">Report for monday<", ">Weekly digest<", `title="report.build"`, ">image.resize<",
+			`href="/jobs/enqueued?tag=a%26b"`, `href="/jobs/enqueued?tag=reports"`, "Delete all matching"}, nil},
+		{"/jobs/enqueued?tag=reports", []string{`href="/jobs/` + monday + `"`, `href="/jobs/` + weekly + `"`,
+			`name="tag" value="reports"`, `href="/jobs/scheduled?tag=reports"`},
+			[]string{`href="/jobs/` + plain + `"`, "all matching"}},
+		{"/jobs/enqueued?tag=a%26b", []string{`href="/jobs/` + monday + `"`}, []string{`href="/jobs/` + weekly + `"`}},
+		{"/jobs/scheduled?tag=reports", []string{"No scheduled jobs match these filters."}, nil},
+		{"/jobs/" + weekly, []string{`<h1 class="title"><span>Weekly digest</span>`, "<dt>Kind</dt>",
+			`href="/jobs/enqueued?tag=reports"`}, nil},
+		{"/jobs/" + plain, []string{`<span class="mono">image.resize</span>`}, []string{"<dt>Kind</dt>"}},
+	} {
+		res := get(h, tt.path)
+		if res.code != http.StatusOK {
+			t.Fatalf("%s: status %d", tt.path, res.code)
+		}
+		for _, w := range tt.want {
+			if !strings.Contains(res.body, w) {
+				t.Errorf("%s: missing %q", tt.path, w)
+			}
+		}
+		for _, w := range tt.not {
+			if strings.Contains(res.body, w) {
+				t.Errorf("%s: has %q", tt.path, w)
+			}
+		}
+	}
+
+	page := decodeJSON[struct {
+		Tag  string `json:"tag"`
+		Jobs []struct {
+			Title string `json:"title"`
+		} `json:"jobs"`
+	}](t, h, "/api/jobs/enqueued?tag=reports")
+	if page.Tag != "reports" || len(page.Jobs) != 2 || page.Jobs[0].Title != "Report for monday" || page.Jobs[1].Title != "Weekly digest" {
+		t.Errorf("api page %+v", page)
+	}
+
+	all := url.Values{"state": {"enqueued"}, "tag": {"reports"}, "all": {"1"}}
+	if res := form(h, "/jobs/delete", all); res.code != http.StatusBadRequest {
+		t.Errorf("delete all matching a tag: status %d", res.code)
+	}
+	if st := f.state(first); st != kiln.Enqueued {
+		t.Errorf("job %d is %s after a refused delete", first, st)
 	}
 }
 

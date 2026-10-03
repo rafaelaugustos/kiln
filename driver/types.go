@@ -273,6 +273,7 @@ type JobQuery struct {
 	Queue   string
 	Kind    string
 	BatchID int64
+	Tag     string // only jobs carrying this tag
 	Limit   int    // page size, 20 when 0 and at most 500
 	Cursor  string // Next of the previous page; empty for the first
 }

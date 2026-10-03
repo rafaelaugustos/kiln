@@ -13,6 +13,7 @@ var inspectTests = []test{
 	{"JobsOrder", testJobsOrder},
 	{"JobsFinalOrder", testJobsFinalOrder},
 	{"JobsFilter", testJobsFilter},
+	{"JobsTag", testJobsTag},
 	{"JobsPages", testJobsPages},
 	{"JobsLimit", testJobsLimit},
 	{"Counts", testCounts},
@@ -161,6 +162,32 @@ func testJobsFilter(t *testing.T, s driver.Store) {
 	if got := list(t, s, driver.JobQuery{State: driver.Scheduled}); len(got) != 0 {
 		t.Fatalf("scheduled jobs %v, want none", got)
 	}
+}
+
+func testJobsTag(t *testing.T, s driver.Store) {
+	tagged := func(q string, priority int16, tags ...string) driver.InsertParams {
+		p := task(q)
+		p.Priority, p.Tags = priority, tags
+		return p
+	}
+	busy := tasks(1100, "q")
+	for i := range busy {
+		busy[i].Priority = 5
+	}
+	ps := append(busy, tagged("q", 0, "x"), tagged("q", 3, "y", "x"), tagged("q", 1, "y"), tagged("r", 2, "x"),
+		tagged("q", 0, "xx"), tagged("q", 0, "x"))
+	ids := insertedIDs(insert(t, s, ps...))[len(busy):]
+	for _, limit := range []int{1, 3, 500} {
+		wantOrder(t, s, driver.JobQuery{State: driver.Enqueued, Tag: "x", Limit: limit}, ids[1], ids[3], ids[0], ids[5])
+	}
+	wantOrder(t, s, driver.JobQuery{State: driver.Enqueued, Tag: "x", Queue: "r"}, ids[3])
+	wantOrder(t, s, driver.JobQuery{State: driver.Enqueued, Tag: "z"})
+
+	done := insertedIDs(insert(t, s, tagged("done", 0, "x"), tagged("done", 0)))
+	for _, j := range claimN(t, s, 2, "done") {
+		apply(t, s, outcome(j, driver.Succeeded))
+	}
+	wantOrder(t, s, driver.JobQuery{State: driver.Succeeded, Tag: "x"}, done[0])
 }
 
 func testJobsPages(t *testing.T, s driver.Store) {

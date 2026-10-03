@@ -79,7 +79,8 @@ func (s *Store) Jobs(_ context.Context, q driver.JobQuery) (driver.Page, error) 
 	defer s.end()
 	var rows []*job
 	for _, j := range s.states[ord(q.State)] {
-		if q.Queue != "" && j.queue != q.Queue || q.Kind != "" && j.kind != q.Kind || q.BatchID != 0 && j.batch != q.BatchID {
+		if q.Queue != "" && j.queue != q.Queue || q.Kind != "" && j.kind != q.Kind || q.BatchID != 0 && j.batch != q.BatchID ||
+			q.Tag != "" && !slices.Contains(j.tags, q.Tag) {
 			continue
 		}
 		if after != nil && key(j).compare(*after) <= 0 {

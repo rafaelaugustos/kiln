@@ -30,6 +30,7 @@
 </select>
 <input type="search" name="kind" value="{{$l.Kind}}" placeholder="Kind" list="kinds" aria-label="Kind" autocomplete="off" spellcheck="false">
 <datalist id="kinds">{{range $l.Kinds}}<option value="{{.}}"></option>{{end}}</datalist>
+<input type="search" name="tag" value="{{$l.Tag}}" placeholder="Tag" aria-label="Tag" autocomplete="off" spellcheck="false">
 {{- if $l.Batch}}
 <input type="hidden" name="batch" value="{{$l.Batch}}">
 <a class="chip removable" href="{{$l.Unbatch}}" title="Remove batch filter">Batch {{$l.Batch}}<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7m0-7l-7 7"/></svg></a>
@@ -46,11 +47,12 @@
 {{- with $l.Queue}}<input type="hidden" name="queue" value="{{.}}">{{end}}
 {{- with $l.Kind}}<input type="hidden" name="kind" value="{{.}}">{{end}}
 {{- with $l.Batch}}<input type="hidden" name="batch" value="{{.}}">{{end}}
+{{- with $l.Tag}}<input type="hidden" name="tag" value="{{.}}">{{end}}
 {{- if $l.Retries}}<input type="hidden" name="back" value="retries">{{end}}
 <span class="selected" data-selected hidden></span>
 {{- if $l.CanRequeue}}<button class="btn" type="submit" formaction="{{link "/jobs/requeue"}}" data-needs-selection>Requeue</button>{{end}}
 {{- if $l.CanDelete}}<button class="btn danger" type="submit" formaction="{{link "/jobs/delete"}}" data-needs-selection data-confirm="{{$l.DeleteLabel}} the selected jobs?">{{$l.DeleteLabel}}</button>{{end}}
-{{- if and $l.CanFilter $l.Jobs}}
+{{- if and $l.CanFilter $l.Jobs (not $l.Tag)}}
 <span class="sep" aria-hidden="true"></span>
 {{- if $l.CanRequeue}}<button class="btn" type="submit" name="all" value="1" formaction="{{link "/jobs/requeue"}}" data-confirm="Requeue every {{$l.State}} job matching the current filters?">Requeue all matching</button>{{end}}
 {{- if $l.CanDelete}}<button class="btn danger" type="submit" name="all" value="1" formaction="{{link "/jobs/delete"}}" data-confirm="{{$l.DeleteLabel}} every {{$l.State}} job matching the current filters?">{{$l.DeleteLabel}} all matching</button>{{end}}

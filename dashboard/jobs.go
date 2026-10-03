@@ -37,6 +37,7 @@ type jobList struct {
 	Queue string       `json:"queue,omitempty"`
 	Kind  string       `json:"kind,omitempty"`
 	Batch int64        `json:"batch,omitempty"`
+	Tag   string       `json:"tag,omitempty"`
 	Jobs  []*jobView   `json:"jobs"`
 	Next  string       `json:"next,omitempty"`
 
@@ -61,11 +62,14 @@ func (l *jobList) filter() url.Values {
 	if l.Batch != 0 {
 		q.Set("batch", strconv.FormatInt(l.Batch, 10))
 	}
+	if l.Tag != "" {
+		q.Set("tag", l.Tag)
+	}
 	return q
 }
 
 func (l *jobList) Filtered() bool {
-	return l.Queue != "" || l.Kind != "" || l.Batch != 0
+	return l.Queue != "" || l.Kind != "" || l.Batch != 0 || l.Tag != ""
 }
 
 func (l *jobList) Column() string {
@@ -115,6 +119,8 @@ func (l *jobList) Empty() string {
 		return "No retries on this page. Use Next to keep scanning scheduled jobs."
 	case l.Retries:
 		return "No retries scheduled."
+	case l.Filtered() && l.Next != "":
+		return "No " + string(l.State) + " jobs on this page match these filters. Use Next to keep looking."
 	case l.Filtered():
 		return "No " + string(l.State) + " jobs match these filters."
 	case l.State == driver.Failed:
@@ -139,7 +145,7 @@ func (h *handler) jobs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	l := &jobList{State: st, Queue: q.Get("queue"), Kind: q.Get("kind")}
+	l := &jobList{State: st, Queue: q.Get("queue"), Kind: q.Get("kind"), Tag: q.Get("tag")}
 	var err error
 	if l.Batch, err = optID(q.Get("batch")); err != nil {
 		h.fail(w, r, err)
@@ -152,7 +158,7 @@ func (h *handler) jobs(w http.ResponseWriter, r *http.Request) {
 	}
 	cursor := q.Get("cursor")
 	pg, err := h.c.List(r.Context(), kiln.JobQuery{
-		State: st, Queue: l.Queue, Kind: l.Kind, BatchID: l.Batch, Limit: limit, Cursor: cursor,
+		State: st, Queue: l.Queue, Kind: l.Kind, BatchID: l.Batch, Tag: l.Tag, Limit: limit, Cursor: cursor,
 	})
 	if err != nil {
 		h.fail(w, r, err)
@@ -316,7 +322,8 @@ func (h *handler) bulk(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, fmt.Errorf("%w: %v", driver.ErrInvalid, err))
 		return
 	}
-	l := &jobList{State: driver.State(r.PostForm.Get("state")), Queue: r.PostForm.Get("queue"), Kind: r.PostForm.Get("kind")}
+	l := &jobList{State: driver.State(r.PostForm.Get("state")), Queue: r.PostForm.Get("queue"), Kind: r.PostForm.Get("kind"),
+		Tag: r.PostForm.Get("tag")}
 	batch, err := optID(r.PostForm.Get("batch"))
 	if err != nil {
 		h.fail(w, r, err)
@@ -327,6 +334,10 @@ func (h *handler) bulk(w http.ResponseWriter, r *http.Request) {
 	if r.PostForm.Get("all") == "1" {
 		if !l.State.Valid() {
 			h.fail(w, r, fmt.Errorf("%w: state %q", driver.ErrInvalid, l.State))
+			return
+		}
+		if l.Tag != "" {
+			h.fail(w, r, fmt.Errorf("%w: a tag filter cannot select every matching job", driver.ErrInvalid))
 			return
 		}
 		f = kiln.Filter{State: l.State, Queue: l.Queue, Kind: l.Kind, BatchID: l.Batch}

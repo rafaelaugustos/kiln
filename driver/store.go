@@ -188,7 +188,9 @@ type Inspector interface {
 	//   - succeeded, failed and deleted: latest FinalizedAt first, then highest id
 	//   - awaiting and processing: highest id first
 	//
-	// Records may leave out History, Output and Children. An invalid state is [ErrInvalid].
+	// With q.Tag set, a store may look at a bounded number of jobs for one page, so that the page
+	// holds fewer than q.Limit records, or none, while Next is set. Records may leave out History,
+	// Output and Children. An invalid state is [ErrInvalid].
 	Jobs(ctx context.Context, q JobQuery) (Page, error)
 
 	// Counts returns the number of jobs in each live state, exact up to 100000, the number of
