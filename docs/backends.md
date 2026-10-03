@@ -6,6 +6,7 @@ later means changing the line that builds the store, not the code that enqueues 
 | Backend | Package | Notes |
 |---|---|---|
 | PostgreSQL (CI runs 17) | `pgstore` | `LISTEN`/`NOTIFY` wakeups, pgx v5, schema option |
+| SQL Server 2019+ and Azure SQL (CI runs 2022) | `mssqlstore` | any `*sql.DB` from `go-mssqldb`, table prefix option; needs `READ_COMMITTED_SNAPSHOT`; servers are woken through a `Bus`, or poll without one |
 | MySQL 8.0.19+ (CI runs 8.4) | `mysqlstore` | any `*sql.DB`, table prefix option; servers are woken through a `Bus`, or poll without one |
 | SQLite 3.38+ | `sqlitestore` | any `database/sql` driver, WAL; servers in the same process are woken directly, other processes through a `Bus` |
 | in memory | `memstore` | tests and single-process tools; everything is lost when the process exits |
@@ -15,8 +16,8 @@ continuations, batches, uniqueness, limits, fencing) do not change when the data
 new backend means implementing `driver.Store` (and optionally `driver.Notifier` and
 `driver.Transactor`) and making that suite pass.
 
-PostgreSQL wakes servers with `LISTEN`/`NOTIFY`. MySQL has nothing equivalent, and SQLite can only wake
-servers in its own process, so both accept a `driver.Bus`. `redisbus` is one over Redis Pub/Sub:
+PostgreSQL wakes servers with `LISTEN`/`NOTIFY`. MySQL and SQL Server have nothing equivalent, and SQLite
+can only wake servers in its own process, so all three accept a `driver.Bus`. `redisbus` is one over Redis Pub/Sub:
 
 ```go
 rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", ContextTimeoutEnabled: true})
@@ -35,6 +36,23 @@ your commit.
 db, _ := sql.Open("mysql", "user:pass@tcp(localhost:3306)/app")
 store, err := mysqlstore.New(ctx, db)
 ```
+
+`mssqlstore` takes a `*sql.DB` opened with `github.com/microsoft/go-mssqldb`, and the database needs row
+versioning for READ COMMITTED, which Azure SQL Database already has on:
+
+```sql
+ALTER DATABASE app SET READ_COMMITTED_SNAPSHOT ON
+```
+
+```go
+db, _ := sql.Open("sqlserver", "sqlserver://user:pass@localhost:1433?database=app")
+store, err := mssqlstore.New(ctx, db)
+```
+
+Claims, finishes and admission lock rows with `READPAST`, so servers skip each other's work instead of
+waiting, and transactions picked as deadlock victims are retried. Queue names, kinds and limit keys are
+compared case-sensitively whatever the database's collation. It runs on compatibility level 130 or higher
+and is tested on SQL Server 2022.
 
 `sqlitestore` takes a `*sql.DB` from any `database/sql` SQLite driver; its tests and CI use
 `modernc.org/sqlite`, which needs no cgo. SQLite allows one writer at a time, so the store keeps one pooled connection
