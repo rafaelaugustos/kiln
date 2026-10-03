@@ -1,0 +1,35 @@
+name: kiln-soak
+
+services:
+  postgres:
+    image: postgres:17
+    container_name: kiln-soak-pg
+    environment:
+      POSTGRES_USER: kiln
+      POSTGRES_PASSWORD: kiln
+      POSTGRES_DB: kiln
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "kiln"]
+      interval: 2s
+      retries: 30
+
+  soak:
+    build:
+      context: ../..
+      dockerfile: soak/vps/Dockerfile
+    container_name: kiln-soak
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DURATION: ${DURATION:-24h}
+      RATE: ${RATE:-20}
+      WORKERS: ${WORKERS:-4}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./evidence:/evidence
+
+volumes:
+  pgdata:
