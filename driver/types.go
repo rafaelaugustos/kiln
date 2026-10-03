@@ -220,6 +220,7 @@ type PruneParams struct {
 // store keeps the definition and applies each [Fire].
 type Recurring struct {
 	ID        string
+	Group     string       // the group package kiln syncs the job in; empty for none
 	Spec      string       // cron spec, as normalized by package cron
 	Location  string       // IANA time zone the spec is evaluated in
 	Template  InsertParams // the job inserted at each occurrence
@@ -303,6 +304,18 @@ type QueueInfo struct {
 	Scheduled  int64
 	Throttled  int64
 	Latency    time.Duration // how long the oldest enqueued job has been due; 0 when none is
+}
+
+// LimitInfo is a limit key as [LimitReader.Limits] reports it: the rule stored with the key, as
+// described in the package documentation, and the jobs under it.
+type LimitInfo struct {
+	Key              string
+	Max, Rate, Burst int
+	Per              time.Duration
+	Active           int       // enqueued or processing
+	Throttled        int       // waiting in throttled
+	Reserved         int       // scheduled with a reserved start (granted)
+	NextStart        time.Time // tat-tau, the earliest start left for a new job, when in the future; zero otherwise
 }
 
 // NewBatch describes a batch to open.

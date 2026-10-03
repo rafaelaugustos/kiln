@@ -277,3 +277,12 @@ type Transactor interface {
 	// commit.
 	InTx(ctx context.Context, fn func(w Writer) error) error
 }
+
+// LimitReader is implemented by stores that can list their limit keys with the jobs under each,
+// for the Limits page of the dashboard. A store counts the jobs through its indexes, without
+// scanning every job.
+type LimitReader interface {
+	// Limits returns limit keys after the given key, in key order, at most limit (0 or less: 100).
+	// A key is listed from the first insert that names it until Prune deletes it.
+	Limits(ctx context.Context, after string, limit int) ([]LimitInfo, error)
+}
