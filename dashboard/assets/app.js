@@ -454,6 +454,48 @@ function bulk() {
   sync();
 }
 
+function tail() {
+  const box = document.querySelector('[data-console]');
+  if (!box) return;
+  const out = box.querySelector('.console');
+  const bar = document.querySelector('[data-progress]');
+  let after = Number(box.dataset.after) || 0;
+  let on = 'live' in box.dataset;
+  if (on) out.scrollTop = out.scrollHeight;
+  every(2000, async () => {
+    if (!on) return;
+    const r = await load(`${box.dataset.console}?after=${after}&limit=500`);
+    const end = out.scrollTop + out.clientHeight >= out.scrollHeight - 4;
+    for (const l of r.lines) {
+      let run = out.lastElementChild;
+      if (!run?.matches('.run') || run.dataset.attempt !== String(l.attempt)) {
+        out.querySelector('.empty')?.remove();
+        run = node('div', 'run');
+        run.dataset.attempt = l.attempt;
+        run.append(node('div', 'run-head', `Attempt ${l.attempt}`), node('pre'));
+        out.append(run);
+      }
+      const iso = new Date(l.at).toISOString();
+      const at = node('time', '', iso.slice(11, 19));
+      at.dateTime = iso;
+      at.title = `${iso.slice(0, 10)} ${iso.slice(11, 19)} UTC`;
+      const line = node('span');
+      line.append(at, l.text);
+      run.lastElementChild.append(line);
+      after = l.seq;
+    }
+    if (end && r.lines.length) out.scrollTop = out.scrollHeight;
+    if (bar) {
+      const p = r.state === 'processing' ? r.progress : 0;
+      bar.hidden = !p;
+      bar.querySelector('rect').setAttribute('width', `${p}%`);
+      bar.querySelector('svg').setAttribute('aria-label', `${p}% done`);
+      bar.querySelector('.num').textContent = `${p}%`;
+    }
+    on = r.state === 'processing' || r.lines.length === 500;
+  });
+}
+
 function flash() {
   const f = document.querySelector('[data-flash]');
   if (!f) return;
@@ -487,3 +529,4 @@ still();
 mascot();
 bulk();
 flash();
+tail();

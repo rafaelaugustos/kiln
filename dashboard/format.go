@@ -114,6 +114,10 @@ func iso(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
+func clock(t time.Time) string {
+	return t.UTC().Format("15:04:05")
+}
+
 func label(s driver.State) string {
 	if s == "" {
 		return ""

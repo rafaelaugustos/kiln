@@ -16,10 +16,10 @@ const pushHistory = `IF(v.entry IS NULL, j.history, JSON_ARRAY_APPEND(IF(JSON_LE
 
 const sqlArchive = `INSERT INTO {p}archive (id, state, queue, kind, priority, attempt, max_attempts, claim, timeout_ms,
 	run_at, created_at, attempted_at, finalized_at, server, batch_id, after_batch, parents, recurring_id, unique_key,
-	limit_key, args, meta, tags, history, output)
+	limit_key, args, meta, tags, history, output, progress)
 SELECT j.id, v.state, j.queue, j.kind, j.priority, v.attempt, j.max_attempts, j.claim, j.timeout_ms, j.run_at,
 	j.created_at, j.attempted_at, ?, j.server, j.batch_id, j.after_batch, j.parents, j.recurring_id, j.unique_key,
-	j.limit_key, j.args, j.meta, j.tags, ` + pushHistory + `, v.output
+	j.limit_key, j.args, j.meta, j.tags, ` + pushHistory + `, v.output, j.progress
 FROM (VALUES `
 
 const sqlArchiveTail = `) AS v (id, state, attempt, entry, output) STRAIGHT_JOIN {p}jobs j FORCE INDEX (PRIMARY) ON j.id = v.id`

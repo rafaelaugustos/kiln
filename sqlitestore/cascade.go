@@ -15,18 +15,18 @@ const pushHistory = `CASE WHEN ? IS NULL THEN j.history ELSE json_insert(CASE WH
 
 const archiveColumns = `INSERT INTO {p}archive (id, state, queue, kind, priority, attempt, max_attempts, claim,
 	timeout_ms, run_at, created_at, attempted_at, finalized_at, server, batch_id, after_batch, parents, recurring_id,
-	unique_key, limit_key, args, meta, tags, history, output)`
+	unique_key, limit_key, args, meta, tags, history, output, progress)`
 
 const sqlArchive = archiveColumns + `
 SELECT j.id, ?, j.queue, j.kind, j.priority, ?, j.max_attempts, j.claim, j.timeout_ms, j.run_at, j.created_at,
 	j.attempted_at, ?, j.server, j.batch_id, j.after_batch, j.parents, j.recurring_id, j.unique_key, j.limit_key,
-	j.args, j.meta, j.tags, ` + pushHistory + `, ?
+	j.args, j.meta, j.tags, ` + pushHistory + `, ?, j.progress
 FROM {p}jobs j WHERE j.id = ?`
 
 const sqlArchiveSucceeded = archiveColumns + `
 SELECT j.id, 'succeeded', j.queue, j.kind, j.priority, j.attempt, j.max_attempts, j.claim, j.timeout_ms, j.run_at,
 	j.created_at, j.attempted_at, ?, j.server, j.batch_id, j.after_batch, j.parents, j.recurring_id, j.unique_key,
-	j.limit_key, j.args, j.meta, j.tags, j.history, NULL
+	j.limit_key, j.args, j.meta, j.tags, j.history, NULL, j.progress
 FROM {p}jobs j WHERE j.id IN (SELECT value FROM json_each(?))`
 
 const sqlRemove = `DELETE FROM {p}jobs WHERE id IN (SELECT value FROM json_each(?))`

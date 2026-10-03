@@ -21,6 +21,8 @@ const sqlPruneArchive = `WITH d AS (
 	RETURNING id
 ), x AS (
 	DELETE FROM {s}.deps WHERE job_id IN (SELECT id FROM d)
+), l AS (
+	DELETE FROM {s}.logs WHERE job_id IN (SELECT id FROM d)
 )
 SELECT count(*) FROM d`
 
@@ -33,6 +35,8 @@ const sqlPruneFailed = `WITH d AS (
 	RETURNING id, coalesce(batch_id, 0) AS batch_id
 ), x AS (
 	DELETE FROM {s}.deps WHERE job_id IN (SELECT id FROM d)
+), l AS (
+	DELETE FROM {s}.logs WHERE job_id IN (SELECT id FROM d)
 )
 SELECT id, batch_id FROM d`
 

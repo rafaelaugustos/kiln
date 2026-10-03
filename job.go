@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"sync"
 	"time"
 
 	"github.com/rafaelaugustos/kiln/driver"
@@ -37,8 +38,19 @@ type RawJob = Job[json.RawMessage]
 
 type run struct {
 	ref    driver.Ref
-	worker driver.Worker
+	srv    *Server
 	output []byte
+
+	mu       sync.Mutex
+	writing  sync.Mutex
+	lines    []string
+	logged   int
+	progress int
+	set      bool
+	moved    bool
+	armed    bool
+	closed   bool
+	timer    *time.Timer
 }
 
 func (j *Job[T]) state() *run {
@@ -90,8 +102,8 @@ func (j *Job[T]) SetParam(ctx context.Context, key string, v any) error {
 		return fmt.Errorf("kiln: encode param %q: %w", key, err)
 	}
 	r := j.state()
-	if r.worker != nil {
-		if err := r.worker.SetMeta(ctx, r.ref, map[string]string{key: string(b)}); err != nil {
+	if r.srv != nil {
+		if err := r.srv.store.SetMeta(ctx, r.ref, map[string]string{key: string(b)}); err != nil {
 			return err
 		}
 	}
@@ -102,7 +114,24 @@ func (j *Job[T]) SetParam(ctx context.Context, key string, v any) error {
 	return nil
 }
 
-func rawJob(dj *driver.Job, w driver.Worker) *RawJob {
+// Logf formats its arguments as [fmt.Sprintf] does, drops a final newline, and adds the line to
+// the console of this attempt, which the dashboard shows. The server writes the console to the
+// store every 250ms while the handler runs and once more after it returns; a write that fails is
+// logged and never fails the job. An attempt keeps its first 1000 lines, each cut to 4 KiB, and
+// then one line saying the console was truncated. Logf is safe for concurrent use, and does
+// nothing when the store keeps no console.
+func (j *Job[T]) Logf(format string, args ...any) {
+	j.state().logf(fmt.Sprintf(format, args...))
+}
+
+// SetProgress sets the job's progress to percent, clamped between 0 and 100, which the dashboard
+// shows while the job is processing. It reaches the store with the console, as [Job.Logf]
+// describes, and is kept with the job after the attempt ends.
+func (j *Job[T]) SetProgress(percent int) {
+	j.state().setProgress(min(max(percent, 0), 100))
+}
+
+func rawJob(dj *driver.Job, s *Server) *RawJob {
 	return &RawJob{
 		ID:          dj.ID,
 		Kind:        dj.Kind,
@@ -118,7 +147,7 @@ func rawJob(dj *driver.Job, w driver.Worker) *RawJob {
 		Meta:        dj.Meta,
 		Tags:        dj.Tags,
 		Args:        dj.Args,
-		run:         &run{ref: dj.Ref, worker: w},
+		run:         &run{ref: dj.Ref, srv: s, closed: s != nil && s.console == nil},
 	}
 }
 

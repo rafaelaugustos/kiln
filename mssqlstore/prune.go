@@ -22,6 +22,7 @@ WITH x AS (
 )
 DELETE FROM x OUTPUT deleted.id INTO @gone;
 DELETE d FROM @gone g JOIN {p}deps d WITH (FORCESEEK) ON d.job_id = g.id;
+DELETE l FROM @gone g JOIN {p}logs l WITH (FORCESEEK) ON l.job_id = g.id;
 SELECT COUNT(*) FROM @gone`
 
 const sqlExpiredFailed = `SELECT TOP (@n) CAST(SYSUTCDATETIME() AS DATETIME2(6)), j.id, COALESCE(j.batch_id, 0),
@@ -31,7 +32,8 @@ WHERE j.state = 'failed' AND j.finalized_at < ` + cutoff + `
 ORDER BY j.finalized_at`
 
 const sqlDropFailed = `DELETE j FROM OPENJSON(@ids) WITH (id BIGINT '$') v JOIN {p}jobs j WITH (FORCESEEK) ON j.id = v.id;
-DELETE d FROM OPENJSON(@ids) WITH (id BIGINT '$') v JOIN {p}deps d WITH (FORCESEEK) ON d.job_id = v.id;`
+DELETE d FROM OPENJSON(@ids) WITH (id BIGINT '$') v JOIN {p}deps d WITH (FORCESEEK) ON d.job_id = v.id;
+DELETE l FROM OPENJSON(@ids) WITH (id BIGINT '$') v JOIN {p}logs l WITH (FORCESEEK) ON l.job_id = v.id;`
 
 const sqlPruneServers = `DELETE TOP (@n) FROM {p}servers WHERE heartbeat_at < ` + cutoff
 

@@ -15,11 +15,12 @@ var (
 	_ driver.Notifier    = (*Store)(nil)
 	_ driver.Transactor  = (*Store)(nil)
 	_ driver.LimitReader = (*Store)(nil)
+	_ driver.Console     = (*Store)(nil)
 	_ driver.TxWriter    = (*TxWriter)(nil)
 )
 
-// Store is a [driver.Store] on MySQL. It also implements [driver.Transactor] and
-// [driver.LimitReader], and [driver.Notifier] through the bus given with [Bus]. It is safe for
+// Store is a [driver.Store] on MySQL. It also implements [driver.Transactor], [driver.LimitReader]
+// and [driver.Console], and [driver.Notifier] through the bus given with [Bus]. It is safe for
 // concurrent use.
 type Store struct {
 	db     *sql.DB
@@ -110,6 +111,8 @@ type statements struct {
 	advanceTail         string
 	afterBatches        string
 	allocate            string
+	appendLogs          string
+	appendLogsTail      string
 	archive             string
 	archivedParents     string
 	archiveTail         string
@@ -133,6 +136,7 @@ type statements struct {
 	directives          string
 	dropArchived        string
 	dropDeps            string
+	dropLogs            string
 	due                 string
 	doneBatches         string
 	dueRecurring        string
@@ -173,6 +177,7 @@ type statements struct {
 	lockParents         string
 	lockRunning         string
 	lockTargets         string
+	logs                string
 	nextDue             string
 	openBatch           string
 	openBatchDeps       string
@@ -204,6 +209,7 @@ type statements struct {
 	series              string
 	servers             string
 	setMeta             string
+	setProgress         string
 	stranded            string
 	take                string
 	throttledKeys       string
@@ -225,6 +231,8 @@ func newStatements(prefix string) statements {
 		advanceTail:         r.Replace(sqlAdvanceTail),
 		afterBatches:        r.Replace(sqlAfterBatches),
 		allocate:            r.Replace(sqlAllocate),
+		appendLogs:          r.Replace(sqlAppendLogs),
+		appendLogsTail:      r.Replace(sqlAppendLogsTail),
 		archive:             r.Replace(sqlArchive),
 		archivedParents:     r.Replace(sqlArchivedParents),
 		archiveTail:         r.Replace(sqlArchiveTail),
@@ -248,6 +256,7 @@ func newStatements(prefix string) statements {
 		directives:          r.Replace(sqlDirectives),
 		dropArchived:        r.Replace(sqlDropArchived),
 		dropDeps:            r.Replace(sqlDropDeps),
+		dropLogs:            r.Replace(sqlDropLogs),
 		due:                 r.Replace(sqlDue),
 		doneBatches:         r.Replace(sqlDoneBatches),
 		dueRecurring:        r.Replace(sqlDueRecurring),
@@ -288,6 +297,7 @@ func newStatements(prefix string) statements {
 		lockParents:         r.Replace(sqlLockParents),
 		lockRunning:         r.Replace(sqlLockRunning),
 		lockTargets:         r.Replace(sqlLockTargets),
+		logs:                r.Replace(sqlLogs),
 		nextDue:             r.Replace(sqlNextDue),
 		openBatch:           r.Replace(sqlOpenBatch),
 		openBatchDeps:       r.Replace(sqlOpenBatchDeps),
@@ -319,6 +329,7 @@ func newStatements(prefix string) statements {
 		series:              r.Replace(sqlSeries),
 		servers:             r.Replace(sqlServers),
 		setMeta:             r.Replace(sqlSetMeta),
+		setProgress:         r.Replace(sqlSetProgress),
 		stranded:            r.Replace(sqlStranded),
 		take:                r.Replace(sqlTake),
 		throttledKeys:       r.Replace(sqlThrottledKeys),

@@ -21,10 +21,10 @@ END`
 
 const sqlArchive = `INSERT INTO {p}archive (id, state, queue, kind, priority, attempt, max_attempts, claim, timeout_ms,
 	run_at, created_at, attempted_at, finalized_at, server, batch_id, after_batch, parents, recurring_id, unique_key,
-	limit_key, args, meta, tags, history, [output])
+	limit_key, args, meta, tags, history, [output], progress)
 SELECT j.id, v.state, j.queue, j.kind, j.priority, v.attempt, j.max_attempts, j.claim, j.timeout_ms, j.run_at,
 	j.created_at, j.attempted_at, @now, j.server, j.batch_id, j.after_batch, j.parents, j.recurring_id, j.unique_key,
-	j.limit_key, j.args, j.meta, j.tags, ` + pushHistory + `, v.[output]
+	j.limit_key, j.args, j.meta, j.tags, ` + pushHistory + `, v.[output], j.progress
 FROM OPENJSON(@gone) WITH (id BIGINT '$.id', state VARCHAR(10) '$.s', attempt INT '$.a',
 	entry NVARCHAR(MAX) '$.e' AS JSON, [output] NVARCHAR(MAX) '$.o') v
 JOIN {p}jobs j WITH (FORCESEEK) ON j.id = v.id;

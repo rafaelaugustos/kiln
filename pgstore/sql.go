@@ -40,6 +40,7 @@ type statements struct {
 	lockLimits          string
 	lockParents         string
 	lockRules           string
+	logs                string
 	missingLinks        string
 	nextDue             string
 	notify              string
@@ -78,6 +79,7 @@ type statements struct {
 	unregister          string
 	unusedLimits        string
 	updateRecurring     string
+	writeConsole        string
 }
 
 func (q *statements) each(fn func(p *string, text string)) {
@@ -120,6 +122,7 @@ func (q *statements) each(fn func(p *string, text string)) {
 	fn(&q.lockLimits, sqlLockLimits)
 	fn(&q.lockParents, sqlLockParents)
 	fn(&q.lockRules, sqlLockRules)
+	fn(&q.logs, sqlLogs)
 	fn(&q.missingLinks, sqlMissingLinks)
 	fn(&q.nextDue, sqlNextDue)
 	fn(&q.notify, sqlNotify)
@@ -158,4 +161,5 @@ func (q *statements) each(fn func(p *string, text string)) {
 	fn(&q.unregister, sqlUnregister)
 	fn(&q.unusedLimits, sqlUnusedLimits)
 	fn(&q.updateRecurring, sqlUpdateRecurring)
+	fn(&q.writeConsole, sqlWriteConsole)
 }

@@ -137,7 +137,11 @@ func (s *Store) pruneArchive(ctx context.Context, state driver.State, keep time.
 		if err != nil || len(ids) == 0 {
 			return err
 		}
-		_, err = q.ExecContext(ctx, s.q.dropDeps, idList(ids))
+		list := idList(ids)
+		if _, err := q.ExecContext(ctx, s.q.dropDeps, list); err != nil {
+			return err
+		}
+		_, err = q.ExecContext(ctx, s.q.dropLogs, list)
 		return err
 	})
 	if err != nil {
@@ -178,6 +182,9 @@ func (s *Store) pruneFailed(ctx context.Context, keep time.Duration, limit int) 
 			return err
 		}
 		if _, err := q.ExecContext(ctx, s.q.dropDeps, list); err != nil {
+			return err
+		}
+		if _, err := q.ExecContext(ctx, s.q.dropLogs, list); err != nil {
 			return err
 		}
 		n = len(ids)

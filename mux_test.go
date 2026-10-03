@@ -73,7 +73,7 @@ func TestMuxMiddlewareOrder(t *testing.T) {
 		trace = append(trace, "h")
 		return nil
 	})
-	if o, err := m.dispatch(context.Background(), ping{}); err != nil || o.State != Succeeded {
+	if o, _, _, err := m.dispatch(context.Background(), ping{}); err != nil || o.State != Succeeded {
 		t.Fatalf("outcome %+v err %v", o, err)
 	}
 	if want := []string{"a>", "b>", "c>", "h", "<c", "<b", "<a"}; !slices.Equal(trace, want) {
@@ -97,7 +97,7 @@ func TestMuxPanicRecovery(t *testing.T) {
 	Handle(m, func(context.Context, *Job[ping]) error { panic("handler") })
 	m.HandleFunc("bad-mw", func(context.Context, *RawJob) error { return nil })
 
-	o, err := m.dispatch(context.Background(), ping{})
+	o, _, _, err := m.dispatch(context.Background(), ping{})
 	var pe *PanicError
 	if !errors.As(seen, &pe) || pe.Value != "handler" {
 		t.Fatalf("middleware saw %v", seen)
@@ -105,7 +105,7 @@ func TestMuxPanicRecovery(t *testing.T) {
 	if !errors.As(err, &pe) || o.State != Scheduled || o.Reason != "retry" || !strings.Contains(o.Trace, "goroutine") {
 		t.Fatalf("outcome %+v err %v", o, err)
 	}
-	o, err = m.dispatch(context.Background(), testArgs{K: "bad-mw"})
+	o, _, _, err = m.dispatch(context.Background(), testArgs{K: "bad-mw"})
 	if !errors.As(err, &pe) || pe.Value != "middleware" || o.Error != "kiln: panic: middleware" {
 		t.Fatalf("outcome %+v err %v", o, err)
 	}
@@ -119,7 +119,7 @@ func TestMuxDecodeError(t *testing.T) {
 	t.Parallel()
 	m := NewMux()
 	Handle(m, func(context.Context, *Job[ping]) error { return nil })
-	o, err := m.dispatch(context.Background(), pingText{N: "seven"})
+	o, _, _, err := m.dispatch(context.Background(), pingText{N: "seven"})
 	if !errors.Is(err, ErrPermanent) || o.State != Failed || o.Reason != "permanent" {
 		t.Fatalf("outcome %+v err %v", o, err)
 	}

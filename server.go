@@ -40,6 +40,7 @@ func buildVersion() string {
 type Server struct {
 	client   *Client
 	store    driver.Store
+	console  driver.Console
 	mux      *Mux
 	cfg      ServerConfig
 	log      *slog.Logger
@@ -112,6 +113,7 @@ func NewServer(c *Client, m *Mux, cfg ServerConfig) (*Server, error) {
 		}
 		s.capacity += p.Workers
 	}
+	s.console, _ = c.store.(driver.Console)
 	s.comp = newCompleter(s, max(s.capacity, flushSize))
 	return s, nil
 }

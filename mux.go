@@ -153,10 +153,10 @@ func (m *Mux) freeze() []string {
 	return m.kinds
 }
 
-func (m *Mux) dispatch(ctx context.Context, args Args, opts ...InsertOption) (driver.Outcome, error) {
+func (m *Mux) dispatch(ctx context.Context, args Args, opts ...InsertOption) (driver.Outcome, []string, int, error) {
 	p, err := buildParams(args, opts)
 	if err != nil {
-		return driver.Outcome{}, err
+		return driver.Outcome{}, nil, 0, err
 	}
 	now := time.Now()
 	dj := driver.Job{
@@ -180,7 +180,12 @@ func (m *Mux) dispatch(ctx context.Context, args Args, opts ...InsertOption) (dr
 	t := &task{job: rawJob(&dj, nil), ref: dj.Ref, timeout: dj.Timeout}
 	t.Context, t.cancel = context.WithCancelCause(ctx)
 	defer t.cancel(context.Canceled)
-	return m.snapshot().exec(t, &ServerConfig{Timeout: Timeout(defaultTimeout), UnknownKindTTL: defaultUnknownKindTTL})
+	o, err := m.snapshot().exec(t, &ServerConfig{Timeout: Timeout(defaultTimeout), UnknownKindTTL: defaultUnknownKindTTL})
+	r := t.job.run
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.closed = true
+	return o, r.lines, r.progress, err
 }
 
 func (r *route) call(ctx context.Context, j *RawJob) (err error) {

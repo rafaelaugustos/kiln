@@ -163,8 +163,8 @@ INSERT INTO {s}.jobs (state, queue, kind, max_attempts, run_at, limit_key, args,
 	if err != nil {
 		t.Fatal(err)
 	}
-	if version != v020 || len(applied) != len(changes) || missing != 4 {
-		t.Fatalf("migrations at %d, changes %v, %d columns with a stored default, want %d, all changes and 4", version, applied, missing, v020)
+	if version != v020 || len(applied) != len(changes) || missing != 5 {
+		t.Fatalf("migrations at %d, changes %v, %d columns with a stored default, want %d, all changes and 5", version, applied, missing, v020)
 	}
 
 	wantLimit(t, s, "legacy", 1, 1)

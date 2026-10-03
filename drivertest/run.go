@@ -27,8 +27,8 @@ type test struct {
 //
 // The Notify tests are skipped for a store that does not implement [driver.Notifier], or whose
 // Subscribe returns an error wrapping [errors.ErrUnsupported], the Tx tests for a store that does
-// not implement [driver.Transactor], and the Limits tests of [driver.LimitReader] for a store
-// that does not implement it.
+// not implement [driver.Transactor], the Limits tests of [driver.LimitReader] for a store that
+// does not implement it, and the Console tests for a store that does not implement [driver.Console].
 func Run(t *testing.T, open func(t *testing.T) driver.Store) {
 	groups := []struct {
 		name  string
@@ -48,6 +48,7 @@ func Run(t *testing.T, open func(t *testing.T) driver.Store) {
 		{"Inspect", inspectTests},
 		{"Notify", notifyTests},
 		{"Tx", txTests},
+		{"Console", consoleTests},
 	}
 	for _, g := range groups {
 		t.Run(g.name, func(t *testing.T) {

@@ -107,6 +107,15 @@ type Record struct {
 	History         []Entry // oldest first
 	Output          []byte  // JSON set by the attempt that succeeded
 	Children        []int64 // jobs that depend on this one
+	Progress        int     // from 0 to 100, as last set through [Console.WriteConsole]; 0 when never set
+}
+
+// LogLine is a line of a job's console, as [Console.Logs] returns it.
+type LogLine struct {
+	Seq     int64     // assigned by the store, increasing with each line of the job
+	Attempt int       // the attempt that wrote the line
+	At      time.Time // when the store received the line, on its clock
+	Text    string
 }
 
 // Entry is a line in a job's history. The store adds one for every outcome with a Reason and for

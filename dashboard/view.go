@@ -33,8 +33,10 @@ type jobView struct {
 	Children        []int64         `json:"children,omitempty"`
 	PendingDeps     int             `json:"pending_deps,omitempty"`
 	CancelRequested bool            `json:"cancel_requested,omitempty"`
+	Progress        int             `json:"progress,omitempty"`
 	Output          json.RawMessage `json:"output,omitempty"`
 	History         []entryView     `json:"history,omitempty"`
+	Console         *consoleView    `json:"-"`
 }
 
 type entryView struct {
@@ -72,6 +74,7 @@ func (h *handler) view(r *driver.Record) *jobView {
 		Children:        r.Children,
 		PendingDeps:     r.PendingDeps,
 		CancelRequested: r.CancelRequested,
+		Progress:        r.Progress,
 		Output:          h.redact(r.Kind, PartOutput, r.Output),
 	}
 	if v.Args == nil {

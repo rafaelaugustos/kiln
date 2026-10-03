@@ -274,7 +274,14 @@ func (h *handler) detail(w http.ResponseWriter, r *http.Request, id int64) {
 		h.fail(w, r, err)
 		return
 	}
-	h.show(w, r, "job", "Job "+strconv.FormatInt(id, 10), h.view(&rec))
+	v := h.view(&rec)
+	if !isAPI(r) {
+		if v.Console, err = h.console(r.Context(), &rec); err != nil {
+			h.fail(w, r, err)
+			return
+		}
+	}
+	h.show(w, r, "job", "Job "+strconv.FormatInt(id, 10), v)
 }
 
 type selection struct {

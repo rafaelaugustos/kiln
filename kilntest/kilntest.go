@@ -12,14 +12,16 @@ import (
 	"github.com/rafaelaugustos/kiln/internal/testhook"
 )
 
-var dispatch = testhook.Dispatch.(func(*kiln.Mux, context.Context, kiln.Args, ...kiln.InsertOption) (driver.Outcome, error))
+var dispatch = testhook.Dispatch.(func(*kiln.Mux, context.Context, kiln.Args, ...kiln.InsertOption) (driver.Outcome, []string, int, error))
 
 // Result is what a server would record for the attempt run by [Work].
 type Result struct {
-	State  kiln.State      // the job's next state; empty when args or options are invalid
-	Err    error           // the handler's error, or why the job could not run
-	Delay  time.Duration   // wait before the next attempt, for a retry or a snooze
-	Output json.RawMessage // what the handler recorded with SetOutput, if it succeeded
+	State    kiln.State      // the job's next state; empty when args or options are invalid
+	Err      error           // the handler's error, or why the job could not run
+	Delay    time.Duration   // wait before the next attempt, for a retry or a snooze
+	Output   json.RawMessage // what the handler recorded with SetOutput, if it succeeded
+	Logs     []string        // the lines the handler wrote with Logf, cut as a server would
+	Progress int             // the last progress the handler set with SetProgress, 0 for none
 }
 
 // Work runs args through the handler m has for its kind, as the first attempt of a job built with
@@ -29,8 +31,8 @@ type Result struct {
 // fill in the rest. ctx reaches the handler, where [kiln.JobFrom] works and [kiln.ClientFrom] does
 // not, and [kiln.Job.SetParam] changes only the job's Meta. Work does not freeze m.
 func Work[T kiln.Args](ctx context.Context, m *kiln.Mux, args T, opts ...kiln.InsertOption) Result {
-	o, err := dispatch(m, ctx, args, opts...)
-	return Result{State: o.State, Err: err, Delay: o.Delay, Output: o.Output}
+	o, logs, progress, err := dispatch(m, ctx, args, opts...)
+	return Result{State: o.State, Err: err, Delay: o.Delay, Output: o.Output, Logs: logs, Progress: progress}
 }
 
 // RequireEnqueued returns a job of T's kind that is waiting to run (enqueued, scheduled, awaiting

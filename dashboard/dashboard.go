@@ -142,6 +142,7 @@ func (h *handler) routes() {
 	m.HandleFunc("GET /assets/{name}", serveAsset)
 	m.HandleFunc("GET /api/overview", h.overview)
 	m.HandleFunc("GET /api/series", h.series)
+	m.HandleFunc("GET /api/jobs/{id}/logs", h.logs)
 	for _, p := range []string{"", "/api"} {
 		m.HandleFunc("GET "+p+"/jobs/{key}", h.jobs)
 		m.HandleFunc("GET "+p+"/retries", h.retries)
