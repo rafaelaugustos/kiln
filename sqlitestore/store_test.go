@@ -83,3 +83,28 @@ func record(tb testing.TB, s *Store, id int64) driver.Record {
 	}
 	return r
 }
+
+func TestCloseTwice(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	db := database(t)
+	a, err := New(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := New(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	a.Close()
+	a.Close()
+	c, err := New(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if c.w != b.w {
+		t.Fatal("closing a store twice gave back the connection other stores on db write through")
+	}
+}
