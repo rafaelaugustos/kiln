@@ -3,7 +3,7 @@
 Every module in this repository (`kiln`, `pgstore`, `mysqlstore`, `mssqlstore`, `sqlitestore`, `kilnotel`, `redisbus`) is
 released together under the same version. The GitHub releases have the full notes.
 
-## Unreleased
+## v0.8.1 (2026-10-03)
 
 ### Fixed
 - mysqlstore: an insert through a `TxWriter` that names a parent job no longer deadlocks with a `Requeue`
@@ -20,6 +20,9 @@ released together under the same version. The GitHub releases have the full note
   `Overlap(false)` is set.
 - Operating: how deploys interact with `ShutdownTimeout` and `KillGrace`, and why each service should
   have its own queues.
+
+### Upgrading
+- No schema changes. Update every kiln module to v0.8.1 together, as usual.
 
 ## v0.8.0 (2026-10-03)
 
