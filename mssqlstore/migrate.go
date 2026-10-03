@@ -15,7 +15,7 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
-//go:embed migrations/*.sql
+//go:embed migrations/*.sql changes/*.sql
 var schemaFS embed.FS
 
 type migration struct {

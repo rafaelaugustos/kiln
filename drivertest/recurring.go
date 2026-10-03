@@ -16,6 +16,7 @@ var recurringTests = []test{
 	{"Put", testRecurringPut},
 	{"CAS", testRecurringCAS},
 	{"Remove", testRecurringRemove},
+	{"Group", testRecurringGroup},
 	{"Due", testRecurringDue},
 	{"Fire", testRecurringFire},
 	{"FireEmpty", testRecurringFireEmpty},
@@ -154,6 +155,39 @@ func testRecurringRemove(t *testing.T, s driver.Store) {
 		t.Fatalf("recurrings %v %v, want none", all, err)
 	}
 	put(t, s, cron("a", now(t, s).Add(time.Minute)))
+}
+
+func testRecurringGroup(t *testing.T, s driver.Store) {
+	ctx := t.Context()
+	n := now(t, s).Truncate(time.Second)
+	r := cron("a", n.Add(-time.Minute))
+	r.Group = "reports"
+	put(t, s, r)
+	put(t, s, cron("b", n.Add(-time.Minute)))
+	due, _, err := s.Due(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, err := s.Recurrings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(due) != 2 || len(all) != 2 {
+		t.Fatalf("%d due and %d recurring jobs, want 2 and 2", len(due), len(all))
+	}
+	for _, r := range slices.Concat(due, all, []driver.Recurring{getRecurring(t, s, "a")}) {
+		if want := map[string]string{"a": "reports"}[r.ID]; r.Group != want {
+			t.Fatalf("recurring %s in group %q, want %q", r.ID, r.Group, want)
+		}
+	}
+	for _, group := range []string{"billing", ""} {
+		r = getRecurring(t, s, "a")
+		r.Group = group
+		put(t, s, r)
+		if got := getRecurring(t, s, "a").Group; got != group {
+			t.Fatalf("recurring a in group %q after moving it to %q", got, group)
+		}
+	}
 }
 
 func testRecurringDue(t *testing.T, s driver.Store) {

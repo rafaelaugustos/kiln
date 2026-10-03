@@ -12,7 +12,7 @@ import (
 )
 
 const recurringColumns = `id, spec, location, template, misfire, overlap, paused, next_run_at, last_run_at,
-	COALESCE(last_job_id, 0), created_at, updated_at, version`
+	COALESCE(last_job_id, 0), created_at, updated_at, version, COALESCE(group_name, '')`
 
 const sqlDueRecurring = `SELECT ` + recurringColumns + ` FROM {p}recurring
 WHERE NOT paused AND next_run_at <= ?
@@ -31,12 +31,13 @@ const sqlFired = `UPDATE {p}recurring SET last_job_id = ? WHERE id = ?`
 const sqlHasRecurring = `SELECT count(*) FROM {p}recurring WHERE id = ?`
 
 const sqlCreateRecurring = `INSERT INTO {p}recurring (id, spec, location, template, misfire, overlap, paused,
-	next_run_at, last_run_at, last_job_id, created_at, updated_at, version)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, {now}, {now}, 1)
+	next_run_at, last_run_at, last_job_id, group_name, created_at, updated_at, version)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, nullif(?, ''), {now}, {now}, 1)
 ON CONFLICT (id) DO NOTHING`
 
 const sqlUpdateRecurring = `UPDATE {p}recurring SET spec = ?, location = ?, template = ?, misfire = ?, overlap = ?,
-	paused = ?, next_run_at = ?, last_run_at = ?, last_job_id = ?, updated_at = {now}, version = version + 1
+	paused = ?, next_run_at = ?, last_run_at = ?, last_job_id = ?, group_name = nullif(?, ''), updated_at = {now},
+	version = version + 1
 WHERE id = ? AND version = ?`
 
 const sqlRemoveRecurring = `DELETE FROM {p}recurring WHERE id = ?`
@@ -156,10 +157,10 @@ func (s *Store) PutRecurring(ctx context.Context, r driver.Recurring) error {
 		)
 		if r.Version == 0 {
 			res, err = q.ExecContext(ctx, s.q.createRecurring, r.ID, r.Spec, r.Location, string(tmpl), int16(r.Misfire),
-				r.Overlap, r.Paused, instant(r.NextRunAt), instant(r.LastRunAt), lastJob)
+				r.Overlap, r.Paused, instant(r.NextRunAt), instant(r.LastRunAt), lastJob, r.Group)
 		} else {
 			res, err = q.ExecContext(ctx, s.q.updateRecurring, r.Spec, r.Location, string(tmpl), int16(r.Misfire),
-				r.Overlap, r.Paused, instant(r.NextRunAt), instant(r.LastRunAt), lastJob, r.ID, r.Version)
+				r.Overlap, r.Paused, instant(r.NextRunAt), instant(r.LastRunAt), lastJob, r.Group, r.ID, r.Version)
 		}
 		if err != nil {
 			return err
@@ -207,7 +208,7 @@ func scanRecurrings(rows *sql.Rows, err error) ([]driver.Recurring, error) {
 			next, lastRun, created, updated stamp
 		)
 		err := rows.Scan(&r.ID, &r.Spec, &r.Location, &tmpl, &misfire, &r.Overlap, &r.Paused, &next, &lastRun,
-			&r.LastJobID, &created, &updated, &r.Version)
+			&r.LastJobID, &created, &updated, &r.Version, &r.Group)
 		if err != nil {
 			return err
 		}
