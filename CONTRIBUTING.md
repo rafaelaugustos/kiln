@@ -10,7 +10,7 @@ The repository holds several Go modules, released together under the same versio
 | Module | What it is |
 |---|---|
 | `.` | client, server, `driver` (the storage interface), `memstore`, `drivertest`, `cron`, `dashboard`, `kilntest` |
-| `pgstore`, `mysqlstore`, `sqlitestore` | the storage backends |
+| `pgstore`, `mysqlstore`, `mssqlstore`, `sqlitestore` | the storage backends |
 | `kilnotel` | OpenTelemetry instrumentation |
 | `redisbus` | wakeups over Redis Pub/Sub |
 | `examples` | runnable programs |
@@ -34,6 +34,7 @@ The store modules test against real databases. With the defaults the tests expec
 docker run -d --name kiln-postgres -p 55432:5432 -e POSTGRES_USER=kiln -e POSTGRES_PASSWORD=kiln -e POSTGRES_DB=kiln postgres:17
 docker run -d --name kiln-mysql -p 53306:3306 -e MYSQL_ROOT_PASSWORD=kiln -e MYSQL_DATABASE=kiln -e MYSQL_USER=kiln -e MYSQL_PASSWORD=kiln mysql:8.4
 docker run -d --name kiln-redis -p 56379:6379 redis:7-alpine
+docker run -d --name kiln-mssql --platform linux/amd64 -p 51433:1433 -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='Kiln-Passw0rd' mcr.microsoft.com/mssql/server:2022-latest
 ```
 
 The MySQL tests create a database per test, so once MySQL is up, let the `kiln` user do that:
@@ -42,8 +43,15 @@ The MySQL tests create a database per test, so once MySQL is up, let the `kiln` 
 docker exec kiln-mysql mysql -uroot -pkiln -e "GRANT ALL ON *.* TO 'kiln'@'%'"
 ```
 
-Then run `go test -race ./...` inside `pgstore`, `mysqlstore`, `sqlitestore`, `kilnotel` and `redisbus`.
-`KILN_DATABASE_URL`, `KILN_MYSQL_DSN` and `KILN_REDIS_ADDR` point the tests somewhere else; a database that
+SQL Server needs a `kiln` database with snapshot reads:
+
+```
+docker exec kiln-mssql /opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P 'Kiln-Passw0rd' -Q "CREATE DATABASE kiln; ALTER DATABASE kiln SET READ_COMMITTED_SNAPSHOT ON"
+```
+
+Then run `go test -race ./...` inside `pgstore`, `mysqlstore`, `mssqlstore`, `sqlitestore`, `kilnotel` and
+`redisbus`. `KILN_DATABASE_URL`, `KILN_MYSQL_DSN`, `KILN_MSSQL_DSN` and `KILN_REDIS_ADDR` point the tests
+somewhere else; a database that
 can't be reached makes its tests skip, not fail. Every test creates its own schema, tables or keys, so the
 suites can run at the same time against the same containers.
 

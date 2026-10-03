@@ -26,5 +26,5 @@ for its `Kind()`. Most calls map one to one:
 | `IClientFilter` / `IServerFilter` | `kiln.NewClient(store, mw...)` / `mux.Use(mw...)` |
 | `Enqueue<IMailer>(x => x.Send(...))` resolved from DI | a method value with its dependencies: `kiln.Handle(mux, mailer.Send)` |
 | `AddHangfireServer(o => { o.WorkerCount = 20; o.Queues = ... })` | `kiln.ServerConfig{Pools: []kiln.Pool{{Queues: []string{"critical", "default"}, Workers: 20}}}` |
-| `UseSqlServerStorage(conn)` | `pgstore.New(ctx, pool)`, `mysqlstore.New(ctx, db)` or `sqlitestore.New(ctx, db)` |
+| `UseSqlServerStorage(conn)` | `mssqlstore.New(ctx, db)` on the same SQL Server, or `pgstore`, `mysqlstore`, `sqlitestore` |
 | `app.UseHangfireDashboard("/hangfire")` | `http.Handle("/kiln/", dashboard.New(client, dashboard.Options{Prefix: "/kiln", Authorize: auth}))` |

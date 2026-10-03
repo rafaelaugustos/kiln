@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  Background jobs for Go, kept in PostgreSQL, MySQL or SQLite.
+  Background jobs for Go, kept in PostgreSQL, MySQL, SQL Server or SQLite.
 </p>
 
 <p align="center">
@@ -38,7 +38,8 @@ data that produced them, and you can watch and retry them from a dashboard that 
 - **Cancellation** of a running job from any process
 - **Dashboard** and JSON API, mounted on your own HTTP server
 - **OpenTelemetry** traces from the request that enqueued a job to the handler that ran it
-- **PostgreSQL, MySQL and SQLite**, plus an in-memory store for tests, all held to one conformance suite
+- **PostgreSQL, MySQL, SQL Server and SQLite**, plus an in-memory store for tests, all held to one
+  conformance suite
 
 Everything above is in this repository, under the MIT license. There is no paid edition.
 
@@ -148,8 +149,9 @@ if err != nil {
 defer store.Close()
 ```
 
-`New` creates its tables in a `kiln` schema the first time. MySQL works the same way through
-`mysqlstore`; [Storage backends](docs/backends.md) covers what each database needs.
+`New` creates its tables in a `kiln` schema the first time. MySQL and SQL Server work the same way
+through `mysqlstore` and `mssqlstore`; [Storage backends](docs/backends.md) covers what each database
+needs.
 
 Complete, runnable programs for each topic below live in [examples/](examples/): [basic](examples/basic),
 [workflow](examples/workflow), [recurring](examples/recurring), [throttling](examples/throttling),
@@ -159,7 +161,7 @@ Complete, runnable programs for each topic below live in [examples/](examples/):
 
 ```mermaid
 flowchart LR
-    app["Your code<br>client.Enqueue"] -- insert --> db[("Your database<br>PostgreSQL, MySQL or SQLite")]
+    app["Your code<br>client.Enqueue"] -- insert --> db[("Your database<br>PostgreSQL, MySQL, SQL Server or SQLite")]
     db -- claim --> s1["kiln server<br>runs handlers"]
     db -- claim --> s2["kiln server<br>runs handlers"]
     s1 -- results, heartbeats --> db
@@ -170,7 +172,7 @@ flowchart LR
 A `Client` writes jobs to the store. Any number of `Server`s, in the same process or in others, claim the
 jobs of their queues, run the handler registered for each job's kind and write the outcome back. They
 learn about new work from the database's notifications (`LISTEN`/`NOTIFY` on PostgreSQL, an optional
-Redis bus on MySQL and SQLite) and by polling. One server at a time is also the leader: it fires recurring
+Redis bus on MySQL, SQL Server and SQLite) and by polling. One server at a time is also the leader: it fires recurring
 jobs, rescues the jobs of servers that stopped heartbeating, and prunes old jobs. There is no broker and
 no extra service to run.
 
@@ -385,7 +387,7 @@ October 2026:
 
 | | kiln | Hangfire | River | Asynq |
 |---|---|---|---|---|
-| Storage | PostgreSQL, MySQL, SQLite | SQL Server; Redis with Pro; others from the community | PostgreSQL; SQLite (experimental) | Redis |
+| Storage | PostgreSQL, MySQL, SQL Server, SQLite | SQL Server; Redis with Pro; others from the community | PostgreSQL; SQLite (experimental) | Redis |
 | License | MIT | LGPL-3.0, paid Pro and Ace | MPL-2.0, paid Pro | MIT |
 | Retries with backoff | yes | yes | yes | yes |
 | Job waits for other jobs | yes | yes, several parents with Pro | Pro (workflows) | no |

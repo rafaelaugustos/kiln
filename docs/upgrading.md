@@ -16,3 +16,5 @@ upgrade.
 v0.4 adds a nullable `admit_tat` column to the limits table. Until every server runs v0.4, the ones
 still on v0.3 release jobs whose start time has come without the check that keeps them from starting
 together after a stall.
+
+v0.5 has no schema changes for the existing stores. `mssqlstore` is new in it.

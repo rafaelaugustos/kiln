@@ -3,6 +3,27 @@
 Every module in this repository (`kiln`, `pgstore`, `mysqlstore`, `sqlitestore`, `kilnotel`, `redisbus`) is
 released together under the same version. The GitHub releases have the full notes.
 
+## v0.5.0 (2026-10-02)
+
+### Added
+- `mssqlstore`: SQL Server 2019+ and Azure SQL, on any `*sql.DB` from `go-mssqldb`, with an optional
+  `driver.Bus` for wakeups. It passes the same conformance suite as the other stores; the database needs
+  `READ_COMMITTED_SNAPSHOT`.
+
+### Changed
+- The stores agree on a few edge cases, each pinned by a conformance case: `Series` leaves out the bucket
+  at `to`, a `Finish` outcome whose State isn't one of the five is Rejected, `Output` is kept only for
+  succeeded and deleted jobs, and a limit of 0 or less counts as 1.
+- Jobs that a transactional writer's `SealBatch` releases are admitted by `Notify`, like inserted ones,
+  instead of waiting for the sweep (pgstore, mysqlstore).
+- `Close` can be called more than once on every store.
+
+### Fixed
+- sqlitestore reads SQLite's error codes from any driver, so an outcome SQLite refuses is Rejected with
+  mattn and ncruces too.
+- memstore's `Sweep` respects its limit, and its `Tx` keeps a `UniqueFor` window from the insert.
+- mysqlstore's `Delete`, `Requeue` and `Prune` count only work that committed.
+
 ## v0.4.1 (2026-10-02)
 
 ### Fixed
