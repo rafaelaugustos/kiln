@@ -1,74 +1,76 @@
-{{define "content"}}{{$j := .Data}}
+{{define "title"}}{{t "job.title" "id" .Data.ID}}{{end}}
+
+{{define "content"}}{{$j := .Data}}{{$del := t $j.DeleteLabel}}
 <div class="head">
 <div>
-<div class="crumbs"><a href="{{link "/jobs/" $j.State}}">{{label $j.State}} jobs</a><span aria-hidden="true">/</span><span class="mono">{{$j.ID}}</span></div>
+<div class="crumbs"><a href="{{link "/jobs/" $j.State}}">{{label $j.State "jobs"}}</a><span aria-hidden="true">/</span><span class="mono">{{$j.ID}}</span></div>
 <h1 class="title">{{with $j.Title}}<span>{{.}}</span>{{else}}<span class="mono">{{$j.Kind}}</span>{{end}}{{template "badge" $j.State}}</h1>
-<p class="sub">Job <span class="mono">{{$j.ID}}</span> in <a href="{{link "/jobs/" $j.State "?queue=" $j.Queue}}">{{$j.Queue}}</a> · attempt {{$j.Attempt}} of {{$j.MaxAttempts}}{{with $j.Server}} · <span class="mono">{{.}}</span>{{end}}</p>
+<p class="sub">{{range parts "job.sub"}}{{.Text}}{{if eq .Arg "id"}}<span class="mono">{{$j.ID}}</span>{{else if eq .Arg "queue"}}<a href="{{link "/jobs/" $j.State "?queue=" $j.Queue}}">{{$j.Queue}}</a>{{end}}{{end}} · {{t "job.attempt_of" "n" $j.Attempt "max" $j.MaxAttempts}}{{with $j.Server}} · <span class="mono">{{.}}</span>{{end}}</p>
 </div>
 {{- if $.Write}}
 <div class="actions">
 {{- if $j.CanRequeue}}
-<form method="post" action="{{link "/jobs/" $j.ID "/requeue"}}"><button class="btn primary" type="submit">Requeue</button></form>
+<form method="post" action="{{link "/jobs/" $j.ID "/requeue"}}"><button class="btn primary" type="submit">{{t "action.requeue"}}</button></form>
 {{- end}}
 {{- if $j.CanDelete}}
-<form method="post" action="{{link "/jobs/" $j.ID "/delete"}}"><button class="btn danger" type="submit" data-confirm="{{if eq $j.State "processing"}}Cancel{{else}}Delete{{end}} job {{$j.ID}}?">{{if eq $j.State "processing"}}Cancel{{else}}Delete{{end}}</button></form>
+<form method="post" action="{{link "/jobs/" $j.ID "/delete"}}"><button class="btn danger" type="submit" data-confirm="{{t "job.confirm" "verb" $del "id" $j.ID}}">{{$del}}</button></form>
 {{- end}}
 </div>
 {{- end}}
 </div>
 
 {{- if $j.CancelRequested}}
-<div class="note">Cancellation requested. The worker stops the job at its next check.</div>
+<div class="note">{{t "job.cancel_requested"}}</div>
 {{- end}}
 {{- if eq $j.State "processing"}}
 <section class="panel pad" data-progress{{if not $j.Progress}} hidden{{end}}>
-<span class="progress-cell"><svg class="progress" role="img" aria-label="{{$j.Progress}}% done"><rect class="f-processing" width="{{$j.Progress}}%" height="100%"></rect></svg><span class="num dim">{{$j.Progress}}%</span></span>
+<span class="progress-cell"><svg class="progress" role="img" aria-label="{{t "progress" "n" $j.Progress}}"><rect class="f-processing" width="{{$j.Progress}}%" height="100%"></rect></svg><span class="num dim">{{$j.Progress}}%</span></span>
 </section>
 {{- end}}
 
 <div class="detail">
 <div class="stack">
 <section class="panel">
-<div class="panel-head"><h2>Arguments</h2></div>
+<div class="panel-head"><h2>{{t "job.args"}}</h2></div>
 <pre class="code">{{pretty $j.Args}}</pre>
 </section>
 {{- with $j.Console}}
 <section class="panel" data-console="{{.URL}}" data-after="{{.After}}"{{if .Live}} data-live{{end}}>
-<div class="panel-head"><h2>Console</h2></div>
+<div class="panel-head"><h2>{{t "job.console"}}</h2></div>
 <div class="console">
 {{- range .Groups}}
-<div class="run" data-attempt="{{.Attempt}}"><div class="run-head">Attempt {{.Attempt}}</div><pre>{{range .Lines}}<span><time datetime="{{iso .At}}" title="{{abs .At}}">{{clock .At}}</time>{{.Text}}</span>{{end}}</pre></div>
+<div class="run" data-attempt="{{.Attempt}}"><div class="run-head">{{t "console.attempt" "n" .Attempt}}</div><pre>{{range .Lines}}<span><time datetime="{{iso .At}}" title="{{abs .At}}">{{clock .At}}</time>{{.Text}}</span>{{end}}</pre></div>
 {{- else}}
-{{template "empty" "Nothing logged yet."}}
+{{template "empty" (t "console.empty")}}
 {{- end}}
 </div>
 </section>
 {{- end}}
 {{- with $j.Output}}
 <section class="panel">
-<div class="panel-head"><h2>Output</h2></div>
+<div class="panel-head"><h2>{{t "job.output"}}</h2></div>
 <pre class="code">{{pretty .}}</pre>
 </section>
 {{- end}}
 {{- with $j.Meta}}
 <section class="panel">
-<div class="panel-head"><h2>Metadata</h2></div>
+<div class="panel-head"><h2>{{t "meta"}}</h2></div>
 <pre class="code">{{pretty .}}</pre>
 </section>
 {{- end}}
 <section class="panel">
-<div class="panel-head"><h2>History</h2></div>
+<div class="panel-head"><h2>{{t "job.history"}}</h2></div>
 <ol class="timeline">
 {{- range $j.Timeline}}
 <li class="s-{{with .State}}{{.}}{{else}}created{{end}}">
 <div class="ev">
-<span class="ev-state">{{.Label}}</span>
+<span class="ev-state">{{with .State}}{{label .}}{{else}}{{t "job.created"}}{{end}}</span>
 {{- with .Reason}}<span class="reason">{{.}}</span>{{end}}
-{{- if .Attempt}}<span class="ev-meta">attempt {{.Attempt}}{{with .Server}} · <span class="mono">{{.}}</span>{{end}}</span>{{end}}
+{{- if .Attempt}}<span class="ev-meta">{{t "job.attempt" "n" .Attempt}}{{with .Server}} · <span class="mono">{{.}}</span>{{end}}</span>{{end}}
 <span class="ev-at">{{template "when" .At}}</span>
 </div>
 {{- with .Error}}<pre class="err">{{.}}</pre>{{end}}
-{{- with .Trace}}<details class="trace"><summary>Stack trace</summary><pre>{{.}}</pre></details>{{end}}
+{{- with .Trace}}<details class="trace"><summary>{{t "job.trace"}}</summary><pre>{{.}}</pre></details>{{end}}
 </li>
 {{- end}}
 </ol>
@@ -77,25 +79,25 @@
 
 <aside class="panel side">
 <dl class="props">
-<dt>State</dt><dd>{{template "badge" $j.State}}</dd>
-{{- if $j.Title}}<dt>Kind</dt><dd class="mono">{{$j.Kind}}</dd>{{end}}
-<dt>Queue</dt><dd><a class="chip" href="{{link "/jobs/" $j.State "?queue=" $j.Queue}}">{{$j.Queue}}</a></dd>
-<dt>Priority</dt><dd class="num">{{$j.Priority}}</dd>
-<dt>Attempts</dt><dd class="num">{{$j.Attempt}} of {{$j.MaxAttempts}}</dd>
-{{- with $j.Server}}<dt>Server</dt><dd class="mono">{{.}}</dd>{{end}}
-<dt>Created</dt><dd>{{template "stamp" $j.CreatedAt}}</dd>
-<dt>{{if eq $j.State "scheduled"}}Runs{{else}}Run at{{end}}</dt><dd>{{template "stamp" $j.RunAt}}</dd>
-{{- if not $j.AttemptedAt.IsZero}}<dt>Last attempt</dt><dd>{{template "stamp" $j.AttemptedAt}}</dd>{{end}}
-{{- if not $j.FinalizedAt.IsZero}}<dt>Finished</dt><dd>{{template "stamp" $j.FinalizedAt}}</dd>{{end}}
-{{- if lt $j.TimeoutMS 0}}<dt>Timeout</dt><dd>None</dd>{{else if $j.TimeoutMS}}<dt>Timeout</dt><dd>{{dur $j.Timeout}}</dd>{{end}}
-{{- with $j.BatchID}}<dt>Batch</dt><dd><a class="mono" href="{{link "/batches/" .}}">{{.}}</a></dd>{{end}}
-{{- with $j.AfterBatch}}<dt>After batch</dt><dd><a class="mono" href="{{link "/batches/" .}}">{{.}}</a></dd>{{end}}
-{{- with $j.RecurringID}}<dt>Recurring</dt><dd><a class="mono" href="{{link "/recurring"}}">{{.}}</a></dd>{{end}}
-{{- with $j.LimitKey}}<dt>Limit</dt><dd class="mono">{{.}}</dd>{{end}}
-{{- with $j.Tags}}<dt>Tags</dt><dd class="chips">{{range .}}<a class="chip" href="{{link "/jobs/" $j.State "?tag=" (query .)}}">{{.}}</a>{{end}}</dd>{{end}}
-{{- with $j.Parents}}<dt>Parents</dt><dd class="ids">{{range .}}<a class="mono" href="{{link "/jobs/" .}}">{{.}}</a>{{end}}</dd>{{end}}
-{{- with $j.PendingDeps}}<dt>Waiting on</dt><dd>{{.}} unresolved</dd>{{end}}
-{{- with $j.Children}}<dt>Children</dt><dd class="ids">{{range .}}<a class="mono" href="{{link "/jobs/" .}}">{{.}}</a>{{end}}</dd>{{end}}
+<dt>{{t "col.state"}}</dt><dd>{{template "badge" $j.State}}</dd>
+{{- if $j.Title}}<dt>{{t "col.kind"}}</dt><dd class="mono">{{$j.Kind}}</dd>{{end}}
+<dt>{{t "col.queue"}}</dt><dd><a class="chip" href="{{link "/jobs/" $j.State "?queue=" $j.Queue}}">{{$j.Queue}}</a></dd>
+<dt>{{t "col.priority"}}</dt><dd class="num">{{$j.Priority}}</dd>
+<dt>{{t "col.attempts"}}</dt><dd class="num">{{t "job.of" "n" $j.Attempt "max" $j.MaxAttempts}}</dd>
+{{- with $j.Server}}<dt>{{t "col.server"}}</dt><dd class="mono">{{.}}</dd>{{end}}
+<dt>{{t "col.created"}}</dt><dd>{{template "stamp" $j.CreatedAt}}</dd>
+<dt>{{if eq $j.State "scheduled"}}{{t "col.runs"}}{{else}}{{t "col.run_at"}}{{end}}</dt><dd>{{template "stamp" $j.RunAt}}</dd>
+{{- if not $j.AttemptedAt.IsZero}}<dt>{{t "col.last_attempt"}}</dt><dd>{{template "stamp" $j.AttemptedAt}}</dd>{{end}}
+{{- if not $j.FinalizedAt.IsZero}}<dt>{{t "col.finished"}}</dt><dd>{{template "stamp" $j.FinalizedAt}}</dd>{{end}}
+{{- if lt $j.TimeoutMS 0}}<dt>{{t "col.timeout"}}</dt><dd>{{t "job.no_timeout"}}</dd>{{else if $j.TimeoutMS}}<dt>{{t "col.timeout"}}</dt><dd>{{dur $j.Timeout}}</dd>{{end}}
+{{- with $j.BatchID}}<dt>{{t "col.batch"}}</dt><dd><a class="mono" href="{{link "/batches/" .}}">{{.}}</a></dd>{{end}}
+{{- with $j.AfterBatch}}<dt>{{t "col.after_batch"}}</dt><dd><a class="mono" href="{{link "/batches/" .}}">{{.}}</a></dd>{{end}}
+{{- with $j.RecurringID}}<dt>{{t "col.recurring"}}</dt><dd><a class="mono" href="{{link "/recurring"}}">{{.}}</a></dd>{{end}}
+{{- with $j.LimitKey}}<dt>{{t "col.limit"}}</dt><dd class="mono">{{.}}</dd>{{end}}
+{{- with $j.Tags}}<dt>{{t "col.tags"}}</dt><dd class="chips">{{range .}}<a class="chip" href="{{link "/jobs/" $j.State "?tag=" (query .)}}">{{.}}</a>{{end}}</dd>{{end}}
+{{- with $j.Parents}}<dt>{{t "col.parents"}}</dt><dd class="ids">{{range .}}<a class="mono" href="{{link "/jobs/" .}}">{{.}}</a>{{end}}</dd>{{end}}
+{{- with $j.PendingDeps}}<dt>{{t "col.waiting"}}</dt><dd>{{tn "job.unresolved" .}}</dd>{{end}}
+{{- with $j.Children}}<dt>{{t "col.children"}}</dt><dd class="ids">{{range .}}<a class="mono" href="{{link "/jobs/" .}}">{{.}}</a>{{end}}</dd>{{end}}
 </dl>
 </aside>
 </div>

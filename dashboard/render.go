@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"html/template"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,7 +40,6 @@ var views = map[string]string{
 var bufs = sync.Pool{New: func() any { return new(bytes.Buffer) }}
 
 type page struct {
-	Title string
 	App   string
 	Nav   []navItem
 	Flash *flash
@@ -47,7 +48,14 @@ type page struct {
 	CSS   string
 	JS    string
 	Icon  string
+	Text  template.JS
+	Query []param
 	Data  any
+}
+
+type param struct {
+	Name  string
+	Value string
 }
 
 type navItem struct {
@@ -69,28 +77,45 @@ type errorView struct {
 	Message string
 }
 
-func (h *handler) parse() map[string]*template.Template {
-	base := template.Must(template.New("").Funcs(template.FuncMap{
+func (h *handler) parse() map[*locale]map[string]*template.Template {
+	out := make(map[*locale]map[string]*template.Template, len(locales))
+	for _, lc := range locales {
+		base := template.Must(template.New("").Funcs(h.funcs(lc)).ParseFS(templateFS, "templates/layout.html"))
+		set := make(map[string]*template.Template, len(views))
+		for v, file := range views {
+			set[v] = template.Must(template.Must(base.Clone()).ParseFS(templateFS, "templates/"+file+".html"))
+		}
+		out[lc] = set
+	}
+	return out
+}
+
+func (h *handler) funcs(lc *locale) template.FuncMap {
+	return template.FuncMap{
 		"link":    h.link,
-		"num":     num,
-		"ago":     ago,
-		"abs":     abs,
-		"stamp":   stamp,
 		"initial": initial,
 		"iso":     iso,
 		"clock":   clock,
-		"dur":     dur,
-		"label":   label,
 		"preview": preview,
 		"pretty":  pretty,
-		"plural":  plural,
 		"query":   url.QueryEscape,
-	}).ParseFS(templateFS, "templates/layout.html"))
-	out := make(map[string]*template.Template, len(views))
-	for v, file := range views {
-		out[v] = template.Must(template.Must(base.Clone()).ParseFS(templateFS, "templates/"+file+".html"))
+		"num":     lc.num,
+		"short":   lc.short,
+		"ago":     lc.ago,
+		"abs":     lc.abs,
+		"stamp":   lc.stamp,
+		"dur":     lc.dur,
+		"label":   lc.label,
+		"t": func(key string, args ...any) string {
+			return lc.text(key, strs(args)...)
+		},
+		"tn": func(key string, n any, args ...any) string {
+			return lc.plural(key, integer(n), strs(args)...)
+		},
+		"parts": func(key string) message { return lc.msgs[key] },
+		"lang":  func() string { return lc.Tag },
+		"langs": func() []*locale { return locales },
 	}
-	return out
 }
 
 func (h *handler) link(parts ...any) string {
@@ -105,26 +130,36 @@ func (h *handler) link(parts ...any) string {
 	return b.String()
 }
 
-func (h *handler) show(w http.ResponseWriter, r *http.Request, view, title string, data any) {
+func (h *handler) show(w http.ResponseWriter, r *http.Request, view string, data any) {
 	if isAPI(r) {
 		writeJSON(w, http.StatusOK, data)
 		return
 	}
-	h.render(w, r, http.StatusOK, view, title, data)
+	h.render(w, r, http.StatusOK, view, data)
 }
 
-func (h *handler) render(w http.ResponseWriter, r *http.Request, code int, view, title string, data any) {
+func (h *handler) render(w http.ResponseWriter, r *http.Request, code int, view string, data any) {
+	lc := h.locale(r)
 	s, _ := h.stats.get(r.Context())
+	q := r.URL.Query()
 	p := &page{
-		Title: title,
 		App:   h.opt.Title,
 		Nav:   h.nav(view, s),
-		Flash: h.flash(r.URL.Query()),
+		Flash: h.flash(lc, q),
 		Write: writable(r),
 		CSS:   h.link("/assets/", assets["app.css"]),
 		JS:    h.link("/assets/", assets["app.js"]),
 		Icon:  h.link("/assets/", assets["icon.svg"]),
+		Text:  lc.scripts[view],
 		Data:  data,
+	}
+	for _, k := range slices.Sorted(maps.Keys(q)) {
+		if k == "done" || k == "n" {
+			continue
+		}
+		for _, v := range q[k] {
+			p.Query = append(p.Query, param{k, v})
+		}
 	}
 	if h.opt.Actor != nil {
 		p.Actor = h.opt.Actor(r)
@@ -136,7 +171,7 @@ func (h *handler) render(w http.ResponseWriter, r *http.Request, code int, view,
 			bufs.Put(b)
 		}
 	}()
-	if err := h.tmpl[view].ExecuteTemplate(b, "layout", p); err != nil {
+	if err := h.tmpl[lc][view].ExecuteTemplate(b, "layout", p); err != nil {
 		http.Error(w, "kiln: render "+view+": "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -154,16 +189,16 @@ func (h *handler) nav(view string, s *snapshot) []navItem {
 		section = "batches"
 	}
 	items := []navItem{
-		{Label: "Overview", URL: h.link("/"), On: section == "overview"},
-		{Label: "Jobs", URL: h.link("/jobs/", driver.Enqueued), Key: "failed", Alert: true, On: section == "jobs"},
-		{Label: "Retries", URL: h.link("/retries"), Key: "retries", On: section == "retries"},
-		{Label: "Recurring", URL: h.link("/recurring"), Key: "recurring", On: section == "recurring"},
-		{Label: "Queues", URL: h.link("/queues"), Key: "queues", On: section == "queues"},
-		{Label: "Servers", URL: h.link("/servers"), Key: "servers", On: section == "servers"},
-		{Label: "Batches", URL: h.link("/batches"), On: section == "batches"},
+		{Label: "nav.overview", URL: h.link("/"), On: section == "overview"},
+		{Label: "nav.jobs", URL: h.link("/jobs/", driver.Enqueued), Key: "failed", Alert: true, On: section == "jobs"},
+		{Label: "nav.retries", URL: h.link("/retries"), Key: "retries", On: section == "retries"},
+		{Label: "nav.recurring", URL: h.link("/recurring"), Key: "recurring", On: section == "recurring"},
+		{Label: "nav.queues", URL: h.link("/queues"), Key: "queues", On: section == "queues"},
+		{Label: "nav.servers", URL: h.link("/servers"), Key: "servers", On: section == "servers"},
+		{Label: "nav.batches", URL: h.link("/batches"), On: section == "batches"},
 	}
 	if h.lr != nil {
-		items = append(items, navItem{Label: "Limits", URL: h.link("/limits"), On: section == "limits"})
+		items = append(items, navItem{Label: "nav.limits", URL: h.link("/limits"), On: section == "limits"})
 	}
 	if s != nil {
 		for i := range items {
@@ -173,31 +208,25 @@ func (h *handler) nav(view string, s *snapshot) []navItem {
 	return items
 }
 
-func (h *handler) flash(q url.Values) *flash {
+func (h *handler) flash(lc *locale, q url.Values) *flash {
 	n, _ := strconv.ParseInt(q.Get("n"), 10, 64)
-	jobs := func(verb string) *flash {
-		if n == 1 {
-			return &flash{Text: verb + " 1 job"}
-		}
-		return &flash{Text: verb + " " + num(n) + " jobs"}
-	}
 	switch q.Get("done") {
 	case "requeued":
-		return jobs("Requeued")
+		return &flash{Text: lc.plural("flash.requeued", n)}
 	case "deleted":
-		return jobs("Deleted")
+		return &flash{Text: lc.plural("flash.deleted", n)}
 	case "triggered":
-		return &flash{Text: "Enqueued job " + strconv.FormatInt(n, 10), URL: h.link("/jobs/", n)}
+		return &flash{Text: lc.text("flash.triggered", "id", strconv.FormatInt(n, 10)), URL: h.link("/jobs/", n)}
 	case "queue-paused":
-		return &flash{Text: "Queue paused"}
+		return &flash{Text: lc.text("flash.queue_paused")}
 	case "queue-resumed":
-		return &flash{Text: "Queue resumed"}
+		return &flash{Text: lc.text("flash.queue_resumed")}
 	case "recurring-paused":
-		return &flash{Text: "Recurring job paused"}
+		return &flash{Text: lc.text("flash.recurring_paused")}
 	case "recurring-resumed":
-		return &flash{Text: "Recurring job resumed"}
+		return &flash{Text: lc.text("flash.recurring_resumed")}
 	case "recurring-removed":
-		return &flash{Text: "Recurring job removed"}
+		return &flash{Text: lc.text("flash.recurring_removed")}
 	}
 	return nil
 }
@@ -218,7 +247,7 @@ func (h *handler) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeJSON(w, code, map[string]string{"error": err.Error()})
 		return
 	}
-	h.render(w, r, code, "error", http.StatusText(code), &errorView{Code: code, Message: err.Error()})
+	h.render(w, r, code, "error", &errorView{Code: code, Message: err.Error()})
 }
 
 func (h *handler) redirect(w http.ResponseWriter, r *http.Request, target string, q url.Values) {

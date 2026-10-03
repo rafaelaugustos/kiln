@@ -1,8 +1,10 @@
+{{define "title"}}{{t "nav.recurring"}}{{end}}
+
 {{define "content"}}{{$l := .Data}}
 <div class="head">
 <div>
-<h1>Recurring</h1>
-<p class="sub">{{num (len $l.Recurring)}} schedules</p>
+<h1>{{t "nav.recurring"}}</h1>
+<p class="sub">{{tn "recurring.count" (len $l.Recurring)}}</p>
 </div>
 </div>
 
@@ -10,26 +12,26 @@
 {{- if $l.Recurring}}
 <div class="tbl">
 <table class="grid">
-<thead><tr><th>ID</th><th>Group</th><th>Job</th><th>Schedule</th><th>Next run</th><th>Last run</th>{{if $.Write}}<th class="r">Actions</th>{{end}}</tr></thead>
+<thead><tr><th>{{t "col.id"}}</th><th>{{t "col.group"}}</th><th>{{t "col.job"}}</th><th>{{t "col.schedule"}}</th><th>{{t "col.next_run"}}</th><th>{{t "col.last_run"}}</th>{{if $.Write}}<th class="r">{{t "col.actions"}}</th>{{end}}</tr></thead>
 <tbody>
 {{- range $l.Recurring}}
 <tr{{if .Paused}} class="paused"{{end}}>
-<td class="nowrap"><span class="mono strong">{{.ID}}</span>{{if .Paused}} <span class="badge s-paused"><i></i>Paused</span>{{end}}</td>
+<td class="nowrap"><span class="mono strong">{{.ID}}</span>{{if .Paused}} <span class="badge s-paused"><i></i>{{t "recurring.paused"}}</span>{{end}}</td>
 <td>{{with .Group}}<span class="chip plain">{{.}}</span>{{else}}<span class="none">—</span>{{end}}</td>
 <td class="nowrap"><span class="kind">{{.Kind}}</span> <a class="chip" href="{{link "/jobs/enqueued?queue=" .Queue}}">{{.Queue}}</a></td>
 <td class="nowrap"><code class="cron">{{.Spec}}</code> <span class="dim">{{.Location}}</span></td>
-<td class="nowrap">{{if .Paused}}<span class="none">Paused</span>{{else}}{{template "stamp" .NextRunAt}}{{end}}</td>
-<td class="nowrap">{{template "stamp" .LastRunAt}}{{with .LastJobID}}<a class="mono sub-link" href="{{link "/jobs/" .}}">job {{.}}</a>{{end}}</td>
+<td class="nowrap">{{if .Paused}}<span class="none">{{t "recurring.paused"}}</span>{{else}}{{template "stamp" .NextRunAt}}{{end}}</td>
+<td class="nowrap">{{template "stamp" .LastRunAt}}{{with .LastJobID}}<a class="mono sub-link" href="{{link "/jobs/" .}}">{{t "recurring.job" "id" .}}</a>{{end}}</td>
 {{- if $.Write}}
 <td class="r">
 <div class="row-actions">
-<form method="post" action="{{link "/recurring/" .ID "/trigger"}}"><button class="btn sm" type="submit">Trigger</button></form>
+<form method="post" action="{{link "/recurring/" .ID "/trigger"}}"><button class="btn sm" type="submit">{{t "action.trigger"}}</button></form>
 {{- if .Paused}}
-<form method="post" action="{{link "/recurring/" .ID "/resume"}}"><button class="btn sm" type="submit">Resume</button></form>
+<form method="post" action="{{link "/recurring/" .ID "/resume"}}"><button class="btn sm" type="submit">{{t "action.resume"}}</button></form>
 {{- else}}
-<form method="post" action="{{link "/recurring/" .ID "/pause"}}"><button class="btn sm" type="submit">Pause</button></form>
+<form method="post" action="{{link "/recurring/" .ID "/pause"}}"><button class="btn sm" type="submit">{{t "action.pause"}}</button></form>
 {{- end}}
-<form method="post" action="{{link "/recurring/" .ID "/remove"}}"><button class="btn sm danger" type="submit" data-confirm="Remove the recurring job {{.ID}}?">Remove</button></form>
+<form method="post" action="{{link "/recurring/" .ID "/remove"}}"><button class="btn sm danger" type="submit" data-confirm="{{t "recurring.confirm_remove" "id" .ID}}">{{t "action.remove"}}</button></form>
 </div>
 </td>
 {{- end}}
@@ -38,6 +40,6 @@
 </tbody>
 </table>
 </div>
-{{- else}}{{template "empty" "No recurring jobs."}}{{end}}
+{{- else}}{{template "empty" (t "recurring.empty")}}{{end}}
 </section>
 {{end}}

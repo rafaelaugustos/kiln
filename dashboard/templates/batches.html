@@ -1,7 +1,9 @@
+{{define "title"}}{{t "nav.batches"}}{{end}}
+
 {{define "content"}}{{$l := .Data}}
 <div class="head">
 <div>
-<h1>Batches</h1>
+<h1>{{t "nav.batches"}}</h1>
 </div>
 </div>
 
@@ -9,22 +11,22 @@
 {{- if $l.Batches}}
 <div class="tbl">
 <table class="grid">
-<thead><tr><th class="id">ID</th><th>Description</th><th class="w-progress">Progress</th><th class="r">Jobs</th><th>Status</th><th class="r">Created</th></tr></thead>
+<thead><tr><th class="id">{{t "col.id"}}</th><th>{{t "col.description"}}</th><th class="w-progress">{{t "col.progress"}}</th><th class="r">{{t "col.jobs"}}</th><th>{{t "col.status"}}</th><th class="r">{{t "col.created"}}</th></tr></thead>
 <tbody>
 {{- range $l.Batches}}
 <tr>
 <td class="id"><a href="{{link "/batches/" .ID}}">{{.ID}}</a></td>
-<td><a class="link" href="{{link "/batches/" .ID}}">{{if .Description}}{{.Description}}{{else}}<span class="dim">Untitled</span>{{end}}</a></td>
+<td><a class="link" href="{{link "/batches/" .ID}}">{{if .Description}}{{.Description}}{{else}}<span class="dim">{{t "batch.untitled"}}</span>{{end}}</a></td>
 <td><span class="progress-cell">{{template "progress" .}}<span class="num dim">{{.Percent}}%</span></span></td>
 <td class="r num">{{num .Done}}<span class="of">/{{num .Total}}</span></td>
-<td>{{if .Finished}}<span class="badge s-succeeded"><i></i>Finished</span>{{else if .Sealed}}<span class="badge s-processing"><i></i>Running</span>{{else}}<span class="badge s-awaiting"><i></i>Open</span>{{end}}</td>
+<td>{{if .Finished}}<span class="badge s-succeeded"><i></i>{{t "batch.finished"}}</span>{{else if .Sealed}}<span class="badge s-processing"><i></i>{{t "batch.running"}}</span>{{else}}<span class="badge s-awaiting"><i></i>{{t "batch.open"}}</span>{{end}}</td>
 <td class="r nowrap">{{template "when" .CreatedAt}}</td>
 </tr>
 {{- end}}
 </tbody>
 </table>
 </div>
-{{- else}}{{template "empty" "No batches yet."}}{{end}}
+{{- else}}{{template "empty" (t "batches.empty")}}{{end}}
 {{template "pager" $l}}
 </section>
 {{end}}

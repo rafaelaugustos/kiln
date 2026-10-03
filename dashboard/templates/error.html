@@ -1,9 +1,11 @@
+{{define "title"}}{{t (print "status." .Data.Code)}}{{end}}
+
 {{define "content"}}{{$e := .Data}}
 <div class="error-page" data-mood="{{if eq $e.Code 404}}waiting{{else}}failed{{end}}" data-heat="idle">
 {{template "kiln"}}
 <p class="code-num">{{$e.Code}}</p>
-<h1>{{.Title}}</h1>
+<h1>{{template "title" .}}</h1>
 <p class="sub">{{$e.Message}}</p>
-<a class="btn" href="{{link "/"}}">Back to overview</a>
+<a class="btn" href="{{link "/"}}">{{t "error.back"}}</a>
 </div>
 {{end}}

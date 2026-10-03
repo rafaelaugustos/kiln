@@ -26,10 +26,12 @@ var tabOrder = []driver.State{
 }
 
 type tab struct {
-	State driver.State
-	URL   string
-	Count string
-	On    bool
+	State   driver.State
+	URL     string
+	N       int64
+	Capped  bool
+	Counted bool
+	On      bool
 }
 
 type jobList struct {
@@ -75,19 +77,19 @@ func (l *jobList) Filtered() bool {
 func (l *jobList) Column() string {
 	switch {
 	case l.Retries:
-		return "Next retry"
+		return "col.next_retry"
 	case l.State == driver.Scheduled:
-		return "Runs"
+		return "col.runs"
 	case l.State == driver.Awaiting:
-		return "Created"
+		return "col.created"
 	case l.State == driver.Throttled:
-		return "Ready"
+		return "col.ready"
 	case l.State == driver.Enqueued:
-		return "Enqueued"
+		return "col.enqueued_at"
 	case l.State == driver.Processing:
-		return "Started"
+		return "col.started"
 	}
-	return "Finished"
+	return "col.finished"
 }
 
 func (l *jobList) When(v *jobView) time.Time {
@@ -106,27 +108,22 @@ func (l *jobList) CanRequeue() bool { return requeueable(l.State) }
 func (l *jobList) CanDelete() bool  { return l.State.Live() }
 func (l *jobList) CanFilter() bool  { return !l.Retries }
 
-func (l *jobList) DeleteLabel() string {
-	if l.State == driver.Processing {
-		return "Cancel"
-	}
-	return "Delete"
-}
+func (l *jobList) DeleteLabel() string { return deleteLabel(l.State) }
 
 func (l *jobList) Empty() string {
 	switch {
 	case l.Retries && l.Next != "":
-		return "No retries on this page. Use Next to keep scanning scheduled jobs."
+		return "retries.empty_page"
 	case l.Retries:
-		return "No retries scheduled."
+		return "retries.empty"
 	case l.Filtered() && l.Next != "":
-		return "No " + string(l.State) + " jobs on this page match these filters. Use Next to keep looking."
+		return "jobs.empty_filtered_page"
 	case l.Filtered():
-		return "No " + string(l.State) + " jobs match these filters."
+		return "jobs.empty_filtered"
 	case l.State == driver.Failed:
-		return "No failed jobs. Clean batch."
+		return "jobs.empty_failed"
 	}
-	return "No " + string(l.State) + " jobs."
+	return "jobs.empty"
 }
 
 func (h *handler) jobsIndex(w http.ResponseWriter, r *http.Request) {
@@ -188,7 +185,8 @@ func (h *handler) jobs(w http.ResponseWriter, r *http.Request) {
 	for _, t := range tabOrder {
 		tb := tab{State: t, URL: withQuery(h.link("/jobs/", t), f), On: t == st}
 		if s != nil && !l.Filtered() {
-			tb.Count = s.Counts.text(s.Counts.of(t))
+			n := s.Counts.of(t)
+			tb.N, tb.Capped, tb.Counted = n, s.Counts.capped(n), true
 		}
 		l.Tabs = append(l.Tabs, tb)
 	}
@@ -201,7 +199,7 @@ func (h *handler) jobs(w http.ResponseWriter, r *http.Request) {
 	if l.Queue != "" && !slices.Contains(l.Queues, l.Queue) {
 		l.Queues = append(l.Queues, l.Queue)
 	}
-	h.render(w, r, http.StatusOK, "jobs", label(st)+" jobs", l)
+	h.render(w, r, http.StatusOK, "jobs", l)
 }
 
 func (h *handler) retries(w http.ResponseWriter, r *http.Request) {
@@ -230,7 +228,7 @@ func (h *handler) retries(w http.ResponseWriter, r *http.Request) {
 	if q.Get("cursor") != "" {
 		l.FirstURL = l.Self
 	}
-	h.render(w, r, http.StatusOK, "retries", "Retries", l)
+	h.render(w, r, http.StatusOK, "retries", l)
 }
 
 func (h *handler) scanRetries(ctx context.Context, cursor string, limit int, add func(*driver.Record)) (string, error) {
@@ -287,7 +285,7 @@ func (h *handler) detail(w http.ResponseWriter, r *http.Request, id int64) {
 			return
 		}
 	}
-	h.show(w, r, "job", "Job "+strconv.FormatInt(id, 10), v)
+	h.show(w, r, "job", v)
 }
 
 type selection struct {

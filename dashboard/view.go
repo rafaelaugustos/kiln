@@ -132,27 +132,22 @@ func (h *handler) redactText(kind, s string) string {
 	return string(h.opt.Redact(kind, PartError, []byte(s)))
 }
 
-type event struct {
-	entryView
-	Label string
-}
-
-func (v *jobView) Timeline() []event {
-	out := make([]event, 0, len(v.History)+2)
+func (v *jobView) Timeline() []entryView {
+	out := make([]entryView, 0, len(v.History)+2)
 	var last driver.State
 	if n := len(v.History); n > 0 {
 		last = v.History[n-1].State
 	}
 	switch {
 	case v.State == driver.Processing:
-		out = append(out, event{entryView{At: v.AttemptedAt, State: v.State, Attempt: v.Attempt, Server: v.Server}, "Processing"})
+		out = append(out, entryView{At: v.AttemptedAt, State: v.State, Attempt: v.Attempt, Server: v.Server})
 	case !v.FinalizedAt.IsZero() && last != v.State:
-		out = append(out, event{entryView{At: v.FinalizedAt, State: v.State, Attempt: v.Attempt, Server: v.Server}, label(v.State)})
+		out = append(out, entryView{At: v.FinalizedAt, State: v.State, Attempt: v.Attempt, Server: v.Server})
 	}
 	for _, e := range slices.Backward(v.History) {
-		out = append(out, event{e, label(e.State)})
+		out = append(out, e)
 	}
-	return append(out, event{entryView{At: v.CreatedAt}, "Created"})
+	return append(out, entryView{At: v.CreatedAt})
 }
 
 func (v *jobView) Timeout() time.Duration {
@@ -165,6 +160,17 @@ func (v *jobView) CanRequeue() bool {
 
 func (v *jobView) CanDelete() bool {
 	return v.State.Live()
+}
+
+func (v *jobView) DeleteLabel() string {
+	return deleteLabel(v.State)
+}
+
+func deleteLabel(s driver.State) string {
+	if s == driver.Processing {
+		return "action.cancel"
+	}
+	return "action.delete"
 }
 
 func requeueable(s driver.State) bool {

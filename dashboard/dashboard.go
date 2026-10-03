@@ -68,6 +68,11 @@ type Options struct {
 
 	// Title names the application in the header and in page titles. Empty means "kiln".
 	Title string
+
+	// Language is the language of the pages for viewers who have not picked one in the header:
+	// "en" or "pt-BR". Empty means the one their browser asks for, and English when it asks for
+	// none of these.
+	Language string
 }
 
 // AllowAll grants [ReadWrite] access to requests addressed to localhost or to a loopback address,
@@ -97,8 +102,9 @@ type handler struct {
 	lr     driver.LimitReader
 	opt    Options
 	prefix string
+	lang   *locale
 	mux    http.ServeMux
-	tmpl   map[string]*template.Template
+	tmpl   map[*locale]map[string]*template.Template
 
 	stats *memo[*snapshot]
 	hour  *memo[*chart]
@@ -118,6 +124,7 @@ func New(c *kiln.Client, o Options) http.Handler {
 		store:  c.Store(),
 		opt:    o,
 		prefix: strings.TrimRight(o.Prefix, "/"),
+		lang:   match(o.Language),
 	}
 	h.lr, _ = h.store.(driver.LimitReader)
 	if h.prefix != "" && h.prefix[0] != '/' {
@@ -174,6 +181,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		http.NotFound(w, r)
 		return
+	}
+	if r.Method == http.MethodGet && r.URL.RawQuery != "" && !strings.HasPrefix(p, "/api/") {
+		if q := r.URL.Query(); q.Has("lang") {
+			h.pick(w, r, p, q)
+			return
+		}
 	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		if code := guard(r, a, strings.HasPrefix(p, "/api/")); code != 0 {

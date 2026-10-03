@@ -1,9 +1,11 @@
+{{define "title"}}{{t "batch.title" "id" .Data.ID}}{{end}}
+
 {{define "content"}}{{$b := .Data}}
 <div class="head">
 <div>
-<div class="crumbs"><a href="{{link "/batches"}}">Batches</a><span aria-hidden="true">/</span><span class="mono">{{$b.ID}}</span></div>
-<h1 class="title">{{if $b.Description}}{{$b.Description}}{{else}}Batch {{$b.ID}}{{end}}{{if $b.Finished}}<span class="badge s-succeeded"><i></i>Finished</span>{{else if $b.Sealed}}<span class="badge s-processing"><i></i>Running</span>{{else}}<span class="badge s-awaiting"><i></i>Open</span>{{end}}</h1>
-<p class="sub">{{num $b.Done}} of {{num $b.Total}} jobs done · {{$b.Percent}}%</p>
+<div class="crumbs"><a href="{{link "/batches"}}">{{t "nav.batches"}}</a><span aria-hidden="true">/</span><span class="mono">{{$b.ID}}</span></div>
+<h1 class="title">{{if $b.Description}}{{$b.Description}}{{else}}{{t "batch.title" "id" $b.ID}}{{end}}{{if $b.Finished}}<span class="badge s-succeeded"><i></i>{{t "batch.finished"}}</span>{{else if $b.Sealed}}<span class="badge s-processing"><i></i>{{t "batch.running"}}</span>{{else}}<span class="badge s-awaiting"><i></i>{{t "batch.open"}}</span>{{end}}</h1>
+<p class="sub">{{t "batch.done" "done" (num $b.Done) "total" (num $b.Total)}} · {{$b.Percent}}%</p>
 </div>
 </div>
 
@@ -20,23 +22,23 @@
 <div class="stack">
 {{- with $b.Meta}}
 <section class="panel">
-<div class="panel-head"><h2>Metadata</h2></div>
+<div class="panel-head"><h2>{{t "meta"}}</h2></div>
 <pre class="code">{{pretty .}}</pre>
 </section>
 {{- else}}
 <section class="panel">
-<div class="panel-head"><h2>Metadata</h2></div>
-{{template "empty" "No metadata."}}
+<div class="panel-head"><h2>{{t "meta"}}</h2></div>
+{{template "empty" (t "batch.no_meta")}}
 </section>
 {{- end}}
 </div>
 <aside class="panel side">
 <dl class="props">
-<dt>ID</dt><dd class="mono">{{$b.ID}}</dd>
-<dt>Total</dt><dd class="num">{{num $b.Total}}</dd>
-<dt>Sealed</dt><dd>{{if $b.Sealed}}Yes{{else}}No{{end}}</dd>
-<dt>Created</dt><dd>{{template "when" $b.CreatedAt}}</dd>
-<dt>Finished</dt><dd>{{template "when" $b.FinishedAt}}</dd>
+<dt>{{t "col.id"}}</dt><dd class="mono">{{$b.ID}}</dd>
+<dt>{{t "col.total"}}</dt><dd class="num">{{num $b.Total}}</dd>
+<dt>{{t "col.sealed"}}</dt><dd>{{if $b.Sealed}}{{t "yes"}}{{else}}{{t "no"}}{{end}}</dd>
+<dt>{{t "col.created"}}</dt><dd>{{template "when" $b.CreatedAt}}</dd>
+<dt>{{t "col.finished"}}</dt><dd>{{template "when" $b.FinishedAt}}</dd>
 </dl>
 </aside>
 </div>

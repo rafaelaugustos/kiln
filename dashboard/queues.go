@@ -46,7 +46,7 @@ func (h *handler) queues(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, err)
 		return
 	}
-	h.show(w, r, "queues", "Queues", &queueList{Queues: queueViews(qs)})
+	h.show(w, r, "queues", &queueList{Queues: queueViews(qs)})
 }
 
 func (h *handler) queueAction(w http.ResponseWriter, r *http.Request) {
