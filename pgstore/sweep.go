@@ -28,7 +28,7 @@ const sqlStuck = `WITH c AS (
 	FOR NO KEY UPDATE SKIP LOCKED
 )
 UPDATE {s}.jobs j SET deps_pending = 0, state = {s}.ready(j.run_at, j.limit_key) WHERE j.id = ANY(ARRAY(SELECT id FROM c))
-RETURNING j.queue, j.state::text`
+RETURNING j.queue, j.state::text, coalesce(j.limit_key, '')`
 
 const sqlIdleBatches = `SELECT b.id FROM {s}.batches b
 WHERE b.sealed AND b.finished_at IS NULL AND NOT EXISTS (SELECT 1 FROM {s}.jobs j WHERE j.batch_id = b.id)
@@ -106,9 +106,9 @@ func (s *Store) keys(ctx context.Context, q string, args ...any) ([]string, erro
 
 func counting(w *wake, n *int) func(pgx.Rows) error {
 	return func(rows pgx.Rows) error {
-		var q, state string
+		var q, state, key string
 		for rows.Next() {
-			if err := rows.Scan(&q, &state); err != nil {
+			if err := rows.Scan(&q, &state, &key); err != nil {
 				return err
 			}
 			*n++

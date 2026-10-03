@@ -15,6 +15,7 @@ var txTests = []test{
 	{"OwnWrites", testTxOwnWrites},
 	{"Batch", testTxBatch},
 	{"Limit", testTxLimit},
+	{"SealLimit", testTxSealLimit},
 }
 
 func transactor(t *testing.T, s driver.Store) driver.Transactor {
@@ -127,4 +128,22 @@ func testTxLimit(t *testing.T, s driver.Store) {
 	wantState(t, s, driver.Throttled, ids[1])
 	apply(t, s, outcome(claimOne(t, s, "tx", ids[0]), driver.Succeeded))
 	wantState(t, s, driver.Enqueued, ids[1])
+}
+
+func testTxSealLimit(t *testing.T, s driver.Store) {
+	held := func(key string) (int64, int64) {
+		bid := openBatch(t, s)
+		p := afterBatch("seal", bid)
+		p.LimitKey, p.LimitMax = key, 1
+		id := add(t, s, p)
+		wantState(t, s, driver.Awaiting, id)
+		return bid, id
+	}
+	bid, id := held("own")
+	seal(t, s, bid)
+	wantState(t, s, driver.Enqueued, id)
+
+	bid, id = held("tx")
+	inTx(t, s, func(w driver.Writer) error { return w.SealBatch(t.Context(), bid) })
+	wantState(t, s, driver.Enqueued, id)
 }

@@ -186,9 +186,9 @@ const batchDeps = `, r AS MATERIALIZED (
 	UPDATE {s}.jobs j SET deps_pending = greatest(j.deps_pending - k.n, 0),
 		state = CASE WHEN j.deps_pending - k.n > 0 THEN 'awaiting' ELSE {s}.ready(j.run_at, j.limit_key) END
 	FROM k WHERE j.id = k.id
-	RETURNING j.queue, j.state
+	RETURNING j.queue, j.state, j.limit_key
 )
-SELECT u.queue, u.state::text FROM u`
+SELECT u.queue, u.state::text, coalesce(u.limit_key, '') FROM u`
 
 const completeWhere = `) AND b.sealed AND b.finished_at IS NULL
 		AND NOT EXISTS (SELECT 1 FROM {s}.jobs j WHERE j.batch_id = b.id)
@@ -353,13 +353,16 @@ func (w *wake) scanQueues(rows pgx.Rows) error {
 }
 
 func (w *wake) scanStates(rows pgx.Rows) error {
-	var q, state string
+	var q, state, key string
 	for rows.Next() {
-		if err := rows.Scan(&q, &state); err != nil {
+		if err := rows.Scan(&q, &state, &key); err != nil {
 			return err
 		}
-		if state == string(driver.Enqueued) {
+		switch driver.State(state) {
+		case driver.Enqueued:
 			w.queue(q)
+		case driver.Throttled:
+			w.hold(key)
 		}
 	}
 	return rows.Err()

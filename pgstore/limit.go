@@ -224,6 +224,19 @@ func (s *Store) admit(ctx context.Context, r rules, w *wake) error {
 	return nil
 }
 
+func (s *Store) admitLate(ctx context.Context, w *wake) error {
+	held := slices.DeleteFunc(w.held, func(key string) bool { return slices.Contains(w.keys, key) })
+	if len(w.keys) > 0 {
+		if err := s.admit(ctx, w.rules, w); err != nil {
+			return err
+		}
+	}
+	if len(held) == 0 {
+		return nil
+	}
+	return s.admit(ctx, rules{keys: held}, w)
+}
+
 func (s *Store) readmit(ctx context.Context, w *wake) error {
 	for _, d := range backoff {
 		if len(w.keys) == 0 {
