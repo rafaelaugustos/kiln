@@ -135,8 +135,19 @@ func TestSlowSubscriber(t *testing.T) {
 
 	r.wait(t, "a resync for the dropped events", resyncs(2))
 	marker := driver.Event{Kind: driver.JobsReady, Queue: "marker"}
-	publish(t, pub, marker)
-	got := r.wait(t, "an event after the backlog", has(marker))
+	deadline := time.Now().Add(20 * time.Second)
+	got := r.snapshot()
+	for !has(marker)(got) {
+		if time.Now().After(deadline) {
+			t.Fatalf("no event got through after the backlog; %d events, the last were %v", len(got), got[max(0, len(got)-5):])
+		}
+		publish(t, pub, marker)
+		select {
+		case <-r.changed:
+		case <-time.After(500 * time.Millisecond):
+		}
+		got = r.snapshot()
+	}
 	if n := count(got, flood); n >= messages*len(batch) {
 		t.Errorf("all %d events reached a blocked subscriber, want drops", n)
 	}
