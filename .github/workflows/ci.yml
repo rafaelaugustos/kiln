@@ -34,6 +34,18 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: Kiln-Passw0rd
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P Kiln-Passw0rd -C -Q 'SELECT 1'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
       redis:
         image: redis:7-alpine
         ports:
@@ -46,6 +58,7 @@ jobs:
     env:
       KILN_DATABASE_URL: postgres://kiln:kiln@localhost:5432/kiln?sslmode=disable
       KILN_MYSQL_DSN: root:kiln@tcp(localhost:3306)/kiln
+      KILN_MSSQL_DSN: sqlserver://sa:Kiln-Passw0rd@localhost:1433?database=kiln
       KILN_REDIS_ADDR: localhost:6379
     steps:
       - uses: actions/checkout@v7
@@ -60,6 +73,11 @@ jobs:
         working-directory: pgstore
       - run: go vet ./... && go test -race -coverprofile=coverage.out ./...
         working-directory: mysqlstore
+      - run: |
+          docker exec ${{ job.services.mssql.id }} /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P Kiln-Passw0rd -C -b \
+            -Q "CREATE DATABASE kiln; ALTER DATABASE kiln SET READ_COMMITTED_SNAPSHOT ON"
+          go vet ./... && go test -race -coverprofile=coverage.out ./...
+        working-directory: mssqlstore
       - run: go vet ./... && go test -race -coverprofile=coverage.out ./...
         working-directory: sqlitestore
       - run: go vet ./... && go test -race -coverprofile=coverage.out ./...
@@ -73,4 +91,4 @@ jobs:
       - uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage.out,pgstore/coverage.out,mysqlstore/coverage.out,sqlitestore/coverage.out,kilnotel/coverage.out,redisbus/coverage.out
+          files: coverage.out,pgstore/coverage.out,mysqlstore/coverage.out,mssqlstore/coverage.out,sqlitestore/coverage.out,kilnotel/coverage.out,redisbus/coverage.out

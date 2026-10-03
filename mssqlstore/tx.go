@@ -128,10 +128,10 @@ func (w *TxWriter) SealBatch(ctx context.Context, id int64) error {
 
 // Notify admits the throttled jobs of the limit keys the transaction's inserts used or its seals
 // released jobs under, in a transaction of its own, and, when the store has a bus, publishes the
-// queues that received jobs to run. Call it after the transaction commits. Its error is advisory: the jobs are committed
-// either way, and without Notify they wait for the next sweep and the servers' next poll. Calling
-// it twice, or after a rollback, does no harm, but a second call does nothing, even after the
-// first failed.
+// queues that received jobs to run. Call it after the transaction commits. Its error is advisory:
+// the jobs are committed either way, and without Notify they wait for the next sweep and the
+// servers' next poll. Calling it twice, or after a rollback, does no harm, but a second call does
+// nothing, even after the first failed.
 func (w *TxWriter) Notify(ctx context.Context) error {
 	wk := w.wake
 	w.wake = wake{}
