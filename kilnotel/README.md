@@ -61,12 +61,13 @@ event carries the stack. A snooze adds a `kiln.job.snoozed` event and leaves the
 | `kiln.server.capacity` | gauge | `{job}` | | jobs the server can run at once |
 | `kiln.completer.pending` | gauge | `{job}` | | finished jobs whose outcome is not stored yet |
 | `kiln.queue.jobs` | gauge | `{job}` | `queue`, `state` | jobs `enqueued`, `processing`, `scheduled` or `throttled` |
+| `kiln.jobs.failed` | gauge | `{job}` | | jobs that failed for good and wait for a requeue or a delete; alert on it |
 
 `outcome` is `succeeded`, `failed`, `snoozed`, `canceled` or `interrupted`. An attempt that kiln will
 retry counts as `failed`; `canceled` means the job was deleted while it ran; `interrupted` means the
 server shut down before it finished and the job went back to the queue.
 
 `Middleware` records the first three. `Observe` reports the gauges each time metrics are collected; the
-queue gauges query the store with a 5 second timeout. They describe the whole store, so when several
+queue and failed gauges query the store with a 5 second timeout. They describe the whole store, so when several
 servers share one, pass the store on one of them and a nil inspector on the rest. A process that only
 enqueues can pass a nil server. Call the returned function to stop reporting.

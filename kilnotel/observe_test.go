@@ -16,15 +16,23 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
-var gaugeNames = []string{"kiln.completer.pending", "kiln.queue.jobs", "kiln.server.capacity", "kiln.server.running"}
+var gaugeNames = []string{"kiln.completer.pending", "kiln.jobs.failed", "kiln.queue.jobs", "kiln.server.capacity", "kiln.server.running"}
 
 type stubInspector struct {
 	driver.Inspector
 	queues func(context.Context) ([]driver.QueueInfo, error)
+	counts func(context.Context) (driver.Counts, error)
 }
 
 func (s stubInspector) Queues(ctx context.Context) ([]driver.QueueInfo, error) {
 	return s.queues(ctx)
+}
+
+func (s stubInspector) Counts(ctx context.Context) (driver.Counts, error) {
+	if s.counts == nil {
+		return driver.Counts{Failed: 2}, nil
+	}
+	return s.counts(ctx)
 }
 
 func idleServer(t *testing.T, workers int) *kiln.Server {
@@ -50,6 +58,7 @@ func TestObserve(t *testing.T) {
 		<-release
 		return nil
 	})
+	mux.HandleFunc("fail", func(context.Context, *kiln.RawJob) error { return errors.New("card declined") })
 	server, _ := runServer(t, client, mux, kiln.ServerConfig{Queues: map[string]int{kiln.DefaultQueue: 3}})
 	defer close(release)
 	unregister, err := kilnotel.Observe(server, store, tel.opts...)
@@ -59,9 +68,14 @@ func TestObserve(t *testing.T) {
 	enqueue(t, client, work("wait"))
 	enqueue(t, client, work("wait"), kiln.Queue("mail"), kiln.Delay(time.Hour))
 	receive(t, started)
+	enqueue(t, client, work("fail"), kiln.MaxAttempts(1))
+	waitFor(t, "a failed job", func() bool {
+		c, err := store.Counts(context.Background())
+		return err == nil && c.Failed == 1
+	})
 
 	m := tel.collect(t)
-	for name, want := range map[string]int64{"kiln.server.running": 1, "kiln.server.capacity": 3, "kiln.completer.pending": 0} {
+	for name, want := range map[string]int64{"kiln.server.running": 1, "kiln.server.capacity": 3, "kiln.completer.pending": 0, "kiln.jobs.failed": 1} {
 		if got := value(t, m[name]); got != want {
 			t.Errorf("%s = %d, want %d", name, got, want)
 		}
@@ -145,7 +159,7 @@ func TestObserveEitherSide(t *testing.T) {
 		want      []string
 	}{
 		{"server", idleServer(t, 1), nil, []string{"kiln.completer.pending", "kiln.server.capacity", "kiln.server.running"}},
-		{"inspector", nil, queues, []string{"kiln.queue.jobs"}},
+		{"inspector", nil, queues, []string{"kiln.jobs.failed", "kiln.queue.jobs"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
