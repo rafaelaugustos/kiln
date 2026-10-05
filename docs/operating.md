@@ -54,5 +54,15 @@ ends, together with those admitted right after it, and can start together, brief
 Checking the rate again at claim time would add a write to every claim of a rate-limited job, so kiln
 does not; leave the downstream some headroom over the configured rate.
 
+**Retries and alerts.** A job that runs out of attempts stays in `failed` until someone requeues or
+deletes it, and the jobs waiting on it stay in `awaiting` until then. Give each kind a retry window
+longer than the longest outage you expect from what it calls: the window is the sum of the waits
+between attempts, and when those add up to fifteen seconds, a payment API that is down for four
+minutes fails every job that ran meanwhile. Registered with `Exponential(2*time.Second,
+2*time.Minute)` and given `MaxAttempts(12)`, a kind waits six to twelve minutes in all, since each
+wait is drawn between half and all of its value. Then alert on the jobs that fail anyway:
+`kilnotel.Observe` reports them as the `kiln.jobs.failed` gauge (`kiln_jobs_failed` in Prometheus),
+and the dashboard's Failed tab requeues them all at once, which also releases what waits on them.
+
 **Health.** `Server.Healthy()` fails when the server has fenced itself off, its heartbeat is stale or its
 results are piling up; use it for readiness and liveness probes. `Server.Stats()` has the counters.

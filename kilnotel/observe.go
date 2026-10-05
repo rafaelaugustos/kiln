@@ -20,6 +20,7 @@ type gauges struct {
 	capacity  metric.Int64ObservableGauge
 	pending   metric.Int64ObservableGauge
 	jobs      metric.Int64ObservableGauge
+	failed    metric.Int64ObservableGauge
 }
 
 // Observe registers gauges that are read each time metrics are collected:
@@ -28,9 +29,11 @@ type gauges struct {
 //	kiln.server.capacity    workers of s
 //	kiln.completer.pending  finished jobs of s whose outcome is not stored yet
 //	kiln.queue.jobs         jobs of each queue, by queue and state, from inspector
+//	kiln.jobs.failed        jobs that failed for good, from inspector
 //
 // The queue gauge counts enqueued, processing, scheduled and throttled jobs across the whole
-// store, with a 5 second timeout per collection. With several servers on one store, pass the
+// store. The failed gauge counts the jobs waiting in failed for a requeue or a delete, the number
+// to alert on. Both are read with a 5 second timeout per collection. With several servers on one store, pass the
 // inspector on one of them only and nil on the others; a process that only enqueues can pass a nil
 // server. Observe fails with [kiln.ErrInvalid] when both are nil. Call the returned function to
 // unregister the gauges.
@@ -55,11 +58,15 @@ func Observe(s *kiln.Server, inspector driver.Inspector, opts ...Option) (func()
 		metric.WithUnit("{job}"),
 		metric.WithDescription("Jobs in each queue, by state."),
 	)
-	if err := errors.Join(err1, err2, err3, err4); err != nil {
+	failed, err5 := meter.Int64ObservableGauge("kiln.jobs.failed",
+		metric.WithUnit("{job}"),
+		metric.WithDescription("Jobs that failed for good and wait for a requeue or a delete."),
+	)
+	if err := errors.Join(err1, err2, err3, err4, err5); err != nil {
 		return nil, err
 	}
-	g := &gauges{server: s, inspector: inspector, running: running, capacity: capacity, pending: pending, jobs: jobs}
-	reg, err := meter.RegisterCallback(g.observe, running, capacity, pending, jobs)
+	g := &gauges{server: s, inspector: inspector, running: running, capacity: capacity, pending: pending, jobs: jobs, failed: failed}
+	reg, err := meter.RegisterCallback(g.observe, running, capacity, pending, jobs, failed)
 	if err != nil {
 		if reg != nil {
 			err = errors.Join(err, reg.Unregister())
@@ -91,6 +98,11 @@ func (g *gauges) observe(ctx context.Context, o metric.Observer) error {
 		g.observeQueue(o, q.Name, kiln.Scheduled, q.Scheduled)
 		g.observeQueue(o, q.Name, kiln.Throttled, q.Throttled)
 	}
+	c, err := g.inspector.Counts(ctx)
+	if err != nil {
+		return fmt.Errorf("kilnotel: counts: %w", err)
+	}
+	o.ObserveInt64(g.failed, c.Failed)
 	return nil
 }
 
