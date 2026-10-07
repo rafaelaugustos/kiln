@@ -31,6 +31,20 @@ Each run drops and recreates the kiln schema `kiln_soak` (PostgreSQL) or the `ki
 temporary directory printed on the first line. Ctrl-C ends the run early and still drains and
 checks; a second Ctrl-C quits.
 
+## On a server
+
+`vps/` runs a soak on a machine with nothing but Docker. Its compose file starts a PostgreSQL of its own,
+which the harness restarts through the Docker socket, so nothing else on the host is touched:
+
+```
+git clone https://github.com/rafaelaugustos/kiln && cd kiln/soak/vps
+docker compose up -d --build
+```
+
+`DURATION`, `RATE` and `WORKERS` default to 24h, 20 and 4. Each run writes to `evidence/run-<time>/`: the
+summary and exit status, the worker logs, CPU and memory of both containers every 5 minutes, and a dump of
+the database at the end.
+
 ## What it does
 
 The harness enqueues, in one transaction with a row in `soak_enqueued`, a mix of plain jobs, jobs

@@ -72,9 +72,31 @@ A 15 minute run on PostgreSQL, 4 workers, 50 enqueues per second:
 | Peak concurrency per limited key | at or under its `Max` |
 | Store after the run | limit counters at 0, nothing for Sweep to repair |
 
+A 24 hour run on PostgreSQL 17, 4 workers, 20 enqueues per second, on a 2 vCPU / 2 GB DigitalOcean droplet
+with kiln v0.8.0:
+
+| | |
+|---|---|
+| Jobs | 2,233,828 |
+| Chaos | 2,886 `SIGKILL`s, 2,139 `SIGTERM`s, 360 database restarts |
+| Jobs lost | 0 |
+| Jobs run more often than allowed | 0 |
+| Orphaned jobs rescued after a `SIGKILL` | 2,307 |
+| Peak concurrency per limited key | at or under its `Max`, over about 85,000 runs each |
+| Starts per window on the `Rate` keys | at most 6 of 8 allowed in 1s, 32 of 34 in 10s |
+| Store after the run | limit counters at 0, nothing for Sweep to repair, drained in 7s |
+| Memory of the harness and its 4 workers | 44 to 58 MB across the 24 hours |
+
+The workers logged store errors around each database restart (claims, heartbeats, leases), as expected;
+none of them cost a job.
+
 ```
 cd soak && go run . -duration 24h -rate 20
 ```
+
+`soak/vps` runs the same thing on a server with nothing but Docker: a compose file with its own PostgreSQL,
+which keeps the summary, the worker logs, CPU and memory every 5 minutes and a dump of the database in
+`soak/vps/evidence`.
 
 See [soak/README.md](../soak/README.md) for the flags. `-container none` skips the database restarts when
 other tests share the database.
