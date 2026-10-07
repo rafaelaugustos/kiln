@@ -228,7 +228,9 @@ Every kind gets `MaxAttempts` (default 10) and a `Backoff` that computes the del
 attempt from the attempt number and the error. `kiln.Exponential`, `kiln.Constant` and
 `kiln.Delays` cover the common cases; a handler can also return `kiln.Permanent(err)` to fail
 without retrying, or `kiln.Snooze(d)` to reschedule itself without counting as a failure.
-A failed job that you requeue gets all of its attempts again.
+A failed job that you requeue gets all of its attempts again. Make the retries outlast the longest
+outage of what a job calls, and alert on what fails anyway: see
+[Retries and alerts](docs/operating.md).
 
 ### Continuations and flows
 
@@ -503,8 +505,9 @@ On an Apple M4 Max, with PostgreSQL and MySQL in Docker on the same machine:
 Against [River](https://github.com/riverqueue/river) on the same PostgreSQL, kiln drains no-op jobs about
 as fast as River tuned to a 1ms fetch cooldown, and 20 times faster than River's defaults.
 [Performance](docs/performance.md) has the full numbers and how they were measured, along with a run under a
-production-like load and a chaos run: 57,000 jobs through 31 `kill -9`s, 22 graceful stops and 3 database
-restarts in 15 minutes, with no job lost and every limit held.
+production-like load and a 24 hour chaos run: 2.2 million jobs through 2,886 `kill -9`s, 2,139 graceful
+stops and 360 database restarts, with no job lost, none run more often than allowed, and every limit
+held.
 
 ## Documentation
 
