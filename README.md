@@ -521,6 +521,10 @@ held.
 
 ## Status
 
+kiln runs in production at [Sodexo](https://www.sodexo.com), [Zeep Labs](https://github.com/zeeplabs) and
+[Starbem](https://github.com/Starbem).
+If your team uses it too, open a pull request to add yourself here.
+
 kiln is young, and its API can still change between minor versions before 1.0. Every change is listed in
 the [changelog](CHANGELOG.md), and each release is tested against the previous one running on the same
 database, so a rolling upgrade from one version to the next keeps working.
