@@ -107,6 +107,8 @@ type statements struct {
 	dueRecurring      string
 	ensure            string
 	expiredFailed     string
+	findArchived      string
+	findFailed        string
 	finishedBatchDeps string
 	fire              string
 	fired             string
@@ -204,6 +206,8 @@ func newStatements(prefix string) statements {
 		dueRecurring:      r.Replace(sqlDueRecurring),
 		ensure:            r.Replace(sqlEnsure),
 		expiredFailed:     r.Replace(sqlExpiredFailed),
+		findArchived:      r.Replace(sqlFindArchived),
+		findFailed:        r.Replace(sqlFindFailed),
 		finishedBatchDeps: r.Replace(sqlFinishedBatchDeps),
 		fire:              r.Replace(sqlFire),
 		fired:             r.Replace(sqlFired),

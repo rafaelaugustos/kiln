@@ -62,17 +62,19 @@ FROM OPENJSON(@deps) WITH (batch BIT '$.b', parent_id BIGINT '$.p', job_id BIGIN
 
 const window = `CASE WHEN v.us > 0 THEN DATEADD(MICROSECOND, v.us % 1000000, DATEADD(SECOND, v.us / 1000000, SYSUTCDATETIME())) END`
 
-const sqlClaimUniques = `MERGE {p}uniques AS u
-USING (
+const sqlClaimUniques = `UPDATE u SET job_id = v.id, expires_at = ` + window + `
+FROM (
 	SELECT CONVERT(VARBINARY(64), v.k, 2) AS k, v.id, v.us, o.job_id AS seen, CASE WHEN h.id IS NULL THEN 1 ELSE 0 END AS gone
 	FROM OPENJSON(@claims) WITH (k VARCHAR(130) '$.k', id BIGINT '$.id', us BIGINT '$.us') v
 	LEFT JOIN {p}uniques o ON o.unique_key = CONVERT(VARBINARY(64), v.k, 2)
 	LEFT JOIN {p}jobs h ON h.id = o.job_id AND h.state <> 'failed'
 ) AS v
-ON u.unique_key = v.k
-WHEN MATCHED AND u.job_id = v.seen AND (u.expires_at <= SYSUTCDATETIME() OR u.expires_at IS NULL AND v.gone = 1) THEN
-	UPDATE SET job_id = v.id, expires_at = ` + window + `
-WHEN NOT MATCHED THEN INSERT (unique_key, job_id, expires_at) VALUES (v.k, v.id, ` + window + `);
+JOIN {p}uniques u WITH (UPDLOCK, ROWLOCK, FORCESEEK) ON u.unique_key = v.k
+WHERE u.job_id = v.seen AND (u.expires_at <= SYSUTCDATETIME() OR u.expires_at IS NULL AND v.gone = 1);
+INSERT INTO {p}uniques (unique_key, job_id, expires_at)
+SELECT CONVERT(VARBINARY(64), v.k, 2), v.id, ` + window + `
+FROM OPENJSON(@claims) WITH (k VARCHAR(130) '$.k', id BIGINT '$.id', us BIGINT '$.us') v
+WHERE NOT EXISTS (SELECT 1 FROM {p}uniques u WHERE u.unique_key = CONVERT(VARBINARY(64), v.k, 2));
 SELECT u.unique_key, u.job_id, COALESCE(j.state, a.state, ''), COALESCE(j.granted, 0)
 FROM OPENJSON(@claims) WITH (k VARCHAR(130) '$.k') v
 JOIN {p}uniques u ON u.unique_key = CONVERT(VARBINARY(64), v.k, 2)
@@ -312,12 +314,6 @@ func (in *inserter) record(got map[int64]driver.State) {
 
 func (in *inserter) write(ctx context.Context, q querier) error {
 	in.reset()
-	if in.linked {
-		in.link = newLinker(in)
-		if err := in.link.fetch(ctx, q); err != nil {
-			return err
-		}
-	}
 	if len(in.keys) > 0 {
 		if err := in.claimUniques(ctx, q); err != nil {
 			return err
@@ -330,6 +326,12 @@ func (in *inserter) write(ctx context.Context, q querier) error {
 	}
 	if in.batched {
 		if err := in.attach(ctx, q); err != nil {
+			return err
+		}
+	}
+	if in.linked {
+		in.link = newLinker(in)
+		if err := in.link.fetch(ctx, q); err != nil {
 			return err
 		}
 	}

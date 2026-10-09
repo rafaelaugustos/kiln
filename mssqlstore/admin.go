@@ -25,27 +25,37 @@ const sqlCancel = `UPDATE j SET cancel_requested = 1
 FROM OPENJSON(@cancel) WITH (id BIGINT '$') v JOIN {p}jobs j WITH (FORCESEEK) ON j.id = v.id;
 `
 
-const sqlLockFailed = `SELECT TOP (1000) CAST(SYSUTCDATETIME() AS DATETIME2(6)), j.id,
+const sqlFindFailed = `SELECT TOP (1000) CAST(SYSUTCDATETIME() AS DATETIME2(6)), j.id,
 	CASE WHEN j.state = 'scheduled' THEN j.attempt ELSE 0 END, j.queue, j.unique_key, COALESCE(j.limit_key, N''), NULL
-FROM {p}jobs j WITH (UPDLOCK, ROWLOCK)
+FROM {p}jobs j
 WHERE j.state IN ('failed', 'scheduled') AND j.id > @after AND `
 
-const sqlLockArchived = `SELECT TOP (1000) CAST(SYSUTCDATETIME() AS DATETIME2(6)), j.id, 0, j.queue, j.unique_key,
+const sqlFindArchived = `SELECT TOP (1000) CAST(SYSUTCDATETIME() AS DATETIME2(6)), j.id, 0, j.queue, j.unique_key,
 	COALESCE(j.limit_key, N''), j.finalized_at
-FROM {p}archive j WITH (UPDLOCK, ROWLOCK)
+FROM {p}archive j
 WHERE `
 
-const sqlReclaim = `MERGE {p}uniques AS u
-USING (
+const sqlLockFailed = `SELECT j.id FROM OPENJSON(@ids) WITH (id BIGINT '$') v
+JOIN {p}jobs j WITH (XLOCK, ROWLOCK, FORCESEEK) ON j.id = v.id
+WHERE j.state IN ('failed', 'scheduled')`
+
+const sqlLockArchived = `SELECT a.id FROM OPENJSON(@ids) WITH (id BIGINT '$') v
+JOIN {p}archive a WITH (XLOCK, ROWLOCK, FORCESEEK) ON a.id = v.id`
+
+const sqlReclaim = `UPDATE u SET job_id = v.id, expires_at = NULL
+FROM (
 	SELECT CONVERT(VARBINARY(64), v.k, 2) AS k, v.id, o.job_id AS seen,
 		CASE WHEN o.expires_at <= SYSUTCDATETIME() OR o.expires_at IS NULL AND h.id IS NULL THEN 1 ELSE 0 END AS released
 	FROM OPENJSON(@claims) WITH (k VARCHAR(130) '$.k', id BIGINT '$.id') v
 	LEFT JOIN {p}uniques o ON o.unique_key = CONVERT(VARBINARY(64), v.k, 2)
 	LEFT JOIN {p}jobs h ON h.id = o.job_id AND h.state <> 'failed'
 ) AS v
-ON u.unique_key = v.k
-WHEN MATCHED AND (u.job_id = v.id OR v.released = 1) AND u.job_id = v.seen THEN UPDATE SET job_id = v.id, expires_at = NULL
-WHEN NOT MATCHED THEN INSERT (unique_key, job_id, expires_at) VALUES (v.k, v.id, NULL);
+JOIN {p}uniques u WITH (UPDLOCK, ROWLOCK, FORCESEEK) ON u.unique_key = v.k
+WHERE (u.job_id = v.id OR v.released = 1) AND u.job_id = v.seen;
+INSERT INTO {p}uniques (unique_key, job_id, expires_at)
+SELECT CONVERT(VARBINARY(64), v.k, 2), v.id, NULL
+FROM OPENJSON(@claims) WITH (k VARCHAR(130) '$.k', id BIGINT '$.id') v
+WHERE NOT EXISTS (SELECT 1 FROM {p}uniques u WHERE u.unique_key = CONVERT(VARBINARY(64), v.k, 2));
 SELECT u.unique_key, u.job_id FROM OPENJSON(@claims) WITH (k VARCHAR(130) '$.k') v
 JOIN {p}uniques u ON u.unique_key = CONVERT(VARBINARY(64), v.k, 2)`
 
@@ -242,7 +252,7 @@ func (s *Store) Requeue(ctx context.Context, f driver.Filter) (int, error) {
 	total := 0
 	cond, args := filterSQL(f)
 	if f.State == "" || f.State == driver.Failed || f.State == driver.Scheduled {
-		stmt := s.q.lockFailed + cond + " ORDER BY j.id"
+		stmt := s.q.findFailed + cond + " ORDER BY j.id"
 		var after int64
 		for {
 			n, seen, last, err := s.requeueChunk(ctx, stmt, append(args, sql.Named("after", after)), false)
@@ -264,7 +274,7 @@ func (s *Store) Requeue(ctx context.Context, f driver.Filter) (int, error) {
 				where += " AND (j.finalized_at < @at OR j.finalized_at = @at AND j.id < @after)"
 				more = append(slices.Clone(args), sql.Named("at", stamp(cursor.at)), sql.Named("after", cursor.id))
 			}
-			stmt := s.q.lockArchived + where + " ORDER BY j.finalized_at DESC, j.id DESC"
+			stmt := s.q.findArchived + where + " ORDER BY j.finalized_at DESC, j.id DESC"
 			n, seen, last, err := s.requeueChunk(ctx, stmt, more, true)
 			if err != nil {
 				return total, fmt.Errorf("kiln: requeue: %w", err)
@@ -309,6 +319,9 @@ func (s *Store) requeueChunk(ctx context.Context, stmt string, args []any, archi
 			return err
 		}
 		if jobs, err = s.reclaim(ctx, tx, jobs); err != nil || len(jobs) == 0 {
+			return err
+		}
+		if err := s.lockFound(ctx, tx, jobs, archived); err != nil {
 			return err
 		}
 		slices.SortFunc(jobs, func(a, b requeued) int { return cmp.Compare(a.id, b.id) })
@@ -356,6 +369,34 @@ func (s *Store) requeueChunk(ctx context.Context, stmt string, args []any, archi
 	}
 	s.nt.ready(queues)
 	return n, seen, last, nil
+}
+
+func (s *Store) lockFound(ctx context.Context, tx *sql.Tx, jobs []requeued, archived bool) error {
+	ids := make([]int64, len(jobs))
+	for i, r := range jobs {
+		ids[i] = r.id
+	}
+	slices.Sort(ids)
+	stmt := s.q.lockFailed
+	if archived {
+		stmt = s.q.lockArchived
+	}
+	rows, err := tx.QueryContext(ctx, stmt, sql.Named("ids", idList(ids)))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	n := 0
+	for rows.Next() {
+		n++
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if n < len(ids) {
+		return errMoved
+	}
+	return nil
 }
 
 func (s *Store) reclaim(ctx context.Context, tx *sql.Tx, jobs []requeued) ([]requeued, error) {
