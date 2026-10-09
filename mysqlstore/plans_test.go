@@ -104,7 +104,7 @@ SELECT CONCAT('key', n), n % 3, 0, n % 2 * 10, 1000000, 1, IF(n % 4 = 0, UTC_TIM
 		{"throttled keys", "jobs_throttled", render(s.q.throttledKeys, 100)},
 		{"stuck", "jobs_state", render(s.q.awaiting, 0, 100)},
 		{"delete by state", "jobs_state", render(s.q.lockTargets, raw("jobs_state"), raw("j.state = 'enqueued'"), 0)},
-		{"requeue failed", "jobs_state", render(s.q.lockFailed, raw("jobs_state"), raw("j.state = 'failed'"), 0)},
+		{"requeue failed", "jobs_state", render(s.q.findFailed, raw("jobs_state"), raw("j.state = 'failed'"), 0)},
 		{"prune failed", "jobs_failed", render(s.q.expiredFailed, 1000, 100)},
 		{"finish", "PRIMARY", render(s.q.lockRunning, []int64{1047, 2047, 3047})},
 		{"children", "PRIMARY", render(s.q.lockChildren, []int64{1045, 1046})},

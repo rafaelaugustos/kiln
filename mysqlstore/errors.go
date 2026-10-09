@@ -33,7 +33,12 @@ func redundant(err error) bool {
 	return me != nil && (me.Number == errDupColumn || me.Number == errDupIndex)
 }
 
+var errMoved = errors.New("jobs moved while they were being requeued")
+
 func retryable(err error) bool {
+	if errors.Is(err, errMoved) {
+		return true
+	}
 	me := mysqlError(err)
 	return me != nil && (me.Number == errDeadlock || me.Number == errLockTimeout || me.Number == errNoWait)
 }
