@@ -13,8 +13,15 @@ later means changing the line that builds the store, not the code that enqueues 
 
 Every backend passes the same conformance suite, `drivertest.Run`, so the semantics (retries,
 continuations, batches, uniqueness, limits, fencing) do not change when the database does. Writing a
-new backend means implementing `driver.Store` (and optionally `driver.Notifier` and
-`driver.Transactor`) and making that suite pass.
+new backend means implementing `driver.Store` and making that suite pass; see
+[Writing a store](custom-store.md).
+
+| | PostgreSQL | MySQL | SQL Server | SQLite | in memory |
+|---|---|---|---|---|---|
+| Wakes servers | `LISTEN`/`NOTIFY` | through a `Bus` | through a `Bus` | in its process; others through a `Bus` | in its process |
+| Enqueue in your transaction | `Tx(pgx.Tx)`, `SQLTx(*sql.Tx)` | `Tx(*sql.Tx)` | `Tx(*sql.Tx)` | `Tx(*sql.Tx)` | `Begin()` |
+| Where its tables live | a schema (`Schema`) | a table prefix (`Prefix`) | a table prefix (`Prefix`) | a table prefix (`Prefix`) | memory |
+| Job console, Limits page | yes | yes | yes | yes | yes |
 
 PostgreSQL wakes servers with `LISTEN`/`NOTIFY`. MySQL and SQL Server have nothing equivalent, and SQLite
 can only wake servers in its own process, so all three accept a `driver.Bus`. `redisbus` is one over Redis Pub/Sub:

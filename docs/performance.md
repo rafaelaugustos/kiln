@@ -14,7 +14,7 @@ The MySQL numbers are dominated by commit latency on this setup (binlog with `sy
 4-6ms per commit); a server with a faster disk will do noticeably better.
 
 Compared with [River](https://github.com/riverqueue/river) v0.47 on the same PostgreSQL, alternating
-rounds between the two libraries ([bench/](bench/README.md)):
+rounds between the two libraries ([bench/](https://github.com/rafaelaugustos/kiln/blob/main/bench/README.md)):
 
 | Scenario | kiln | River (defaults) | River (1ms fetch cooldown) |
 |---|---|---|---|
@@ -98,5 +98,5 @@ cd soak && go run . -duration 24h -rate 20
 which keeps the summary, the worker logs, CPU and memory every 5 minutes and a dump of the database in
 `soak/vps/evidence`.
 
-See [soak/README.md](../soak/README.md) for the flags. `-container none` skips the database restarts when
+See [soak/README.md](https://github.com/rafaelaugustos/kiln/blob/main/soak/README.md) for the flags. `-container none` skips the database restarts when
 other tests share the database.
