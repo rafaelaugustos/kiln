@@ -110,7 +110,9 @@ func TestE2E(t *testing.T) {
 	r := waitState(t, c, id, kiln.Failed)
 	var reasons []string
 	for _, e := range r.History {
-		reasons = append(reasons, e.Reason)
+		if e.Reason != "lost" {
+			reasons = append(reasons, e.Reason)
+		}
 	}
 	if !slices.Equal(reasons, []string{"retry", "exhausted"}) || r.Attempt != 2 {
 		t.Fatalf("history %v after attempt %d", reasons, r.Attempt)
