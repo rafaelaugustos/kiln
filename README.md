@@ -44,7 +44,7 @@ data that produced them, and you can watch and retry them from a dashboard that 
   conformance suite
 
 Everything above is in this repository, under the MIT license. There is no paid edition. The full
-documentation is at [rafaelaugustos.github.io/kiln](https://rafaelaugustos.github.io/kiln/).
+documentation is at [kiln.rafaelaugusto.dev](https://kiln.rafaelaugusto.dev/).
 
 ## Contents
 
@@ -517,7 +517,7 @@ held.
 ## Documentation
 
 - [API reference](https://pkg.go.dev/github.com/rafaelaugustos/kiln) on pkg.go.dev
-- [The documentation site](https://rafaelaugustos.github.io/kiln/), with everything below
+- [The documentation site](https://kiln.rafaelaugusto.dev/), with everything below
 - [Storage backends](docs/backends.md): what each database needs, wakeups and the Redis bus
 - [Operating kiln](docs/operating.md): timings, dead workers, connections, polling and health checks
 - [Upgrading](docs/upgrading.md): rolling deploys and what each release changes in the schema

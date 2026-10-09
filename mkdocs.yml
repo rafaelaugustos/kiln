@@ -1,10 +1,11 @@
 site_name: kiln
 site_description: Background jobs for Go, kept in PostgreSQL, MySQL, SQL Server or SQLite.
-site_url: https://rafaelaugustos.github.io/kiln/
+site_url: https://kiln.rafaelaugusto.dev/
 repo_url: https://github.com/rafaelaugustos/kiln
 repo_name: rafaelaugustos/kiln
 edit_uri: edit/main/docs/
 copyright: MIT license
+exclude_docs: requirements.txt
 
 theme:
   name: material
@@ -33,6 +34,49 @@ theme:
     - search.highlight
     - content.code.copy
     - content.action.edit
+
+plugins:
+  - search
+  - i18n:
+      docs_structure: suffix
+      fallback_to_default: true
+      reconfigure_material: true
+      reconfigure_search: true
+      languages:
+        - locale: en
+          default: true
+          name: English
+          build: true
+        - locale: pt-BR
+          name: Português (Brasil)
+          build: true
+          site_description: Jobs em segundo plano para Go, guardados em PostgreSQL, MySQL, SQL Server ou SQLite.
+          nav_translations:
+            Home: Início
+            Getting started: Primeiros passos
+            How it works: Como funciona
+            Concepts: Conceitos
+            States: Estados
+            Enqueueing: Enfileirando
+            Retries and cancellation: Retentativas e cancelamento
+            Workflows and batches: Workflows e lotes
+            Unique jobs: Jobs únicos
+            Limits and rate limits: Limites e rate limits
+            Queues and workers: Filas e workers
+            Recurring jobs: Jobs recorrentes
+            Job console: Console do job
+            Middleware and observability: Middleware e observabilidade
+            Testing: Testes
+            Behaviour worth knowing: Comportamentos que vale conhecer
+            Operating: Operação
+            Running kiln: Rodando o kiln
+            Upgrading: Atualizando
+            Compatibility: Compatibilidade
+            Storage backends: Bancos de dados
+            Writing a store: Escrevendo um store
+            Coming from Hangfire: Vindo do Hangfire
+            How kiln compares: Comparação
+            API reference: Referência da API
 
 markdown_extensions:
   - admonition
