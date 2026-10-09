@@ -30,8 +30,8 @@ const (
 // run. A paused job stays paused, and an identical definition is not written again. Setting a job
 // of a [Client.SyncRecurring] group takes it out of the group. Occurrences are fired by the
 // leader, so at least one server must run with maintenance enabled.
-// SetRecurring fails with [ErrInvalid] for a bad id, spec or option, and with [driver.ErrConflict]
-// if concurrent updates keep it from applying after three tries.
+// SetRecurring fails with [ErrInvalid] for a bad id, spec or option, and with [ErrConflict] if
+// concurrent updates keep it from applying after three tries.
 func (c *Client) SetRecurring(ctx context.Context, id, spec string, args Args, opts ...RecurringOption) error {
 	set, err := define("", id, spec, args, opts)
 	if err != nil {

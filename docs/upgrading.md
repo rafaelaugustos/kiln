@@ -31,3 +31,6 @@ indexes. v0.7 servers don't know about nested batches and can finish a batch whi
 are still running, so nest batches only once every server runs v0.8.
 
 v0.8.1 and v0.8.2 have no schema changes.
+
+v0.9 has no schema changes either. `Client.OpenBatch` takes a `*Batch` now, as `StartBatch` does:
+replace `OpenBatch(ctx, desc, meta)` with `OpenBatch(ctx, &kiln.Batch{Description: desc, Meta: meta})`.

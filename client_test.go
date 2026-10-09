@@ -221,6 +221,45 @@ func TestStartBatchNested(t *testing.T) {
 	}
 }
 
+func TestOpenBatch(t *testing.T) {
+	t.Parallel()
+	store := memstore.New()
+	c := NewClient(store)
+	ctx := context.Background()
+	open := &Batch{Description: "import"}
+	open.Add(testArgs{K: "a", N: 1})
+	var inner Batch
+	inner.Add(testArgs{K: "a", N: 2})
+	open.AddBatch(&inner)
+	id, err := c.OpenBatch(ctx, open)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := store.Batch(ctx, id); err != nil || b.Sealed || b.Total != 1 || b.Nested != 1 || b.Description != "import" {
+		t.Fatalf("open batch %+v %v", b, err)
+	}
+	if page, _ := store.Batches(ctx, driver.BatchQuery{Parent: id}); len(page.Batches) != 1 || !page.Batches[0].Sealed {
+		t.Fatalf("batch nested in an open batch %+v", page)
+	}
+	if _, err := c.Enqueue(ctx, testArgs{K: "a", N: 3}, InBatch(id)); err != nil {
+		t.Fatal(err)
+	}
+	later := &Batch{Parent: id}
+	later.Add(testArgs{K: "a", N: 4})
+	if _, err := c.OpenBatch(ctx, later); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := store.Batch(ctx, id); b.Sealed || b.Total != 2 || b.Nested != 2 {
+		t.Fatalf("batch after jobs and a batch joined it %+v", b)
+	}
+	if err := c.SealBatch(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := store.Batch(ctx, id); !b.Sealed || !b.FinishedAt.IsZero() {
+		t.Fatalf("sealed batch with live members %+v", b)
+	}
+}
+
 func TestStartBatchNestedCleansUp(t *testing.T) {
 	t.Parallel()
 	store := memstore.New()

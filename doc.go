@@ -29,8 +29,8 @@
 //		log.Fatal(err)
 //	}
 //
-// The store is a [driver.Store]. Packages pgstore, mysqlstore and sqlitestore keep jobs in
-// PostgreSQL, MySQL and SQLite, and memstore keeps them in memory, for tests.
+// The store is a [driver.Store]. Packages pgstore, mysqlstore, mssqlstore and sqlitestore keep
+// jobs in PostgreSQL, MySQL, SQL Server and SQLite, and memstore keeps them in memory, for tests.
 //
 // # Life of a job
 //

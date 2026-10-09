@@ -8,6 +8,12 @@
 // store must pass. A store must be safe for concurrent use by any number of servers and clients,
 // and its errors must wrap the sentinel errors of this package wherever one applies.
 //
+// From v1.0 on, the methods of [Store] and the interfaces it embeds do not change. A capability
+// added later comes as a new optional interface, like [Console] or [LimitReader], that kiln
+// checks for and works without, so a store written for v1.0 keeps building, and conformance cases
+// for a new interface skip stores that do not implement it. Struct types of this package may gain
+// fields.
+//
 // # Time
 //
 // A store keeps time with its own clock ([Coordinator.Now]) and computes run times, ages and

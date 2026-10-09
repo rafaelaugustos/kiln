@@ -10,7 +10,7 @@ import (
 
 // Batch groups jobs so that continuations can run once all of them have finished. Add jobs with
 // [Batch.Add], continuations with [Batch.Then] and nested batches with [Batch.AddBatch], then
-// insert everything with [Client.StartBatch].
+// insert everything with [Client.StartBatch], or with [Client.OpenBatch] to keep adding to it.
 //
 // A batch finishes when every job in it has succeeded or been deleted and every batch nested in
 // it has finished; a failed job keeps it open until the job is requeued and succeeds, or is
@@ -62,6 +62,18 @@ func (b *Batch) Len() int {
 // [ErrInvalid], and a [Batch.Parent] that does not exist or has finished is [ErrNotFound] or
 // [ErrClosed].
 func (c *Client) StartBatch(ctx context.Context, b *Batch) (int64, error) {
+	return c.begin(ctx, b, true)
+}
+
+// OpenBatch inserts b as [Client.StartBatch] does but leaves its batch open, for a batch built
+// over several calls: jobs join it later with the [InBatch] option and batches with
+// [Batch.Parent], and it cannot finish before [Client.SealBatch]. The batches nested in b are
+// sealed as usual.
+func (c *Client) OpenBatch(ctx context.Context, b *Batch) (int64, error) {
+	return c.begin(ctx, b, false)
+}
+
+func (c *Client) begin(ctx context.Context, b *Batch, seal bool) (int64, error) {
 	t, err := b.tree(make(map[*Batch]bool))
 	if err != nil {
 		return 0, err
@@ -69,7 +81,7 @@ func (c *Client) StartBatch(ctx context.Context, b *Batch) (int64, error) {
 	tx, ok := c.store.(driver.Transactor)
 	if !ok {
 		var p progress
-		id, err := c.startBatch(ctx, c.store, t, b.Parent, &p)
+		id, err := c.startBatch(ctx, c.store, t, b.Parent, &p, seal)
 		if err != nil {
 			c.discardBatch(ctx, &p)
 			return 0, err
@@ -78,7 +90,7 @@ func (c *Client) StartBatch(ctx context.Context, b *Batch) (int64, error) {
 	}
 	var id int64
 	err = tx.InTx(ctx, func(w driver.Writer) error {
-		id, err = c.startBatch(ctx, w, t, b.Parent, &progress{})
+		id, err = c.startBatch(ctx, w, t, b.Parent, &progress{}, seal)
 		return err
 	})
 	if err != nil {
@@ -97,17 +109,7 @@ func (c *Client) StartBatchTx(ctx context.Context, w driver.Writer, b *Batch) (i
 	if err != nil {
 		return 0, err
 	}
-	return c.startBatch(ctx, w, t, b.Parent, &progress{})
-}
-
-// OpenBatch creates an empty batch and returns its id, for a batch built over several calls: add
-// jobs to it with the [InBatch] option, then call [Client.SealBatch]. The batch cannot finish
-// before it is sealed.
-func (c *Client) OpenBatch(ctx context.Context, description string, meta map[string]string) (int64, error) {
-	if err := checkMeta(meta); err != nil {
-		return 0, err
-	}
-	return c.store.OpenBatch(ctx, driver.NewBatch{Description: description, Meta: meta})
+	return c.startBatch(ctx, w, t, b.Parent, &progress{}, true)
 }
 
 // SealBatch marks the batch complete, so that it finishes once every job in it has succeeded or
@@ -166,7 +168,7 @@ func (b *Batch) params() (jobs, then []driver.InsertParams, err error) {
 	return jobs, then, nil
 }
 
-func (c *Client) startBatch(ctx context.Context, w driver.Writer, t *batchTree, parent int64, p *progress) (int64, error) {
+func (c *Client) startBatch(ctx context.Context, w driver.Writer, t *batchTree, parent int64, p *progress, seal bool) (int64, error) {
 	b := t.batch
 	id, err := w.OpenBatch(ctx, driver.NewBatch{Description: b.Description, Meta: b.Meta, Parent: parent})
 	if err != nil {
@@ -180,7 +182,7 @@ func (c *Client) startBatch(ctx context.Context, w driver.Writer, t *batchTree, 
 		return 0, err
 	}
 	for _, n := range t.nested {
-		if _, err := c.startBatch(ctx, w, n, id, p); err != nil {
+		if _, err := c.startBatch(ctx, w, n, id, p, true); err != nil {
 			return 0, err
 		}
 	}
@@ -192,6 +194,9 @@ func (c *Client) startBatch(ctx context.Context, w driver.Writer, t *batchTree, 
 	}
 	if err := c.insertBatch(ctx, w, t.then, p); err != nil {
 		return 0, err
+	}
+	if !seal {
+		return id, nil
 	}
 	return id, w.SealBatch(ctx, id)
 }
