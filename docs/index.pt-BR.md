@@ -67,8 +67,8 @@ Tudo isso está neste repositório, sob a licença MIT. Não existe uma edição
 
 ## Status
 
-O kiln roda em produção na [Sodexo](https://www.sodexo.com), na [Zeep Labs](https://github.com/zeeplabs) e
-na [Starbem](https://github.com/Starbem).
+O kiln roda em produção na [Sodexo](https://www.sodexo.com), na [Zeep Labs](https://github.com/zeeplabs),
+na [Starbem](https://github.com/Starbem) e no [Orbit](https://getcortexlabs.com/products/orbit/), da Cortex Labs.
 Se o seu time também usa, abra um pull request para se adicionar aqui.
 
 O kiln é jovem, e sua API ainda pode mudar entre versões menores antes da 1.0. Toda mudança é listada no

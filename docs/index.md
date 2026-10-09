@@ -62,8 +62,8 @@ Everything above is in this repository, under the MIT license. There is no paid 
 
 ## Status
 
-kiln runs in production at [Sodexo](https://www.sodexo.com), [Zeep Labs](https://github.com/zeeplabs) and
-[Starbem](https://github.com/Starbem).
+kiln runs in production at [Sodexo](https://www.sodexo.com), [Zeep Labs](https://github.com/zeeplabs),
+[Starbem](https://github.com/Starbem) and in [Orbit](https://getcortexlabs.com/products/orbit/), by Cortex Labs.
 If your team uses it too, open a pull request to add yourself here.
 
 kiln is young, and its API can still change between minor versions before 1.0. Every change is listed in
