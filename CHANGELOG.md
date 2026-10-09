@@ -3,6 +3,27 @@
 Every module in this repository (`kiln`, `pgstore`, `mysqlstore`, `mssqlstore`, `sqlitestore`, `kilnotel`, `redisbus`) is
 released together under the same version. The GitHub releases have the full notes.
 
+## v0.9.0 (2026-10-09)
+
+The last release planned to break the API before v1.0.
+
+### Breaking
+- `Client.OpenBatch` takes a `*Batch`, as `StartBatch` does, in place of a description and meta. It
+  inserts the batch's jobs, continuations and nested batches and leaves the batch open, and it can open a
+  batch nested in another through `Batch.Parent`. Replace `OpenBatch(ctx, desc, meta)` with
+  `OpenBatch(ctx, &kiln.Batch{Description: desc, Meta: meta})`.
+
+### Added
+- `kiln.ErrConflict`, so a conflict from `SetRecurring` can be checked without importing `driver`.
+
+### Docs
+- Compatibility: what stays stable across v1, how the store interface grows, and the Go versions kiln
+  needs.
+- The package docs name `mssqlstore`, and the README says that `pgstore.New` opens a pool of its own.
+
+### Upgrading
+- No schema changes. The only code to change is a call to `OpenBatch`.
+
 ## v0.8.2 (2026-10-09)
 
 ### Added
