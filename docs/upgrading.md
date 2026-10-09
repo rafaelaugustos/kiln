@@ -29,3 +29,5 @@ v0.7 adds one additive change, `005_job_extras`: a nullable `title` column on th
 v0.8 adds one additive change, `006_nested_batches`: a nullable `parent_id` column on batches and two
 indexes. v0.7 servers don't know about nested batches and can finish a batch while batches nested in it
 are still running, so nest batches only once every server runs v0.8.
+
+v0.8.1 and v0.8.2 have no schema changes.

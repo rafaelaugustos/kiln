@@ -3,6 +3,28 @@
 Every module in this repository (`kiln`, `pgstore`, `mysqlstore`, `mssqlstore`, `sqlitestore`, `kilnotel`, `redisbus`) is
 released together under the same version. The GitHub releases have the full notes.
 
+## v0.8.2 (2026-10-09)
+
+### Added
+- kilnotel: a `kiln.jobs.failed` gauge with the jobs that failed for good and wait for a requeue or a
+  delete, the number to alert on.
+
+### Fixed
+- mysqlstore: a `TxWriter` insert that named a parent job and reused the unique key of that parent's
+  parent could deadlock with `Finish` (error 1213, seen once in about 1,400 transactions under heavy
+  concurrency). Inserts and `Requeue` now take unique keys before jobs, as `Finish` already did.
+- mssqlstore: under heavy concurrency a `TxWriter` insert could still be picked as a deadlock victim
+  (1205) beside a `Requeue`. It takes the same order as MySQL now, and unique keys are claimed with a
+  seek instead of a `MERGE` that scanned other transactions' keys.
+
+### Docs
+- Operating: size a kind's retries to outlast the longest outage of what it calls, and alert on
+  `kiln.jobs.failed`.
+- The results of the 24 hour soak, and how to run it on a server.
+
+### Upgrading
+- No schema changes. Update every kiln module to v0.8.2 together, as usual.
+
 ## v0.8.1 (2026-10-03)
 
 ### Fixed
