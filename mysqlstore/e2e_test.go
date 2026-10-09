@@ -448,10 +448,10 @@ func TestE2ERateLimit(t *testing.T) {
 			return
 		}
 		if lag < 50*time.Millisecond || attempt == 5 {
-			t.Fatalf("starts %d to %d happened within %v, want at most 5 in any 200ms; slowest claim %v after its slot",
+			t.Fatalf("starts %d to %d happened within %v, want at most 5 in any 200ms; slowest start %v after its slot",
 				i, i+5, starts[i+5].Sub(starts[i]), lag)
 		}
-		t.Logf("attempt %d: a job was claimed %v after its slot and the next slots were released behind it", attempt, lag)
+		t.Logf("attempt %d: a job started %v after its slot and the next slots were released behind it", attempt, lag)
 	}
 }
 
@@ -469,11 +469,14 @@ func paced(t *testing.T) ([]time.Time, time.Duration) {
 	var (
 		mu     sync.Mutex
 		starts []time.Time
+		began  = map[int64]time.Time{}
 	)
 	m := kiln.NewMux()
-	kiln.Handle(m, func(context.Context, *kiln.Job[call]) error {
+	kiln.Handle(m, func(_ context.Context, j *kiln.Job[call]) error {
+		now := time.Now()
 		mu.Lock()
-		starts = append(starts, time.Now())
+		starts = append(starts, now)
+		began[j.ID] = now
 		mu.Unlock()
 		return nil
 	})
@@ -493,7 +496,9 @@ func paced(t *testing.T) ([]time.Time, time.Duration) {
 	var lag time.Duration
 	for _, r := range res {
 		rec := waitState(t, cl, r.ID, kiln.Succeeded)
-		lag = max(lag, rec.AttemptedAt.Sub(rec.RunAt))
+		mu.Lock()
+		lag = max(lag, began[r.ID].Sub(rec.RunAt))
+		mu.Unlock()
 	}
 	stop()
 	mu.Lock()
