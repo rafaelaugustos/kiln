@@ -23,7 +23,12 @@ func sqlError(err error) *mssql.Error {
 	return nil
 }
 
+var errMoved = errors.New("jobs moved while they were being requeued")
+
 func retryable(err error) bool {
+	if errors.Is(err, errMoved) {
+		return true
+	}
 	e := sqlError(err)
 	return e != nil && (e.Number == errDeadlock || e.Number == errLockTimeout || duplicate(err))
 }
