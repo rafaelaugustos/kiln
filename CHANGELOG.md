@@ -7,7 +7,7 @@ released together under the same version. The GitHub releases have the full note
 
 The release candidate for v1.0.0. The code is v0.9.0's and the API is final: unless running this
 candidate shows that the API has to change, v1.0.0 will be the same code, and from then on
-[Compatibility](docs/compatibility.md) applies.
+[Compatibility](https://kiln.rafaelaugusto.dev/compatibility/) applies.
 
 ### Docs
 - A documentation site at https://kiln.rafaelaugusto.dev, in English and Brazilian Portuguese, with a
