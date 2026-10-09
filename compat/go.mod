@@ -7,10 +7,10 @@ toolchain go1.27.1
 require (
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/jackc/pgx/v5 v5.11.0
-	github.com/rafaelaugustos/kiln v0.9.0
-	github.com/rafaelaugustos/kiln/mysqlstore v0.9.0
-	github.com/rafaelaugustos/kiln/pgstore v0.9.0
-	github.com/rafaelaugustos/kiln/sqlitestore v0.9.0
+	github.com/rafaelaugustos/kiln v1.0.0-rc.1
+	github.com/rafaelaugustos/kiln/mysqlstore v1.0.0-rc.1
+	github.com/rafaelaugustos/kiln/pgstore v1.0.0-rc.1
+	github.com/rafaelaugustos/kiln/sqlitestore v1.0.0-rc.1
 	modernc.org/sqlite v1.59.0
 )
 
