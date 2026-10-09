@@ -34,6 +34,10 @@ func TestTxInsertBesideRequeue(t *testing.T) {
 				wr := s.Tx(tx)
 				ps := make([]driver.InsertParams, 1+rng.IntN(4))
 				known := ids.snapshot()
+				parented := -1
+				if len(known) > 0 && rng.IntN(2) == 0 {
+					parented = rng.IntN(len(ps))
+				}
 				for i := range ps {
 					p := job("k", func(p *driver.InsertParams) { p.MaxAttempts = 1 })
 					if rng.IntN(2) == 0 {
@@ -42,7 +46,7 @@ func TestTxInsertBesideRequeue(t *testing.T) {
 					if rng.IntN(2) == 0 {
 						limited("L", 2)(&p)
 					}
-					if len(known) > 0 && rng.IntN(2) == 0 {
+					if i == parented {
 						p.Parents = []driver.Parent{{ID: known[rng.IntN(len(known))], On: driver.OnFinished}}
 					}
 					ps[i] = p
