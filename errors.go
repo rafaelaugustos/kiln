@@ -49,8 +49,13 @@ var (
 	// claim, for instance because its server was presumed dead and its jobs rescued.
 	ErrLost = driver.ErrLost
 
-	// ErrClosed is returned when a job is added with [InBatch] to a batch that has finished.
+	// ErrClosed is returned when a job is added with [InBatch], or a batch with [Batch.Parent], to
+	// a batch that has finished.
 	ErrClosed = driver.ErrClosed
+
+	// ErrConflict is returned when concurrent updates of a recurring job keep a write to it from
+	// applying.
+	ErrConflict = driver.ErrConflict
 )
 
 type markedError struct {

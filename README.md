@@ -151,6 +151,10 @@ if err != nil {
 defer store.Close()
 ```
 
+`pgstore.New` copies the pool's settings into a pool of its own, 8 connections by default
+(`pgstore.MaxConns` changes it), so kiln and the application never wait for each other's connections and
+the application can keep using or close its pool.
+
 `New` creates its tables in a `kiln` schema the first time. MySQL and SQL Server work the same way
 through `mysqlstore` and `mssqlstore`; [Storage backends](docs/backends.md) covers what each database
 needs.
@@ -515,6 +519,7 @@ held.
 - [Storage backends](docs/backends.md): what each database needs, wakeups and the Redis bus
 - [Operating kiln](docs/operating.md): timings, dead workers, connections, polling and health checks
 - [Upgrading](docs/upgrading.md): rolling deploys and what each release changes in the schema
+- [Compatibility](docs/compatibility.md): what stays stable across releases, and the Go versions kiln needs
 - [Coming from Hangfire](docs/hangfire.md): Hangfire calls and their kiln equivalents
 - [Performance](docs/performance.md): benchmarks, and the comparison with River
 - [Changelog](CHANGELOG.md)
