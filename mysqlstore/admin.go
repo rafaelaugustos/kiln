@@ -25,21 +25,26 @@ FOR UPDATE OF j FOR UPDATE OF u SKIP LOCKED`
 
 const sqlCancel = `UPDATE {p}jobs SET cancel_requested = TRUE WHERE id IN (?)`
 
-const sqlLockFailed = `SELECT UTC_TIMESTAMP(6), j.id, IF(j.state = 'scheduled', j.attempt, 0), j.queue, j.unique_key,
+const sqlFindFailed = `SELECT UTC_TIMESTAMP(6), j.id, IF(j.state = 'scheduled', j.attempt, 0), j.queue, j.unique_key,
 	COALESCE(j.limit_key, '')
 FROM {p}jobs j FORCE INDEX (?)
 WHERE ? AND j.state IN ('failed', 'scheduled') AND j.id > ?
 ORDER BY j.id
-LIMIT 1000
-FOR UPDATE`
+LIMIT 1000`
 
-const sqlLockArchived = `SELECT UTC_TIMESTAMP(6), j.id, 0, j.queue, j.unique_key, COALESCE(j.limit_key, ''),
+const sqlFindArchived = `SELECT UTC_TIMESTAMP(6), j.id, 0, j.queue, j.unique_key, COALESCE(j.limit_key, ''),
 	j.finalized_at
 FROM {p}archive j FORCE INDEX (?)
 WHERE ?
 ORDER BY j.finalized_at DESC, j.id DESC
-LIMIT 1000
+LIMIT 1000`
+
+const sqlLockRequeued = `SELECT id FROM {p}jobs FORCE INDEX (PRIMARY)
+WHERE id IN (?) AND state IN ('failed', 'scheduled')
+ORDER BY id
 FOR UPDATE`
+
+const sqlLockRequeuedArchive = `SELECT id FROM {p}archive FORCE INDEX (PRIMARY) WHERE id IN (?) ORDER BY id FOR UPDATE`
 
 const released = `(o.expires_at <= UTC_TIMESTAMP(6) OR o.expires_at IS NULL AND h.id IS NULL)`
 
@@ -244,7 +249,7 @@ func (s *Store) Requeue(ctx context.Context, f driver.Filter) (int, error) {
 		index, cond := filterSQL(f)
 		var after int64
 		for {
-			n, seen, last, err := s.requeueChunk(ctx, render(s.q.lockFailed, index, cond, after), false)
+			n, seen, last, err := s.requeueChunk(ctx, render(s.q.findFailed, index, cond, after), false)
 			if err != nil {
 				return total, fmt.Errorf("kiln: requeue: %w", err)
 			}
@@ -266,7 +271,7 @@ func (s *Store) Requeue(ctx context.Context, f driver.Filter) (int, error) {
 			if cursor != nil {
 				where += raw(render(" AND (j.finalized_at < ? OR j.finalized_at = ? AND j.id < ?)", cursor.at, cursor.at, cursor.id))
 			}
-			n, seen, last, err := s.requeueChunk(ctx, render(s.q.lockArchived, index, where), true)
+			n, seen, last, err := s.requeueChunk(ctx, render(s.q.findArchived, index, where), true)
 			if err != nil {
 				return total, fmt.Errorf("kiln: requeue: %w", err)
 			}
@@ -319,6 +324,9 @@ func (s *Store) requeueChunk(ctx context.Context, stmt string, archived bool) (n
 			return err
 		}
 		if jobs, err = s.reclaim(ctx, tx, jobs); err != nil || len(jobs) == 0 {
+			return err
+		}
+		if err := s.lockRequeued(ctx, tx, jobs, archived); err != nil {
 			return err
 		}
 		slices.SortFunc(jobs, func(a, b requeued) int { return cmp.Compare(a.id, b.id) })
@@ -378,6 +386,33 @@ func (s *Store) requeueChunk(ctx context.Context, stmt string, archived bool) (n
 	}
 	s.nt.ready(queues)
 	return n, seen, last, nil
+}
+
+func (s *Store) lockRequeued(ctx context.Context, tx *sql.Tx, jobs []requeued, archived bool) error {
+	ids := make([]int64, len(jobs))
+	for i, r := range jobs {
+		ids[i] = r.id
+	}
+	stmt := s.q.lockRequeued
+	if archived {
+		stmt = s.q.lockRequeuedArchive
+	}
+	rows, err := tx.QueryContext(ctx, render(stmt, ids))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	n := 0
+	for rows.Next() {
+		n++
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if n < len(ids) {
+		return errMoved
+	}
+	return nil
 }
 
 func (s *Store) reclaim(ctx context.Context, tx *sql.Tx, jobs []requeued) ([]requeued, error) {

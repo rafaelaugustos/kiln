@@ -168,16 +168,18 @@ type statements struct {
 	limitInfo           string
 	limitPage           string
 	linkedNow           string
-	lockArchived        string
+	findArchived        string
 	lockBatch           string
 	lockBatches         string
 	lockChildren        string
-	lockFailed          string
+	findFailed          string
 	lockHolders         string
 	lockLimits          string
 	lockParentBatches   string
 	lockParents         string
 	lockRunning         string
+	lockRequeued        string
+	lockRequeuedArchive string
 	lockTargets         string
 	logs                string
 	nestedBatches       string
@@ -293,16 +295,18 @@ func newStatements(prefix string) statements {
 		limitInfo:           r.Replace(sqlLimitInfo),
 		limitPage:           r.Replace(sqlLimitPage),
 		linkedNow:           r.Replace(sqlLinkedNow),
-		lockArchived:        r.Replace(sqlLockArchived),
+		findArchived:        r.Replace(sqlFindArchived),
 		lockBatch:           r.Replace(sqlLockBatch),
 		lockBatches:         r.Replace(sqlLockBatches),
 		lockChildren:        r.Replace(sqlLockChildren),
-		lockFailed:          r.Replace(sqlLockFailed),
+		findFailed:          r.Replace(sqlFindFailed),
 		lockHolders:         r.Replace(sqlLockHolders),
 		lockLimits:          r.Replace(sqlLockLimits),
 		lockParentBatches:   r.Replace(sqlLockParentBatches),
 		lockParents:         r.Replace(sqlLockParents),
 		lockRunning:         r.Replace(sqlLockRunning),
+		lockRequeued:        r.Replace(sqlLockRequeued),
+		lockRequeuedArchive: r.Replace(sqlLockRequeuedArchive),
 		lockTargets:         r.Replace(sqlLockTargets),
 		logs:                r.Replace(sqlLogs),
 		nestedBatches:       r.Replace(sqlNestedBatches),
