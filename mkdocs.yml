@@ -1,0 +1,92 @@
+site_name: kiln
+site_description: Background jobs for Go, kept in PostgreSQL, MySQL, SQL Server or SQLite.
+site_url: https://rafaelaugustos.github.io/kiln/
+repo_url: https://github.com/rafaelaugustos/kiln
+repo_name: rafaelaugustos/kiln
+edit_uri: edit/main/docs/
+copyright: MIT license
+
+theme:
+  name: material
+  logo: assets/icon.svg
+  favicon: assets/icon.svg
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep orange
+      accent: amber
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep orange
+      accent: amber
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - How it works: how-it-works.md
+  - Concepts:
+      - States: concepts/states.md
+      - Enqueueing: concepts/enqueueing.md
+      - Retries and cancellation: concepts/retries.md
+      - Workflows and batches: concepts/workflows.md
+      - Unique jobs: concepts/unique.md
+      - Limits and rate limits: concepts/limits.md
+      - Queues and workers: concepts/queues.md
+      - Recurring jobs: concepts/recurring.md
+      - Job console: concepts/console.md
+      - Middleware and observability: concepts/middleware.md
+      - Testing: concepts/testing.md
+      - Behaviour worth knowing: behaviour.md
+  - Operating:
+      - Running kiln: operating.md
+      - Dashboard: dashboard.md
+      - Upgrading: upgrading.md
+      - Compatibility: compatibility.md
+  - Stores:
+      - Storage backends: backends.md
+      - Writing a store: custom-store.md
+  - Coming from Hangfire: hangfire.md
+  - How kiln compares: comparison.md
+  - Performance: performance.md
+  - Changelog: changelog.md
+  - API reference: https://pkg.go.dev/github.com/rafaelaugustos/kiln
