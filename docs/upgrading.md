@@ -34,3 +34,5 @@ v0.8.1 and v0.8.2 have no schema changes.
 
 v0.9 has no schema changes either. `Client.OpenBatch` takes a `*Batch` now, as `StartBatch` does:
 replace `OpenBatch(ctx, desc, meta)` with `OpenBatch(ctx, &kiln.Batch{Description: desc, Meta: meta})`.
+
+v1.0.0-rc.1 has no schema or API changes from v0.9.

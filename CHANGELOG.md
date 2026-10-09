@@ -3,6 +3,19 @@
 Every module in this repository (`kiln`, `pgstore`, `mysqlstore`, `mssqlstore`, `sqlitestore`, `kilnotel`, `redisbus`) is
 released together under the same version. The GitHub releases have the full notes.
 
+## v1.0.0-rc.1 (2026-10-09)
+
+The release candidate for v1.0.0. The code is v0.9.0's and the API is final: unless running this
+candidate shows that the API has to change, v1.0.0 will be the same code, and from then on
+[Compatibility](docs/compatibility.md) applies.
+
+### Docs
+- A documentation site at https://kiln.rafaelaugusto.dev, in English and Brazilian Portuguese, with a
+  guide to writing a store and a table of what each store does differently.
+
+### Upgrading
+- No schema or API changes from v0.9.0.
+
 ## v0.9.0 (2026-10-09)
 
 The last release planned to break the API before v1.0.
