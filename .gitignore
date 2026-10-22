@@ -5,3 +5,6 @@ go.work.sum
 .DS_Store
 /bench/bench
 /soak/soak
+docs/node_modules/
+docs/.vitepress/cache/
+docs/.vitepress/dist/

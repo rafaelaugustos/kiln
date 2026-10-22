@@ -1,30 +1,44 @@
 ---
-hide:
-  - toc
+layout: home
+title: Jobs em segundo plano para Go
+description: Jobs em segundo plano para Go, guardados em PostgreSQL, MySQL, SQL Server ou SQLite. Retentativas, workflows, limites, jobs recorrentes e um dashboard, no banco que você já tem.
+
+hero:
+  name: kiln
+  text: Jobs em segundo plano para Go.
+  tagline: Guardados em PostgreSQL, MySQL, SQL Server ou SQLite. Retentativas, workflows, limites, jobs recorrentes e um dashboard, no banco que você já tem.
+  image:
+    src: /icon.svg
+    alt: kiln
+  actions:
+    - theme: brand
+      text: Primeiros passos
+      link: /pt-BR/getting-started
+    - theme: alt
+      text: Como funciona
+      link: /pt-BR/how-it-works
+    - theme: alt
+      text: GitHub
+      link: https://github.com/rafaelaugustos/kiln
+
+features:
+  - title: Jobs no seu banco
+    details: Jobs são linhas ao lado dos seus dados. Sobrevivem a restarts e crashes, e podem ser enfileirados na mesma transação que os dados que os geraram.
+    link: /pt-BR/concepts/enqueueing
+    linkText: Enfileirando
+  - title: Retentativas e workflows
+    details: Backoff exponencial ou personalizado, adiamentos e timeouts. Jobs que esperam outros jobs e leem suas saídas, e lotes com um job que roda quando terminam.
+    link: /pt-BR/concepts/workflows
+    linkText: Workflows e lotes
+  - title: Dashboard incluso
+    details: Acompanhe, reenfileire e cancele jobs por um dashboard em inglês ou português, montado no seu próprio servidor HTTP, com uma API JSON.
+    link: /pt-BR/dashboard
+    linkText: O dashboard
 ---
 
-# kiln { style="display: none" }
+<div class="home-body">
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/rafaelaugustos/kiln/main/.github/logo-dark.png">
-    <img src="https://raw.githubusercontent.com/rafaelaugustos/kiln/main/.github/logo.png" alt="kiln" width="200">
-  </picture>
-</p>
-
-<p align="center">
-  Jobs em segundo plano para Go, guardados em PostgreSQL, MySQL, SQL Server ou SQLite.
-</p>
-
-<p align="center">
-  <a href="https://pkg.go.dev/github.com/rafaelaugustos/kiln"><img src="https://pkg.go.dev/badge/github.com/rafaelaugustos/kiln.svg" alt="Referência do Go"></a>
-  <a href="https://github.com/rafaelaugustos/kiln/actions/workflows/ci.yml"><img src="https://github.com/rafaelaugustos/kiln/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://codecov.io/gh/rafaelaugustos/kiln"><img src="https://codecov.io/gh/rafaelaugustos/kiln/graph/badge.svg" alt="Cobertura"></a>
-  <a href="https://github.com/rafaelaugustos/kiln/releases"><img src="https://img.shields.io/github/v/release/rafaelaugustos/kiln" alt="Última versão"></a>
-  <a href="https://github.com/rafaelaugustos/kiln/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="Licença MIT"></a>
-</p>
-
-<p align="center">
+<p class="home-shot">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/rafaelaugustos/kiln/main/.github/dashboard-dark.png">
     <img src="https://raw.githubusercontent.com/rafaelaugustos/kiln/main/.github/dashboard-light.png" alt="O dashboard do kiln: jobs por estado, vazão na última hora, filas e servidores">
@@ -76,3 +90,5 @@ algumas semanas sem precisar de mudança na API, e a partir daí a página de [C
 descreve o que se mantém estável. Toda mudança é listada no [changelog](changelog.md), e cada release é
 testado contra o anterior rodando no mesmo banco de dados, então um rolling upgrade de uma versão para a
 próxima continua funcionando.
+
+</div>

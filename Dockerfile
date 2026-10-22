@@ -1,11 +1,12 @@
-FROM python:3.13-slim AS build
+FROM node:22-alpine AS build
+RUN apk add --no-cache git
 WORKDIR /src
-COPY docs/requirements.txt docs/requirements.txt
-RUN pip install --no-cache-dir -r docs/requirements.txt
+COPY docs/package.json docs/package-lock.json docs/
+RUN cd docs && npm ci --no-audit --no-fund
 COPY . .
-RUN mkdocs build
+RUN cd docs && npm run docs:build
 
 FROM nginx:1.27-alpine
-COPY --from=build /src/site /usr/share/nginx/html
-RUN printf 'server {\n  listen 8080;\n  root /usr/share/nginx/html;\n  location / { try_files $uri $uri/ $uri.html =404; }\n  error_page 404 /404.html;\n}\n' > /etc/nginx/conf.d/default.conf
+COPY --from=build /src/docs/.vitepress/dist /usr/share/nginx/html
+RUN printf 'server {\n  listen 8080;\n  root /usr/share/nginx/html;\n  location / { try_files $uri $uri.html $uri/ =404; }\n  error_page 404 /404.html;\n}\n' > /etc/nginx/conf.d/default.conf
 EXPOSE 8080

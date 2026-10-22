@@ -1,30 +1,44 @@
 ---
-hide:
-  - toc
+layout: home
+title: Background jobs for Go
+description: Background jobs for Go, kept in PostgreSQL, MySQL, SQL Server or SQLite. Retries, workflows, limits, recurring jobs and a dashboard, in the database you already have.
+
+hero:
+  name: kiln
+  text: Background jobs for Go.
+  tagline: Kept in PostgreSQL, MySQL, SQL Server or SQLite. Retries, workflows, limits, recurring jobs and a dashboard, in the database you already have.
+  image:
+    src: /icon.svg
+    alt: kiln
+  actions:
+    - theme: brand
+      text: Get started
+      link: /getting-started
+    - theme: alt
+      text: How it works
+      link: /how-it-works
+    - theme: alt
+      text: GitHub
+      link: https://github.com/rafaelaugustos/kiln
+
+features:
+  - title: Jobs in your database
+    details: Jobs are rows next to your data. They survive restarts and crashes, and can be enqueued in the same transaction as the data that produced them.
+    link: /concepts/enqueueing
+    linkText: Enqueueing
+  - title: Retries and workflows
+    details: Exponential or custom backoff, snoozes and timeouts. Jobs that wait for other jobs and read their outputs, and batches with a job that runs when they finish.
+    link: /concepts/workflows
+    linkText: Workflows and batches
+  - title: A dashboard included
+    details: Watch, retry and cancel jobs from a dashboard in English or Brazilian Portuguese, mounted on your own HTTP server, with a JSON API.
+    link: /dashboard
+    linkText: The dashboard
 ---
 
-# kiln { style="display: none" }
+<div class="home-body">
 
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/rafaelaugustos/kiln/main/.github/logo-dark.png">
-    <img src="https://raw.githubusercontent.com/rafaelaugustos/kiln/main/.github/logo.png" alt="kiln" width="200">
-  </picture>
-</p>
-
-<p align="center">
-  Background jobs for Go, kept in PostgreSQL, MySQL, SQL Server or SQLite.
-</p>
-
-<p align="center">
-  <a href="https://pkg.go.dev/github.com/rafaelaugustos/kiln"><img src="https://pkg.go.dev/badge/github.com/rafaelaugustos/kiln.svg" alt="Go Reference"></a>
-  <a href="https://github.com/rafaelaugustos/kiln/actions/workflows/ci.yml"><img src="https://github.com/rafaelaugustos/kiln/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://codecov.io/gh/rafaelaugustos/kiln"><img src="https://codecov.io/gh/rafaelaugustos/kiln/graph/badge.svg" alt="Coverage"></a>
-  <a href="https://github.com/rafaelaugustos/kiln/releases"><img src="https://img.shields.io/github/v/release/rafaelaugustos/kiln" alt="Latest release"></a>
-  <a href="https://github.com/rafaelaugustos/kiln/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
-</p>
-
-<p align="center">
+<p class="home-shot">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/rafaelaugustos/kiln/main/.github/dashboard-dark.png">
     <img src="https://raw.githubusercontent.com/rafaelaugustos/kiln/main/.github/dashboard-light.png" alt="The kiln dashboard: jobs by state, throughput over the last hour, queues and servers">
@@ -71,3 +85,5 @@ a couple of weeks without needing an API change, and from then on [Compatibility
 what stays stable. Every change is listed in the [changelog](changelog.md), and each release is tested against
 the previous one running on the same database, so a rolling upgrade from one version to the next keeps
 working.
+
+</div>
