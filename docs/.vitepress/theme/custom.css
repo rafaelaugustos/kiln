@@ -56,3 +56,8 @@
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+.vp-doc .mermaid p {
+  margin: 0;
+  line-height: normal;
+}

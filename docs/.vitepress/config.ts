@@ -138,6 +138,9 @@ export default withMermaid({
   lastUpdated: true,
   srcExclude: ['node_modules/**'],
   sitemap: { hostname: site },
+  vite: {
+    optimizeDeps: { include: ['mermaid > fastdom', 'mermaid > fastdom/extensions/fastdom-promised.js'] },
+  },
   markdown: {
     config(md) {
       const code = md.renderer.rules.code_inline!
