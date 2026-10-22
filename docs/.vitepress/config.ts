@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { type DefaultTheme } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
 
@@ -8,11 +8,24 @@ const repo = 'https://github.com/rafaelaugustos/kiln'
 const api = 'https://pkg.go.dev/github.com/rafaelaugustos/kiln'
 const cortex = '<a href="https://getcortexlabs.com/">Cortex Labs</a>'
 
-function latestTag() {
+function latestVersion() {
   try {
     return execSync('git describe --tags --abbrev=0 --match "v*"', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
   } catch {
-    return ''
+    const changelog = readFileSync(new URL('../../CHANGELOG.md', import.meta.url), 'utf8')
+    return changelog.match(/^## (v\S+)/m)?.[1] ?? ''
+  }
+}
+
+const version = latestVersion()
+
+function versionMenu(prefix: string, changelog: string, releases: string): DefaultTheme.NavItem {
+  return {
+    text: version,
+    items: [
+      { text: changelog, link: `${prefix}/changelog` },
+      { text: releases, link: `${repo}/releases` },
+    ],
   }
 }
 
@@ -156,7 +169,6 @@ export default withMermaid({
     ['meta', { property: 'og:image', content: 'https://raw.githubusercontent.com/rafaelaugustos/kiln/main/.github/logo.png' }],
   ],
   themeConfig: {
-    version: latestTag(),
     logo: '/icon.svg',
     search: {
       provider: 'local',
@@ -185,14 +197,14 @@ export default withMermaid({
         nav: [
           { text: 'Guide', link: '/getting-started', activeMatch: '^/(?!pt-BR)(?!$)' },
           { text: 'API', link: api },
-          { text: 'Releases', link: `${repo}/releases` },
+          versionMenu('', 'Changelog', 'Releases'),
         ],
         sidebar: sidebar('', en),
         outline: { level: [2, 3], label: 'On this page' },
         editLink: { pattern: `${repo}/edit/main/docs/:path`, text: 'Edit this page on GitHub' },
         footer: {
           message: 'Released under the MIT License.',
-          copyright: `Maintained by Rafael Augusto and ${cortex}`,
+          copyright: `Maintained by Rafael Augusto. Supported by ${cortex}.`,
         },
       },
     },
@@ -205,7 +217,7 @@ export default withMermaid({
         nav: [
           { text: 'Guia', link: '/pt-BR/getting-started', activeMatch: '^/pt-BR/.+' },
           { text: 'API', link: api },
-          { text: 'Versões', link: `${repo}/releases` },
+          versionMenu('/pt-BR', 'Changelog', 'Versões'),
         ],
         sidebar: sidebar('/pt-BR', pt),
         outline: { level: [2, 3], label: 'Nesta página' },
@@ -225,7 +237,7 @@ export default withMermaid({
         },
         footer: {
           message: 'Publicado sob a licença MIT.',
-          copyright: `Mantido por Rafael Augusto e ${cortex}`,
+          copyright: `Mantido por Rafael Augusto. Com apoio da ${cortex}.`,
         },
       },
     },
