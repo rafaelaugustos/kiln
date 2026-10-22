@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { type DefaultTheme } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
 
@@ -135,7 +136,7 @@ export default withMermaid({
   title: 'kiln',
   description: 'Background jobs for Go, kept in PostgreSQL, MySQL, SQL Server or SQLite.',
   cleanUrls: true,
-  lastUpdated: true,
+  lastUpdated: existsSync(new URL('../../.git', import.meta.url)),
   srcExclude: ['node_modules/**'],
   sitemap: { hostname: site },
   vite: {
