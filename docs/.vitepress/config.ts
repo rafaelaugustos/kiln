@@ -4,6 +4,8 @@ import { type DefaultTheme } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
 
 const site = 'https://kiln.rafaelaugusto.dev'
+const socialImageAlt =
+  'Kiln. Background jobs for Go, forged in SQL. Retries, workflows, recurring jobs and a dashboard, with a furnace feeding a pipeline of jobs.'
 const repo = 'https://github.com/rafaelaugustos/kiln'
 const api = 'https://pkg.go.dev/github.com/rafaelaugustos/kiln'
 const cortex = '<a href="https://getcortexlabs.com/">Cortex Labs</a>'
@@ -166,7 +168,14 @@ export default withMermaid({
     ['meta', { name: 'theme-color', content: '#ea580c' }],
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:site_name', content: 'kiln' }],
-    ['meta', { property: 'og:image', content: 'https://raw.githubusercontent.com/rafaelaugustos/kiln/main/.github/logo.png' }],
+    ['meta', { property: 'og:image', content: `${site}/kiln-social.jpg` }],
+    ['meta', { property: 'og:image:type', content: 'image/jpeg' }],
+    ['meta', { property: 'og:image:width', content: '1200' }],
+    ['meta', { property: 'og:image:height', content: '630' }],
+    ['meta', { property: 'og:image:alt', content: socialImageAlt }],
+    ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+    ['meta', { name: 'twitter:image', content: `${site}/kiln-social.jpg` }],
+    ['meta', { name: 'twitter:image:alt', content: socialImageAlt }],
   ],
   themeConfig: {
     logo: '/icon.svg',
