@@ -3,6 +3,19 @@
 Every module in this repository (`kiln`, `pgstore`, `mysqlstore`, `mssqlstore`, `sqlitestore`, `kilnotel`, `redisbus`) is
 released together under the same version. The GitHub releases have the full notes.
 
+## v1.0.0 (2026-10-29)
+
+kiln's first stable release, after a few weeks as a release candidate and production use at Sodexo,
+Zeep Labs, Starbem and Orbit, by Cortex Labs.
+
+The public API, store interface and dashboard JSON API now follow the
+[v1 compatibility policy](https://kiln.rafaelaugusto.dev/compatibility). Schema changes stay additive
+throughout v1.
+
+### Upgrading
+- No schema or API changes from v1.0.0-rc.1 or v0.9.0.
+- Update every kiln module to v1.0.0 together.
+
 ## v1.0.0-rc.1 (2026-10-09)
 
 The release candidate for v1.0.0. The code is v0.9.0's and the API is final: unless running this

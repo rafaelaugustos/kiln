@@ -85,10 +85,9 @@ O kiln roda em produção na [Sodexo](https://www.sodexo.com), na [Zeep Labs](ht
 na [Starbem](https://github.com/Starbem) e no [Orbit](https://getcortexlabs.com/products/orbit/), da Cortex Labs.
 Se o seu time também usa, abra um pull request para se adicionar aqui.
 
-A API é final desde a v1.0.0-rc.1. A v1.0.0 sai depois que a release candidate rodar em produção por
-algumas semanas sem precisar de mudança na API, e a partir daí a página de [Compatibilidade](compatibility.md)
-descreve o que se mantém estável. Toda mudança é listada no [changelog](changelog.md), e cada release é
-testado contra o anterior rodando no mesmo banco de dados, então um rolling upgrade de uma versão para a
-próxima continua funcionando.
+A v1.0.0 é a primeira versão estável. [Compatibilidade](compatibility.md) descreve o que se mantém
+estável ao longo da v1: a API pública, a interface dos stores e a API JSON do dashboard. Mudanças de
+schema continuam aditivas, e os testes de compatibilidade cobrem rolling upgrades. Toda release é
+listada no [changelog](changelog.md).
 
 </div>

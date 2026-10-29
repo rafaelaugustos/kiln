@@ -1,4 +1,3 @@
-import { execSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { type DefaultTheme } from 'vitepress'
 import { withMermaid } from 'vitepress-plugin-mermaid'
@@ -10,16 +9,8 @@ const repo = 'https://github.com/rafaelaugustos/kiln'
 const api = 'https://pkg.go.dev/github.com/rafaelaugustos/kiln'
 const cortex = '<a href="https://getcortexlabs.com/">Cortex Labs</a>'
 
-function latestVersion() {
-  try {
-    return execSync('git describe --tags --abbrev=0 --match "v*"', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
-  } catch {
-    const changelog = readFileSync(new URL('../../CHANGELOG.md', import.meta.url), 'utf8')
-    return changelog.match(/^## (v\S+)/m)?.[1] ?? ''
-  }
-}
-
-const version = latestVersion()
+const changelog = readFileSync(new URL('../../CHANGELOG.md', import.meta.url), 'utf8')
+const version = changelog.match(/^## (v\S+)/m)?.[1] ?? ''
 
 function versionMenu(prefix: string, changelog: string, releases: string): DefaultTheme.NavItem {
   return {

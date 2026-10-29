@@ -532,11 +532,10 @@ kiln runs in production at [Sodexo](https://www.sodexo.com), [Zeep Labs](https:/
 [Starbem](https://github.com/Starbem) and in [Orbit](https://getcortexlabs.com/products/orbit/), by Cortex Labs.
 If your team uses it too, open a pull request to add yourself here.
 
-The API is final as of v1.0.0-rc.1. v1.0.0 follows once the release candidate has run in production for
-a couple of weeks without needing an API change, and from then on [Compatibility](docs/compatibility.md) describes
-what stays stable. Every change is listed in the [changelog](CHANGELOG.md), and each release is tested against
-the previous one running on the same database, so a rolling upgrade from one version to the next keeps
-working.
+v1.0.0 is the first stable release. [Compatibility](docs/compatibility.md) describes what stays stable
+throughout v1: the public API, the store interface and the dashboard's JSON API. Schema changes stay
+additive, and rolling upgrades are covered by the compatibility tests. Every release is listed in the
+[changelog](CHANGELOG.md).
 
 ## Contributing
 

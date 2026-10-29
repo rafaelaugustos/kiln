@@ -1,8 +1,7 @@
 # Compatibility
 
-kiln follows semantic versioning. Until v1.0, a minor release may still break the API; the changelog
-lists every such change under **Breaking**, and [Upgrading](upgrading.md) says what to do about it. From
-v1.0 on, this is what holds for the whole of v1.
+kiln follows semantic versioning. These guarantees apply throughout v1. [Upgrading](upgrading.md)
+covers the steps for each release.
 
 **The API.** Exported identifiers of package `kiln` and of `dashboard`, `kilntest`, `kilnotel`, `redisbus`,
 `cron`, `memstore`, `drivertest` and the stores' `New`, `Migrate` and options are not removed or changed.
