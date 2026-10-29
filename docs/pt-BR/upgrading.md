@@ -39,3 +39,6 @@ A v0.8.1 e a v0.8.2 não têm mudanças de schema.
 A v0.9 também não tem mudanças de schema. `Client.OpenBatch` agora recebe um `*Batch`, assim como
 `StartBatch`: troque `OpenBatch(ctx, desc, meta)` por
 `OpenBatch(ctx, &kiln.Batch{Description: desc, Meta: meta})`.
+
+A v1.0.0 é a primeira versão estável, sem mudanças de schema ou API em relação à v1.0.0-rc.1 ou à v0.9.
+Atualize todos os módulos do kiln que você usa para a v1.0.0 juntos.

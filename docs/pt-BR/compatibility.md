@@ -1,8 +1,7 @@
 # Compatibilidade
 
-O kiln segue o versionamento semântico. Até a v1.0, uma release menor ainda pode quebrar a API; o
-changelog lista toda mudança desse tipo sob **Breaking**, e [Atualizando](upgrading.md) explica o que
-fazer a respeito. A partir da v1.0, o que vale é isto, para toda a v1.
+O kiln segue o versionamento semântico. Estas garantias valem para toda a v1.
+[Atualizando](upgrading.md) explica os passos de cada release.
 
 **A API.** Identificadores exportados do pacote `kiln` e de `dashboard`, `kilntest`, `kilnotel`,
 `redisbus`, `cron`, `memstore`, `drivertest`, e os `New`, `Migrate` e opções dos stores, não são

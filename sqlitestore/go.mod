@@ -5,7 +5,7 @@ go 1.27.0
 toolchain go1.27.1
 
 require (
-	github.com/rafaelaugustos/kiln v1.0.0-rc.1
+	github.com/rafaelaugustos/kiln v1.0.0
 	modernc.org/sqlite v1.59.0
 )
 

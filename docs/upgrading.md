@@ -36,3 +36,6 @@ v0.9 has no schema changes either. `Client.OpenBatch` takes a `*Batch` now, as `
 replace `OpenBatch(ctx, desc, meta)` with `OpenBatch(ctx, &kiln.Batch{Description: desc, Meta: meta})`.
 
 v1.0.0-rc.1 has no schema or API changes from v0.9.
+
+v1.0.0 is the first stable release, with no schema or API changes from v1.0.0-rc.1 or v0.9.
+Update every kiln module you use to v1.0.0 together.
