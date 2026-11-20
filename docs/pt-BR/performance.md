@@ -107,6 +107,23 @@ DigitalOcean com 2 vCPU / 2 GB, com o kiln v0.8.0:
 Os workers registraram erros do store em volta de cada restart do banco de dados (capturas, heartbeats,
 leases), como esperado; nenhum deles custou um job.
 
+O mesmo harness com os jobs no Redis e os enqueues passando por um outbox no PostgreSQL
+(`-backend redis`), 15 minutos, 4 workers, 50 enqueues por segundo, Redis com o append-only file ligado:
+
+| | |
+|---|---|
+| Jobs | 58.067 |
+| Caos | 32 `SIGKILL`s, 24 `SIGTERM`s, 4 restarts do Redis |
+| Jobs perdidos | 0 |
+| Jobs executados mais vezes do que o permitido | 0 |
+| Pico de concorrência por chave limitada | igual ou abaixo do seu `Max` |
+| Enqueues tentados enquanto o Redis reiniciava | 20, todos desfeitos junto com a transação |
+| Store depois da execução | contadores de limit em 0, nada para o Sweep reparar, esvaziado em 17s |
+
+Um enqueue pelo outbox precisa do Redis por um instante, para checar o job e dar um id a ele, então as 20
+transações que encontraram o Redis reiniciando falharam por inteiro e não deixaram nada para trás, em
+nenhum dos dois stores.
+
 ```
 cd soak && go run . -duration 24h -rate 20
 ```
