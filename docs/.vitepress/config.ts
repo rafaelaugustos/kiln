@@ -57,7 +57,7 @@ function sidebar(prefix: string, t: Record<string, string>): DefaultTheme.Sideba
     },
     {
       text: t.stores,
-      items: [page('backends', 'backends'), page('customStore', 'custom-store')],
+      items: [page('backends', 'backends'), page('placement', 'placement'), page('customStore', 'custom-store')],
     },
     {
       text: t.more,
@@ -97,6 +97,7 @@ const en = {
   upgrading: 'Upgrading',
   compatibility: 'Compatibility',
   backends: 'Storage backends',
+  placement: 'Where jobs live',
   customStore: 'Writing a store',
   hangfire: 'Coming from Hangfire',
   comparison: 'How kiln compares',
@@ -130,6 +131,7 @@ const pt = {
   upgrading: 'Atualizando',
   compatibility: 'Compatibilidade',
   backends: 'Bancos de dados',
+  placement: 'Onde os jobs moram',
   customStore: 'Escrevendo um store',
   hangfire: 'Vindo do Hangfire',
   comparison: 'Comparação',

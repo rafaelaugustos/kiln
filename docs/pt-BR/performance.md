@@ -28,6 +28,21 @@ Por padrão, o River busca no máximo uma vez a cada 100ms, e é isso que limita
 com essa pausa reduzida, o esvaziamento no-op empata, e a latência p99 dos dois ficou ruidosa demais
 nessa máquina para decidir a favor de um ou de outro.
 
+## O que o kiln escreve no PostgreSQL
+
+A vazão diz quão rápida é a fila; isto diz quanto ela custa ao banco de dados que divide com a sua
+aplicação. 10.000 pedidos feitos por 8 goroutines, cada um em uma transação que insere o pedido e
+enfileira um job, com um servidor rodando os jobs. PostgreSQL 17, números por job além do insert do
+próprio pedido.
+
+| | WAL escrito | Commits | Linhas escritas |
+|---|---|---|---|
+| Jobs no PostgreSQL (`pgstore`) | 1.326 bytes | 2,4 | 4,2 |
+| Jobs no Redis, outbox no PostgreSQL | 387 bytes | 1, sem esperar | 2 |
+| Jobs no Redis, enfileirados direto | 0 | 0 | 0 |
+
+`cd bench && go run . -load` reproduz isso; [Onde os jobs moram](placement.md) explica os três setups.
+
 ## Sob uma carga parecida com produção
 
 Os números acima são benchmarks de propósito único. Para ver o kiln em algo mais parecido com produção,

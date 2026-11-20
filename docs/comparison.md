@@ -7,7 +7,7 @@ October 2026:
 
 | | kiln | Hangfire | River | Asynq |
 |---|---|---|---|---|
-| Storage | PostgreSQL, MySQL, SQL Server, SQLite | SQL Server; Redis with Pro; others from the community | PostgreSQL; SQLite (experimental) | Redis |
+| Storage | PostgreSQL, MySQL, SQL Server, SQLite, Redis | SQL Server; Redis with Pro; others from the community | PostgreSQL; SQLite (experimental) | Redis |
 | License | MIT | LGPL-3.0, paid Pro and Ace | MPL-2.0, paid Pro | MIT |
 | Retries with backoff | yes | yes | yes | yes |
 | Job waits for other jobs | yes | yes, several parents with Pro | Pro (workflows) | no |

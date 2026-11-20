@@ -7,7 +7,7 @@ documentava em outubro de 2026:
 
 | | kiln | Hangfire | River | Asynq |
 |---|---|---|---|---|
-| Armazenamento | PostgreSQL, MySQL, SQL Server, SQLite | SQL Server; Redis com o Pro; outros pela comunidade | PostgreSQL; SQLite (experimental) | Redis |
+| Armazenamento | PostgreSQL, MySQL, SQL Server, SQLite, Redis | SQL Server; Redis com o Pro; outros pela comunidade | PostgreSQL; SQLite (experimental) | Redis |
 | Licença | MIT | LGPL-3.0, Pro e Ace pagos | MPL-2.0, Pro pago | MIT |
 | Retentativas com backoff | sim | sim | sim | sim |
 | Job espera por outros jobs | sim | sim, vários pais com o Pro | Pro (workflows) | não |

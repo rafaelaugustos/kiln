@@ -29,6 +29,9 @@ type options struct {
 	latJobs   int
 	spacing   time.Duration
 	cooldown  time.Duration
+	load      bool
+	loadJobs  int
+	redis     string
 }
 
 func main() {
@@ -48,10 +51,20 @@ func main() {
 	flag.IntVar(&o.latJobs, "latency-jobs", 500, "measured enqueues in the latency scenario")
 	flag.DurationVar(&o.spacing, "spacing", 10*time.Millisecond, "interval between enqueues in the latency scenario")
 	flag.DurationVar(&o.cooldown, "river-cooldown", time.Millisecond, "FetchCooldown of the extra tuned River variant in worker scenarios (0 disables it)")
+	flag.BoolVar(&o.load, "load", false, "measure what kiln writes to PostgreSQL per job, with the jobs in PostgreSQL and in Redis behind an outbox, instead of the scenarios")
+	flag.IntVar(&o.loadJobs, "load-jobs", 10_000, "orders placed in the -load measurement, one job each")
+	flag.StringVar(&o.redis, "redis", env("KILN_REDIS_ADDR", "localhost:56379"), "Redis address for -load (env KILN_REDIS_ADDR)")
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
+	if o.load {
+		if err := runLoad(ctx, o, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "bench:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(ctx, o); err != nil {
 		fmt.Fprintln(os.Stderr, "bench:", err)
 		os.Exit(1)

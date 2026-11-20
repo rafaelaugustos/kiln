@@ -28,6 +28,21 @@ River's defaults fetch at most once every 100ms, which is what caps it around 1k
 cooldown lowered the no-op drain is a tie, and the p99 latency of the two was too noisy on this
 machine to call either way.
 
+## What kiln writes to PostgreSQL
+
+Throughput says how fast the queue is; this says what it costs the database it shares with your
+application. 10,000 orders placed by 8 goroutines, each in a transaction that inserts the order and
+enqueues one job, with a server running the jobs. PostgreSQL 17, numbers per job on top of the order's
+own insert.
+
+| | WAL written | Commits | Rows written |
+|---|---|---|---|
+| Jobs in PostgreSQL (`pgstore`) | 1,326 bytes | 2.4 | 4.2 |
+| Jobs in Redis, outbox in PostgreSQL | 387 bytes | 1, not waited for | 2 |
+| Jobs in Redis, enqueued directly | 0 | 0 | 0 |
+
+`cd bench && go run . -load` reproduces it; [Where jobs live](placement.md) explains the three setups.
+
 ## Under a production-like load
 
 The numbers above are single-purpose benchmarks. To see kiln in something closer to production, a small
