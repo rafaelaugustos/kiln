@@ -1,7 +1,16 @@
 # Changelog
 
-Every module in this repository (`kiln`, `pgstore`, `mysqlstore`, `mssqlstore`, `sqlitestore`, `kilnotel`, `redisbus`) is
-released together under the same version. The GitHub releases have the full notes.
+Every module in this repository (`kiln`, `pgstore`, `mysqlstore`, `mssqlstore`, `sqlitestore`, `redisstore`, `kilnotel`,
+`redisbus`) is released together under the same version. The GitHub releases have the full notes.
+
+## Unreleased
+
+### Added
+- `redisstore`, a store that keeps jobs in Redis 7 or later, for applications that want their queue off
+  their database. It passes the same conformance suite as the SQL stores, wakes servers through Pub/Sub,
+  groups writes with `InTx`, and serves the dashboard, the console and the limits page. Each call runs as
+  one function on the server, so there are no row locks to deadlock on. Durability follows the server's
+  persistence settings, and there is no enqueue inside the application's transaction yet.
 
 ## v1.0.0 (2026-10-29)
 
