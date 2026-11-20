@@ -144,6 +144,7 @@ export default withMermaid({
   title: 'kiln',
   description: 'Background jobs for Go, kept in PostgreSQL, MySQL, SQL Server, SQLite or Redis.',
   cleanUrls: true,
+  appearance: 'dark',
   lastUpdated: existsSync(new URL('../../.git', import.meta.url)),
   srcExclude: ['node_modules/**'],
   sitemap: { hostname: site },
