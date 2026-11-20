@@ -44,7 +44,7 @@ type fleet struct {
 func newFleet(self, dir string, o options) *fleet {
 	return &fleet{
 		self: self,
-		args: []string{"-backend", o.backend, "-dsn", o.dsn},
+		args: []string{"-backend", o.backend, "-dsn", o.dsn, "-redis", o.redis},
 		dir:  dir,
 		quit: make(chan struct{}),
 		live: make([]*proc, o.workers),

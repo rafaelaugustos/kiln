@@ -56,6 +56,7 @@ func work(o options) error {
 		LeaderTTL:         3 * time.Second,
 		Retention:         kiln.Retention{Succeeded: kiln.Forever, Deleted: kiln.Forever, Failed: kiln.Forever},
 		Logger:            log,
+		Outbox:            b.outbox,
 	})
 	if err != nil {
 		return err

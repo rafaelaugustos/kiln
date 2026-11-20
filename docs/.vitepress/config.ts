@@ -142,7 +142,7 @@ const pt = {
 
 export default withMermaid({
   title: 'kiln',
-  description: 'Background jobs for Go, kept in PostgreSQL, MySQL, SQL Server or SQLite.',
+  description: 'Background jobs for Go, kept in PostgreSQL, MySQL, SQL Server, SQLite or Redis.',
   cleanUrls: true,
   lastUpdated: existsSync(new URL('../../.git', import.meta.url)),
   srcExclude: ['node_modules/**'],
@@ -214,7 +214,7 @@ export default withMermaid({
       label: 'Português',
       lang: 'pt-BR',
       link: '/pt-BR/',
-      description: 'Jobs em segundo plano para Go, guardados em PostgreSQL, MySQL, SQL Server ou SQLite.',
+      description: 'Jobs em segundo plano para Go, guardados em PostgreSQL, MySQL, SQL Server, SQLite ou Redis.',
       themeConfig: {
         nav: [
           { text: 'Guia', link: '/pt-BR/getting-started', activeMatch: '^/pt-BR/.+' },

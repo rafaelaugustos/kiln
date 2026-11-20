@@ -1,12 +1,12 @@
 ---
 layout: home
 title: Jobs em segundo plano para Go
-description: Jobs em segundo plano para Go, guardados em PostgreSQL, MySQL, SQL Server ou SQLite. Retentativas, workflows, limites, jobs recorrentes e um dashboard, no banco que você já tem.
+description: Jobs em segundo plano para Go, guardados em PostgreSQL, MySQL, SQL Server, SQLite ou Redis. Retentativas, workflows, limites, jobs recorrentes e um dashboard, no banco que você já tem.
 
 hero:
   name: kiln
   text: Jobs em segundo plano para Go.
-  tagline: Guardados em PostgreSQL, MySQL, SQL Server ou SQLite. Retentativas, workflows, limites, jobs recorrentes e um dashboard, no banco que você já tem.
+  tagline: Guardados em PostgreSQL, MySQL, SQL Server, SQLite ou Redis. Retentativas, workflows, limites, jobs recorrentes e um dashboard, no banco que você já tem.
   image:
     src: /icon.svg
     alt: kiln
@@ -64,7 +64,7 @@ dashboard que já vem com a biblioteca.
 - **Cancelamento** de um job em execução, a partir de qualquer processo
 - **Dashboard** em inglês ou português brasileiro, e uma API JSON, montado no seu próprio servidor HTTP
 - **OpenTelemetry** com traces desde a requisição que enfileirou um job até o handler que o executou
-- **PostgreSQL, MySQL, SQL Server e SQLite**, mais um store em memória para testes, todos seguindo a mesma
+- **PostgreSQL, MySQL, SQL Server, SQLite e Redis**, mais um store em memória para testes, todos seguindo a mesma
   suíte de conformidade
 
 Tudo isso está neste repositório, sob a licença MIT. Não existe uma edição paga.
@@ -77,6 +77,7 @@ Tudo isso está neste repositório, sob a licença MIT. Não existe uma edição
 - [Conceitos](concepts/states.md): estados, enfileiramento, retentativas, workflows, limites, jobs
   recorrentes e mais
 - [Bancos de dados](backends.md): o que cada banco de dados precisa, e como escrever seu próprio store
+- [Onde os jobs moram](placement.md): no seu banco, no Redis, ou nos dois através de um outbox
 - [Vindo do Hangfire](hangfire.md): chamadas do Hangfire e seus equivalentes no kiln
 
 ## Status

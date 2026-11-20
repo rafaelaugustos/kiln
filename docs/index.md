@@ -1,12 +1,12 @@
 ---
 layout: home
 title: Background jobs for Go
-description: Background jobs for Go, kept in PostgreSQL, MySQL, SQL Server or SQLite. Retries, workflows, limits, recurring jobs and a dashboard, in the database you already have.
+description: Background jobs for Go, kept in PostgreSQL, MySQL, SQL Server, SQLite or Redis. Retries, workflows, limits, recurring jobs and a dashboard, in the database you already have.
 
 hero:
   name: kiln
   text: Background jobs for Go.
-  tagline: Kept in PostgreSQL, MySQL, SQL Server or SQLite. Retries, workflows, limits, recurring jobs and a dashboard, in the database you already have.
+  tagline: Kept in PostgreSQL, MySQL, SQL Server, SQLite or Redis. Retries, workflows, limits, recurring jobs and a dashboard, in the database you already have.
   image:
     src: /icon.svg
     alt: kiln
@@ -61,7 +61,7 @@ data that produced them, and you can watch and retry them from a dashboard that 
 - **Cancellation** of a running job from any process
 - **Dashboard** in English or Brazilian Portuguese, and a JSON API, mounted on your own HTTP server
 - **OpenTelemetry** traces from the request that enqueued a job to the handler that ran it
-- **PostgreSQL, MySQL, SQL Server and SQLite**, plus an in-memory store for tests, all held to one
+- **PostgreSQL, MySQL, SQL Server, SQLite and Redis**, plus an in-memory store for tests, all held to one
   conformance suite
 
 Everything above is in this repository, under the MIT license. There is no paid edition.
@@ -72,6 +72,7 @@ Everything above is in this repository, under the MIT license. There is no paid 
 - [How it works](how-it-works.md): what a job is, and how servers share the work
 - [Concepts](concepts/states.md): states, enqueueing, retries, workflows, limits, recurring jobs and more
 - [Storage backends](backends.md): what each database needs, and how to write your own store
+- [Where jobs live](placement.md): your database, Redis, or both through an outbox
 - [Coming from Hangfire](hangfire.md): Hangfire calls and their kiln equivalents
 
 ## Status

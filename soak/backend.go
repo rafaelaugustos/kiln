@@ -14,6 +14,8 @@ import (
 	"github.com/rafaelaugustos/kiln/driver"
 	"github.com/rafaelaugustos/kiln/mysqlstore"
 	"github.com/rafaelaugustos/kiln/pgstore"
+	"github.com/rafaelaugustos/kiln/redisstore"
+	"github.com/redis/go-redis/v9"
 )
 
 const (
@@ -24,6 +26,7 @@ const (
 type backend struct {
 	db        *sql.DB
 	store     driver.Store
+	outbox    driver.Outbox
 	writer    func(*sql.Tx) driver.TxWriter
 	close     func()
 	poll      time.Duration
@@ -35,10 +38,80 @@ type backend struct {
 }
 
 func open(ctx context.Context, o options, reset bool) (*backend, error) {
-	if o.backend == "mysql" {
+	switch o.backend {
+	case "mysql":
 		return openMySQL(ctx, o.dsn, reset)
+	case "redis":
+		return openRedis(ctx, o.dsn, o.redis, reset)
 	}
 	return openPostgres(ctx, o.dsn, reset)
+}
+
+func openRedis(ctx context.Context, dsn, addr string, reset bool) (*backend, error) {
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(8)
+	rdb := redis.NewClient(&redis.Options{Addr: addr, ContextTimeoutEnabled: true})
+	fail := func(err error) (*backend, error) {
+		rdb.Close()
+		db.Close()
+		return nil, err
+	}
+	if reset {
+		err = execAll(ctx, db,
+			"DROP SCHEMA IF EXISTS "+pgSchema+" CASCADE",
+			"DROP TABLE IF EXISTS public.soak_enqueued, public.soak_runs",
+			"CREATE TABLE public.soak_enqueued (id bigint PRIMARY KEY, kind text NOT NULL, lkey text NOT NULL)",
+			"CREATE TABLE public.soak_runs (run text PRIMARY KEY, job bigint NOT NULL, attempt int NOT NULL, inst text NOT NULL, started bigint NOT NULL, finished bigint, result text)",
+			"CREATE INDEX ON public.soak_runs (job, attempt)",
+		)
+		if err != nil {
+			return fail(err)
+		}
+		iter := rdb.Scan(ctx, 0, "{"+pgSchema+"}:*", 1000).Iterator()
+		var keys []string
+		for iter.Next(ctx) {
+			keys = append(keys, iter.Val())
+		}
+		if err := iter.Err(); err != nil {
+			return fail(err)
+		}
+		for len(keys) > 0 {
+			n := min(len(keys), 500)
+			if err := rdb.Unlink(ctx, keys[:n]...).Err(); err != nil {
+				return fail(err)
+			}
+			keys = keys[n:]
+		}
+	}
+	st, err := redisstore.New(ctx, rdb, redisstore.Prefix(pgSchema))
+	if err != nil {
+		return fail(err)
+	}
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return fail(err)
+	}
+	ob, err := pgstore.NewOutbox(ctx, pool, st, pgstore.Schema(pgSchema))
+	if err != nil {
+		pool.Close()
+		return fail(err)
+	}
+	return &backend{
+		db:        db,
+		store:     st,
+		outbox:    ob,
+		writer:    func(tx *sql.Tx) driver.TxWriter { return ob.SQLTx(tx) },
+		close:     func() { pool.Close(); rdb.Close(); db.Close() },
+		poll:      time.Second,
+		pg:        true,
+		enqueued:  "public.soak_enqueued",
+		runs:      "public.soak_runs",
+		insertRun: "INSERT INTO public.soak_runs (run, job, attempt, inst, started) VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+		updateRun: "UPDATE public.soak_runs SET finished = $1, result = $2 WHERE run = $3",
+	}, nil
 }
 
 func openPostgres(ctx context.Context, dsn string, reset bool) (*backend, error) {
