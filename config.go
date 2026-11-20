@@ -8,6 +8,8 @@ import (
 	"os"
 	"slices"
 	"time"
+
+	"github.com/rafaelaugustos/kiln/driver"
 )
 
 const (
@@ -124,6 +126,13 @@ type ServerConfig struct {
 	// later and without using up an attempt, before it fails instead. It counts from the job's
 	// creation. Zero means 24h.
 	UnknownKindTTL time.Duration
+
+	// Outbox, when set, is drained by the server every PollInterval: it applies to the store the
+	// jobs enqueued inside transactions of another database that their writers' Notify did not
+	// deliver. Give it to the servers of an application that enqueues through an outbox, such as
+	// the ones pgstore and mysqlstore make for a store that implements [driver.Stager]. Nil, the
+	// default, is for a store that takes its own transactional writes.
+	Outbox driver.Outbox
 }
 
 func (c ServerConfig) resolve() (ServerConfig, error) {

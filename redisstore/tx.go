@@ -2,15 +2,26 @@ package redisstore
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
 	"github.com/rafaelaugustos/kiln/driver"
 )
 
-var _ driver.Transactor = (*Store)(nil)
+var (
+	_ driver.Transactor = (*Store)(nil)
+	_ driver.Stager     = (*Store)(nil)
+)
+
+const (
+	encoding = 1
+	applied  = 7 * 24 * time.Hour
+)
 
 var errDone = errors.New("kiln: transaction already committed or rolled back")
 
@@ -33,8 +44,15 @@ type wireOp struct {
 
 type staged struct {
 	s    *Store
+	id   string
+	hold time.Duration
 	ops  []wireOp
 	done bool
+}
+
+type wireStaged struct {
+	V   int      `json:"v"`
+	Ops []wireOp `json:"ops"`
 }
 
 type stageArgs struct {
@@ -54,7 +72,7 @@ type stageArgs struct {
 // job. If fn returns an error, nothing is applied, the keys are released and InTx returns the
 // error.
 func (s *Store) InTx(ctx context.Context, fn func(driver.Writer) error) error {
-	t := &staged{s: s}
+	t := &staged{s: s, hold: s.hold}
 	if err := fn(t); err != nil {
 		t.rollback(ctx)
 		return err
@@ -66,7 +84,7 @@ func (t *staged) stage(ctx context.Context, a stageArgs, out any) error {
 	if t.done {
 		return errDone
 	}
-	a.Ops, a.TTL = t.ops, micros(t.s.hold)
+	a.Ops, a.TTL = t.ops, micros(t.hold)
 	return t.s.call(ctx, "stage", a, out)
 }
 
@@ -112,6 +130,47 @@ func (t *staged) SealBatch(ctx context.Context, id int64) error {
 	return nil
 }
 
+// Stage returns a writer whose jobs and batches wait for [Store.Apply], as [driver.Stager]
+// describes. Each write is one call to the server, which checks it and hands out its ids; nothing
+// is stored until Apply, so a writer that is dropped leaves nothing to clean up.
+func (s *Store) Stage(context.Context) (driver.Staged, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return nil, fmt.Errorf("kiln: stage: %w", err)
+	}
+	return &staged{s: s, id: hex.EncodeToString(b[:])}, nil
+}
+
+func (t *staged) Encode() (string, []byte, error) {
+	data, err := json.Marshal(wireStaged{V: encoding, Ops: t.ops})
+	if err != nil {
+		return "", nil, fmt.Errorf("kiln: encode staged writes: %w", err)
+	}
+	return t.id, data, nil
+}
+
+// Apply applies writes encoded by a writer from [Store.Stage] in one call to the server, as
+// [driver.Stager] describes. The store remembers the id for seven days, which is how long a
+// repeated Apply of the same writes does nothing.
+func (s *Store) Apply(ctx context.Context, id string, data []byte) error {
+	var w wireStaged
+	if err := json.Unmarshal(data, &w); err != nil {
+		return fmt.Errorf("%w: staged writes %q: %v", driver.ErrInvalid, id, err)
+	}
+	if id == "" || w.V != encoding {
+		return fmt.Errorf("%w: staged writes %q in encoding %d", driver.ErrInvalid, id, w.V)
+	}
+	if len(w.Ops) == 0 {
+		return nil
+	}
+	args := struct {
+		Ops  []wireOp `json:"ops"`
+		Key  string   `json:"key"`
+		Keep int64    `json:"keep"`
+	}{w.Ops, id, applied.Milliseconds()}
+	return s.call(ctx, "commit", args, nil)
+}
+
 func (t *staged) commit(ctx context.Context) error {
 	if t.done {
 		return errDone
@@ -131,7 +190,7 @@ func (t *staged) rollback(ctx context.Context) {
 		return
 	}
 	t.done = true
-	if len(t.ops) == 0 {
+	if len(t.ops) == 0 || t.hold == 0 {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), releaseTimeout)

@@ -131,6 +131,9 @@ function S.prepare(list, ov)
       else
         seen[ps.uk] = i
         local u = S.holder(ps.uk)
+        if not u and ov and ov.keys[ps.uk] then
+          u = {job = ov.keys[ps.uk]}
+        end
         if u then
           p.res[i] = {id = u.job, st = S.state(u.job, ov) or '', dup = true, rep = false}
           local j = S.job(u.job)

@@ -1,5 +1,5 @@
 local function overlay()
-  return {jobs = {}, batches = {}}
+  return {jobs = {}, batches = {}, keys = {}}
 end
 
 local function finished(v, ov)
@@ -65,8 +65,11 @@ local function check(op, ov)
   local p = replan(op)
   S.resolve(p, ov)
   for _, i in ipairs(p.order) do
-    local r, b = p.res[i], p.items[i].p.b
+    local r, b, uk = p.res[i], p.items[i].p.b, p.items[i].p.uk
     ov.jobs[r.id] = r.st
+    if uk ~= '' then
+      ov.keys[uk] = r.id
+    end
     if b ~= 0 and not ARCH[r.st] then
       local v = S.view(b, ov)
       v.live = v.live + 1
@@ -114,7 +117,7 @@ function H.stage(a)
   for i, r in ipairs(p.res) do
     local it = p.items[i]
     local ps = it.p
-    if not r.dup and ps.uk ~= '' then
+    if a.ttl > 0 and not r.dup and ps.uk ~= '' then
       S.setu(ps.uk, r.id, ps.ufor > 0 and NOW + ps.ufor or 0, NOW + a.ttl)
     end
     if it.alias > 0 then

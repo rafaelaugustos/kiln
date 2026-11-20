@@ -308,3 +308,53 @@ type LimitReader interface {
 	// A key is listed from the first insert that names it until Prune deletes it.
 	Limits(ctx context.Context, after string, limit int) ([]LimitInfo, error)
 }
+
+// Stager is implemented by stores whose writes can be made in two steps: checked and given their
+// ids now, and applied later from an encoded form, possibly by another process. It is what lets a
+// job be enqueued inside the transaction of a database that is not the store: the encoded writes
+// commit with that transaction, in an [Outbox], and are applied once it has committed.
+type Stager interface {
+	// Stage returns a writer whose jobs and batches do not exist until [Stager.Apply] applies
+	// them. Each write is checked when it is made, against the store and the earlier writes of the
+	// same writer, and returns the ids the jobs and batches will have. Unique keys are compared
+	// then and decided by Apply: a staged job whose key another job took in between is not
+	// inserted, as the duplicate it has become, and jobs staged with it that name it as a parent
+	// wait for the holder of the key instead. Writers that are never applied leave nothing behind.
+	Stage(ctx context.Context) (Staged, error)
+
+	// Apply applies writes encoded by [Staged.Encode], all or none, and then admits throttled jobs
+	// and publishes events as the store's own Insert does. It applies the writes of an id once: a
+	// later call with the same id does nothing and returns nil, so a caller that cannot tell
+	// whether an Apply took effect calls it again. It fails with [ErrNotFound] when a parent job
+	// or a batch the writes rely on is gone, with [ErrClosed] when a batch they join has closed,
+	// and with [ErrInvalid] for data it cannot decode. Writes that fail with one of the three can
+	// never be applied; any other error may be gone by the next call.
+	Apply(ctx context.Context, id string, data []byte) error
+}
+
+// Staged is a [Writer] whose writes wait for [Stager.Apply].
+type Staged interface {
+	Writer
+
+	// Encode returns the writes made so far in the form [Stager.Apply] takes, and the id that
+	// names them. The id is the same for the life of the writer, so what is encoded after a later
+	// write replaces what was encoded before.
+	Encode() (id string, data []byte, err error)
+}
+
+// Outbox keeps staged writes in the application's database, where they commit or roll back with
+// its transactions, until the store they were staged for has applied them. The outboxes of
+// pgstore and mysqlstore hand out [TxWriter]s bound to a transaction: their writes are staged in
+// the store given to the outbox and stored in the transaction, and their Notify applies them
+// right after the commit. Drain is for what Notify did not deliver, because the process stopped
+// between the commit and Notify or the store could not be reached; a server given the outbox in
+// its configuration calls it.
+type Outbox interface {
+	// Drain applies the writes of up to limit committed entries, oldest first, and removes those
+	// it applied. An entry it could not apply stays for a later call, unless its writes can never
+	// be applied (see [Stager.Apply]): that one is set aside with the reason, never applied and
+	// never removed, for an operator to look at. Drain may leave entries committed in the last
+	// second to the Notify that is about to deliver them. It returns the number of entries
+	// applied. Any number of processes may call it at once. A limit of 0 or less counts as 1.
+	Drain(ctx context.Context, limit int) (int, error)
+}

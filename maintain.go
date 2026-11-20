@@ -10,6 +10,7 @@ import (
 const (
 	promoteLimit = 1000
 	blindPromote = 100 * time.Millisecond
+	relayLimit   = 100
 	sweepLimit   = 1000
 	pruneLimit   = 5000
 	sweepEvery   = time.Second
@@ -57,6 +58,19 @@ func (s *Server) promoteDue(ctx context.Context) time.Duration {
 		d = min(d, p.Next)
 	}
 	return d
+}
+
+func (s *Server) relay(ctx context.Context) {
+	every(ctx, func(ctx context.Context) time.Duration {
+		n, err := s.cfg.Outbox.Drain(ctx, relayLimit)
+		if err != nil {
+			s.fail("outbox", err)
+		}
+		if n >= relayLimit {
+			return 0
+		}
+		return jitter(s.cfg.PollInterval)
+	})
 }
 
 func (s *Server) sweep(ctx context.Context) {

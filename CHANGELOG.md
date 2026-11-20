@@ -10,7 +10,14 @@ Every module in this repository (`kiln`, `pgstore`, `mysqlstore`, `mssqlstore`, 
   their database. It passes the same conformance suite as the SQL stores, wakes servers through Pub/Sub,
   groups writes with `InTx`, and serves the dashboard, the console and the limits page. Each call runs as
   one function on the server, so there are no row locks to deadlock on. Durability follows the server's
-  persistence settings, and there is no enqueue inside the application's transaction yet.
+  persistence settings.
+- Outboxes, to enqueue inside a database transaction while the jobs live in another store:
+  `pgstore.NewOutbox` and `mysqlstore.NewOutbox` keep the jobs of a transaction in one small table, where
+  they commit or roll back with it, and hand them to the store after the commit. `ob.Tx(tx)` takes the
+  place of `store.Tx(tx)`, and a server given the outbox in `ServerConfig.Outbox` delivers what a
+  process did not get to notify.
+- driver: `Stager`, `Staged` and `Outbox`, the optional interfaces behind it, with conformance cases in
+  `drivertest.Run` and a suite for outboxes in `drivertest.RunOutbox`.
 
 ## v1.0.0 (2026-10-29)
 

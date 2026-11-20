@@ -3,7 +3,8 @@
 // enqueues jobs inside the application's own transaction.
 //
 // A store implements [Store], and may implement [Notifier] or [Bus] to wake servers,
-// [Transactor] to group writes in one transaction and [Console] to keep what jobs log. Package
+// [Transactor] to group writes in one transaction, [Console] to keep what jobs log and [Stager]
+// to take jobs enqueued in the transactions of another database, through an [Outbox]. Package
 // memstore is the reference implementation, and drivertest.Run is the conformance suite every
 // store must pass. A store must be safe for concurrent use by any number of servers and clients,
 // and its errors must wrap the sentinel errors of this package wherever one applies.

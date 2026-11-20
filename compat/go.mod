@@ -10,12 +10,15 @@ require (
 	github.com/rafaelaugustos/kiln v1.0.0
 	github.com/rafaelaugustos/kiln/mysqlstore v1.0.0
 	github.com/rafaelaugustos/kiln/pgstore v1.0.0
+	github.com/rafaelaugustos/kiln/redisstore v0.0.0-00010101000000-000000000000
 	github.com/rafaelaugustos/kiln/sqlitestore v1.0.0
+	github.com/redis/go-redis/v9 v9.22.0
 	modernc.org/sqlite v1.59.0
 )
 
 require (
 	filippo.io/edwards25519 v1.2.0 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
@@ -24,6 +27,7 @@ require (
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
+	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
@@ -36,5 +40,6 @@ replace (
 	github.com/rafaelaugustos/kiln => ../
 	github.com/rafaelaugustos/kiln/mysqlstore => ../mysqlstore
 	github.com/rafaelaugustos/kiln/pgstore => ../pgstore
+	github.com/rafaelaugustos/kiln/redisstore => ../redisstore
 	github.com/rafaelaugustos/kiln/sqlitestore => ../sqlitestore
 )
