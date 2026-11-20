@@ -84,6 +84,8 @@ jobs:
         working-directory: kilnotel
       - run: go vet ./... && go test -race -coverprofile=coverage.out ./...
         working-directory: redisbus
+      - run: go vet ./... && go test -race -coverprofile=coverage.out ./...
+        working-directory: redisstore
       - run: go vet ./... && go test ./...
         working-directory: compat
       - run: go vet ./... && go build ./...
@@ -91,4 +93,4 @@ jobs:
       - uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          files: coverage.out,pgstore/coverage.out,mysqlstore/coverage.out,mssqlstore/coverage.out,sqlitestore/coverage.out,kilnotel/coverage.out,redisbus/coverage.out
+          files: coverage.out,pgstore/coverage.out,mysqlstore/coverage.out,mssqlstore/coverage.out,sqlitestore/coverage.out,kilnotel/coverage.out,redisbus/coverage.out,redisstore/coverage.out
