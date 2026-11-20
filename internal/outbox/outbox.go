@@ -9,7 +9,7 @@ import (
 
 type Carrier interface {
 	Put(ctx context.Context, id string, data []byte) error
-	Deliver(ctx context.Context, id string) error
+	Deliver(ctx context.Context) error
 }
 
 type Writer struct {
@@ -94,9 +94,8 @@ func (w *Writer) Notify(ctx context.Context) error {
 	if w.id == "" {
 		return nil
 	}
-	id := w.id
 	w.id, w.st = "", nil
-	return w.c.Deliver(ctx, id)
+	return w.c.Deliver(ctx)
 }
 
 func Permanent(err error) bool {

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,30 +21,43 @@ const sqlOutboxSchema = `CREATE SCHEMA IF NOT EXISTS {s}`
 
 const sqlOutboxTable = `CREATE TABLE IF NOT EXISTS {s}.outbox (
 	seq bigserial PRIMARY KEY,
-	id text NOT NULL UNIQUE,
+	id text NOT NULL,
 	data bytea NOT NULL,
-	created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
-	failed text
+	created_at timestamptz NOT NULL DEFAULT clock_timestamp()
 )`
 
-const sqlOutboxPut = `INSERT INTO {s}.outbox (id, data) VALUES ($1, $2)
-ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data`
+const sqlOutboxFailed = `CREATE TABLE IF NOT EXISTS {s}.outbox_failed (
+	seq bigint PRIMARY KEY,
+	id text NOT NULL,
+	data bytea NOT NULL,
+	created_at timestamptz NOT NULL,
+	failed_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+	reason text NOT NULL
+)`
 
-const sqlOutboxOne = `SELECT data FROM {s}.outbox WHERE id = $1 AND failed IS NULL FOR UPDATE SKIP LOCKED`
+const sqlOutboxAdd = `INSERT INTO {s}.outbox (id, data) VALUES ($1, $2) RETURNING seq`
 
-const sqlOutboxNext = `SELECT id, data FROM {s}.outbox
-WHERE failed IS NULL AND created_at < clock_timestamp() - interval '1 second'
+const sqlOutboxSet = `UPDATE {s}.outbox SET data = $2 WHERE seq = $1`
+
+const sqlOutboxLazy = `SET LOCAL synchronous_commit = off`
+
+const sqlOutboxTake = `DELETE FROM {s}.outbox WHERE seq = $1 RETURNING id, data, created_at`
+
+const sqlOutboxNext = `SELECT seq, id, data, created_at FROM {s}.outbox
+WHERE created_at < clock_timestamp() - interval '1 second'
 ORDER BY seq LIMIT $1 FOR UPDATE SKIP LOCKED`
 
-const sqlOutboxDone = `DELETE FROM {s}.outbox WHERE id = ANY($1)`
+const sqlOutboxDone = `DELETE FROM {s}.outbox WHERE seq = ANY($1)`
 
-const sqlOutboxFail = `UPDATE {s}.outbox SET failed = $2 WHERE id = $1`
+const sqlOutboxPark = `INSERT INTO {s}.outbox_failed (seq, id, data, created_at, reason) VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (seq) DO NOTHING`
 
 // Outbox is a [driver.Outbox] in PostgreSQL, for applications that keep their jobs in another
 // store, such as redisstore, and still want to enqueue inside their database transactions. It is
 // one small table, outbox, in the schema "kiln" unless [Schema] names another: a row holds the
 // writes of one transaction from its commit until the store has applied them, which normally
-// takes as long as the call to Notify.
+// takes as long as the call to Notify. For the database that is one insert in the application's
+// transaction and one delete after it.
 //
 //	store, err := redisstore.New(ctx, rdb)
 //	ob, err := pgstore.NewOutbox(ctx, pool, store)
@@ -55,8 +69,9 @@ const sqlOutboxFail = `UPDATE {s}.outbox SET failed = $2 WHERE id = $1`
 //	err = tx.Commit(ctx)
 //	w.Notify(ctx)
 //
-// A row whose writes can never be applied keeps the reason in its failed column and stays in the
-// table, where nothing touches it again.
+// The row is deleted by a transaction that does not wait for its commit to reach the disk: if a
+// crash loses the delete, the row is applied again, which does nothing. Writes that can never be
+// applied move to the table outbox_failed with the reason, where nothing touches them again.
 type Outbox struct {
 	pool   *pgxpool.Pool
 	target driver.Stager
@@ -64,7 +79,7 @@ type Outbox struct {
 }
 
 type outboxSQL struct {
-	put, one, next, done, fail string
+	add, set, take, next, done, park string
 }
 
 // NewOutbox returns an outbox in pool's database whose entries are staged for target and applied
@@ -81,11 +96,12 @@ func NewOutbox(ctx context.Context, pool *pgxpool.Pool, target driver.Stager, op
 	}
 	r := strings.NewReplacer("{s}", c.schema)
 	o := &Outbox{pool: pool, target: target, q: outboxSQL{
-		put:  r.Replace(sqlOutboxPut),
-		one:  r.Replace(sqlOutboxOne),
+		add:  r.Replace(sqlOutboxAdd),
+		set:  r.Replace(sqlOutboxSet),
+		take: r.Replace(sqlOutboxTake),
 		next: r.Replace(sqlOutboxNext),
 		done: r.Replace(sqlOutboxDone),
-		fail: r.Replace(sqlOutboxFail),
+		park: r.Replace(sqlOutboxPark),
 	}}
 	if c.noMigrate {
 		return o, nil
@@ -97,7 +113,10 @@ func NewOutbox(ctx context.Context, pool *pgxpool.Pool, target driver.Stager, op
 		if _, err := tx.Exec(ctx, r.Replace(sqlOutboxSchema)); err != nil {
 			return err
 		}
-		_, err := tx.Exec(ctx, r.Replace(sqlOutboxTable))
+		if _, err := tx.Exec(ctx, r.Replace(sqlOutboxTable)); err != nil {
+			return err
+		}
+		_, err := tx.Exec(ctx, r.Replace(sqlOutboxFailed))
 		return err
 	})
 	if err != nil {
@@ -115,10 +134,7 @@ func (o *Outbox) Tx(tx pgx.Tx) driver.TxWriter {
 	if tx == nil {
 		return outbox.Broken(driver.ErrNilTx)
 	}
-	return outbox.NewWriter(o.target, &outboxTx{o: o, exec: func(ctx context.Context, q string, args ...any) error {
-		_, err := tx.Exec(ctx, q, args...)
-		return err
-	}})
+	return outbox.NewWriter(o.target, &outboxTx{o: o, tx: tx})
 }
 
 // SQLTx is [Outbox.Tx] for an application on database/sql, with a [sql.DB] opened with pgx's
@@ -127,41 +143,75 @@ func (o *Outbox) SQLTx(tx *sql.Tx) driver.TxWriter {
 	if tx == nil {
 		return outbox.Broken(driver.ErrNilTx)
 	}
-	return outbox.NewWriter(o.target, &outboxTx{o: o, exec: func(ctx context.Context, q string, args ...any) error {
-		_, err := tx.ExecContext(ctx, q, args...)
-		return err
-	}})
+	return outbox.NewWriter(o.target, &outboxTx{o: o, tx: stdRows{tx}})
+}
+
+type rower interface {
+	QueryRow(ctx context.Context, q string, args ...any) pgx.Row
+}
+
+type stdRows struct{ tx *sql.Tx }
+
+func (r stdRows) QueryRow(ctx context.Context, q string, args ...any) pgx.Row {
+	return r.tx.QueryRowContext(ctx, q, args...)
 }
 
 type outboxTx struct {
-	o    *Outbox
-	exec func(ctx context.Context, q string, args ...any) error
+	o   *Outbox
+	tx  rower
+	seq int64
 }
 
 func (t *outboxTx) Put(ctx context.Context, id string, data []byte) error {
-	if err := t.exec(ctx, t.o.q.put, id, data); err != nil {
+	var err error
+	if t.seq == 0 {
+		err = t.tx.QueryRow(ctx, t.o.q.add, id, data).Scan(&t.seq)
+	} else {
+		var seq int64
+		err = t.tx.QueryRow(ctx, t.o.q.set+" RETURNING seq", t.seq, data).Scan(&seq)
+	}
+	if err != nil {
 		return fmt.Errorf("kiln: outbox: %w", err)
 	}
 	return nil
 }
 
-func (t *outboxTx) Deliver(ctx context.Context, id string) error {
+type outboxEntry struct {
+	seq     int64
+	id      string
+	data    []byte
+	created time.Time
+}
+
+func (t *outboxTx) Deliver(ctx context.Context) error {
+	o := t.o
+	e := outboxEntry{seq: t.seq}
+	t.seq = 0
+	if e.seq == 0 {
+		return nil
+	}
 	var applyErr error
-	err := pgx.BeginFunc(ctx, t.o.pool, func(tx pgx.Tx) error {
-		var data []byte
-		switch err := tx.QueryRow(ctx, t.o.q.one, id).Scan(&data); {
+	err := pgx.BeginFunc(ctx, o.pool, func(tx pgx.Tx) error {
+		b := &pgx.Batch{}
+		b.Queue(sqlOutboxLazy)
+		b.Queue(o.q.take, e.seq)
+		br := tx.SendBatch(ctx, b)
+		_, err := br.Exec()
+		if err == nil {
+			err = br.QueryRow().Scan(&e.id, &e.data, &e.created)
+		}
+		if cerr := br.Close(); err == nil {
+			err = cerr
+		}
+		switch {
 		case errors.Is(err, pgx.ErrNoRows):
 			return nil
 		case err != nil:
 			return err
 		}
-		applyErr = t.o.target.Apply(ctx, id, data)
-		switch {
-		case applyErr == nil:
-			_, err := tx.Exec(ctx, t.o.q.done, []string{id})
-			return err
-		case outbox.Permanent(applyErr):
-			_, err := tx.Exec(ctx, t.o.q.fail, id, applyErr.Error())
+		applyErr = o.target.Apply(ctx, e.id, e.data)
+		if applyErr != nil && outbox.Permanent(applyErr) {
+			_, err := tx.Exec(ctx, o.q.park, e.seq, e.id, e.data, e.created, applyErr.Error())
 			return err
 		}
 		return applyErr
@@ -180,45 +230,51 @@ func (t *outboxTx) Deliver(ctx context.Context, id string) error {
 // a Notify holds. Its error is the first one an entry met; the other entries are applied all the
 // same.
 func (o *Outbox) Drain(ctx context.Context, limit int) (int, error) {
-	type entry struct {
-		id   string
-		data []byte
-	}
 	n := 0
 	var first error
 	err := pgx.BeginFunc(ctx, o.pool, func(tx pgx.Tx) error {
-		rows, _ := tx.Query(ctx, o.q.next, max(limit, 1))
-		entries, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (entry, error) {
-			var e entry
-			err := row.Scan(&e.id, &e.data)
+		b := &pgx.Batch{}
+		b.Queue(sqlOutboxLazy)
+		b.Queue(o.q.next, max(limit, 1))
+		br := tx.SendBatch(ctx, b)
+		if _, err := br.Exec(); err != nil {
+			br.Close()
+			return err
+		}
+		rows, _ := br.Query()
+		entries, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (outboxEntry, error) {
+			var e outboxEntry
+			err := row.Scan(&e.seq, &e.id, &e.data, &e.created)
 			return e, err
 		})
+		if cerr := br.Close(); err == nil {
+			err = cerr
+		}
 		if err != nil {
 			return err
 		}
-		var done []string
+		var gone []int64
 		for _, e := range entries {
 			err := o.target.Apply(ctx, e.id, e.data)
 			switch {
 			case err == nil:
-				done = append(done, e.id)
+				n++
+				gone = append(gone, e.seq)
 			case outbox.Permanent(err):
-				if _, ferr := tx.Exec(ctx, o.q.fail, e.id, err.Error()); ferr != nil {
-					return ferr
+				if _, perr := tx.Exec(ctx, o.q.park, e.seq, e.id, e.data, e.created, err.Error()); perr != nil {
+					return perr
 				}
+				gone = append(gone, e.seq)
 				first = cmp.Or(first, fmt.Errorf("kiln: outbox entry %s set aside: %w", e.id, err))
 			default:
 				first = cmp.Or(first, err)
 			}
 		}
-		if len(done) == 0 {
+		if len(gone) == 0 {
 			return nil
 		}
-		if _, err := tx.Exec(ctx, o.q.done, done); err != nil {
-			return err
-		}
-		n = len(done)
-		return nil
+		_, err = tx.Exec(ctx, o.q.done, gone)
+		return err
 	})
 	if err != nil {
 		return 0, fmt.Errorf("kiln: outbox: %w", err)

@@ -16,24 +16,34 @@ var _ driver.Outbox = (*Outbox)(nil)
 
 const sqlOutboxTable = `CREATE TABLE IF NOT EXISTS {p}outbox (
 	seq BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-	id VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin NOT NULL UNIQUE,
+	id VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
 	data LONGBLOB NOT NULL,
-	created_at DATETIME(6) NOT NULL DEFAULT (NOW(6)),
-	failed TEXT
+	created_at DATETIME(6) NOT NULL DEFAULT (NOW(6))
 )`
 
-const sqlOutboxPut = `INSERT INTO {p}outbox (id, data) VALUES (?, ?) AS new
-ON DUPLICATE KEY UPDATE data = new.data`
+const sqlOutboxFailed = `CREATE TABLE IF NOT EXISTS {p}outbox_failed (
+	seq BIGINT NOT NULL PRIMARY KEY,
+	id VARCHAR(191) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+	data LONGBLOB NOT NULL,
+	created_at DATETIME(6) NOT NULL,
+	failed_at DATETIME(6) NOT NULL DEFAULT (NOW(6)),
+	reason TEXT NOT NULL
+)`
 
-const sqlOutboxOne = `SELECT data FROM {p}outbox WHERE id = ? AND failed IS NULL FOR UPDATE SKIP LOCKED`
+const sqlOutboxAdd = `INSERT INTO {p}outbox (id, data) VALUES (?, ?)`
 
-const sqlOutboxNext = `SELECT id, data FROM {p}outbox
-WHERE failed IS NULL AND created_at < NOW(6) - INTERVAL 1 SECOND
+const sqlOutboxSet = `UPDATE {p}outbox SET data = ? WHERE seq = ?`
+
+const sqlOutboxOne = `SELECT id, data FROM {p}outbox WHERE seq = ? FOR UPDATE SKIP LOCKED`
+
+const sqlOutboxNext = `SELECT seq, id, data FROM {p}outbox
+WHERE created_at < NOW(6) - INTERVAL 1 SECOND
 ORDER BY seq LIMIT ? FOR UPDATE SKIP LOCKED`
 
-const sqlOutboxDone = `DELETE FROM {p}outbox WHERE id = ?`
+const sqlOutboxDone = `DELETE FROM {p}outbox WHERE seq = ?`
 
-const sqlOutboxFail = `UPDATE {p}outbox SET failed = ? WHERE id = ?`
+const sqlOutboxPark = `INSERT IGNORE INTO {p}outbox_failed (seq, id, data, created_at, reason)
+SELECT seq, id, data, created_at, ? FROM {p}outbox WHERE seq = ?`
 
 // Outbox is a [driver.Outbox] in MySQL, for applications that keep their jobs in another store,
 // such as redisstore, and still want to enqueue inside their database transactions. It is one
@@ -51,8 +61,8 @@ const sqlOutboxFail = `UPDATE {p}outbox SET failed = ? WHERE id = ?`
 //	err = tx.Commit()
 //	w.Notify(ctx)
 //
-// A row whose writes can never be applied keeps the reason in its failed column and stays in the
-// table, where nothing touches it again.
+// Writes that can never be applied move to the table kiln_outbox_failed with the reason, where
+// nothing touches them again.
 type Outbox struct {
 	db     *sql.DB
 	target driver.Stager
@@ -60,7 +70,7 @@ type Outbox struct {
 }
 
 type outboxSQL struct {
-	put, one, next, done, fail string
+	add, set, one, next, done, park string
 }
 
 // NewOutbox returns an outbox in db whose entries are staged for target and applied to it. It
@@ -76,17 +86,20 @@ func NewOutbox(ctx context.Context, db *sql.DB, target driver.Stager, opts ...Op
 	}
 	r := strings.NewReplacer("{p}", c.prefix)
 	o := &Outbox{db: db, target: target, q: outboxSQL{
-		put:  r.Replace(sqlOutboxPut),
+		add:  r.Replace(sqlOutboxAdd),
+		set:  r.Replace(sqlOutboxSet),
 		one:  r.Replace(sqlOutboxOne),
 		next: r.Replace(sqlOutboxNext),
 		done: r.Replace(sqlOutboxDone),
-		fail: r.Replace(sqlOutboxFail),
+		park: r.Replace(sqlOutboxPark),
 	}}
 	if c.noMigrate {
 		return o, nil
 	}
-	if _, err := db.ExecContext(ctx, r.Replace(sqlOutboxTable)); err != nil {
-		return nil, fmt.Errorf("kiln: outbox table: %w", err)
+	for _, ddl := range []string{sqlOutboxTable, sqlOutboxFailed} {
+		if _, err := db.ExecContext(ctx, r.Replace(ddl)); err != nil {
+			return nil, fmt.Errorf("kiln: outbox table: %w", err)
+		}
 	}
 	return o, nil
 }
@@ -104,38 +117,52 @@ func (o *Outbox) Tx(tx *sql.Tx) driver.TxWriter {
 }
 
 type outboxTx struct {
-	o  *Outbox
-	tx *sql.Tx
+	o   *Outbox
+	tx  *sql.Tx
+	seq int64
 }
 
 func (t *outboxTx) Put(ctx context.Context, id string, data []byte) error {
-	if _, err := t.tx.ExecContext(ctx, t.o.q.put, id, data); err != nil {
+	if t.seq != 0 {
+		if _, err := t.tx.ExecContext(ctx, t.o.q.set, data, t.seq); err != nil {
+			return fmt.Errorf("kiln: outbox: %w", err)
+		}
+		return nil
+	}
+	res, err := t.tx.ExecContext(ctx, t.o.q.add, id, data)
+	if err == nil {
+		t.seq, err = res.LastInsertId()
+	}
+	if err != nil {
 		return fmt.Errorf("kiln: outbox: %w", err)
 	}
 	return nil
 }
 
-func (t *outboxTx) Deliver(ctx context.Context, id string) error {
+func (t *outboxTx) Deliver(ctx context.Context) error {
 	o := t.o
+	seq := t.seq
+	t.seq = 0
+	if seq == 0 {
+		return nil
+	}
 	var applyErr error
 	err := o.inTx(ctx, func(tx *sql.Tx) error {
-		var data []byte
-		switch err := tx.QueryRowContext(ctx, o.q.one, id).Scan(&data); {
+		var (
+			id   string
+			data []byte
+		)
+		switch err := tx.QueryRowContext(ctx, o.q.one, seq).Scan(&id, &data); {
 		case errors.Is(err, sql.ErrNoRows):
 			return nil
 		case err != nil:
 			return err
 		}
 		applyErr = o.target.Apply(ctx, id, data)
-		switch {
-		case applyErr == nil:
-			_, err := tx.ExecContext(ctx, o.q.done, id)
-			return err
-		case outbox.Permanent(applyErr):
-			_, err := tx.ExecContext(ctx, o.q.fail, applyErr.Error(), id)
-			return err
+		if applyErr != nil && !outbox.Permanent(applyErr) {
+			return applyErr
 		}
-		return applyErr
+		return o.settle(ctx, tx, seq, applyErr)
 	})
 	if applyErr != nil {
 		return applyErr
@@ -144,6 +171,16 @@ func (t *outboxTx) Deliver(ctx context.Context, id string) error {
 		return fmt.Errorf("kiln: outbox: %w", err)
 	}
 	return nil
+}
+
+func (o *Outbox) settle(ctx context.Context, tx *sql.Tx, seq int64, reason error) error {
+	if reason != nil {
+		if _, err := tx.ExecContext(ctx, o.q.park, reason.Error(), seq); err != nil {
+			return err
+		}
+	}
+	_, err := tx.ExecContext(ctx, o.q.done, seq)
+	return err
 }
 
 func (o *Outbox) inTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
@@ -164,6 +201,7 @@ func (o *Outbox) inTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 // same.
 func (o *Outbox) Drain(ctx context.Context, limit int) (int, error) {
 	type entry struct {
+		seq  int64
 		id   string
 		data []byte
 	}
@@ -177,7 +215,7 @@ func (o *Outbox) Drain(ctx context.Context, limit int) (int, error) {
 		var entries []entry
 		for rows.Next() {
 			var e entry
-			if err := rows.Scan(&e.id, &e.data); err != nil {
+			if err := rows.Scan(&e.seq, &e.id, &e.data); err != nil {
 				rows.Close()
 				return err
 			}
@@ -191,17 +229,15 @@ func (o *Outbox) Drain(ctx context.Context, limit int) (int, error) {
 			err := o.target.Apply(ctx, e.id, e.data)
 			switch {
 			case err == nil:
-				if _, err := tx.ExecContext(ctx, o.q.done, e.id); err != nil {
-					return err
-				}
 				done++
 			case outbox.Permanent(err):
-				if _, ferr := tx.ExecContext(ctx, o.q.fail, err.Error(), e.id); ferr != nil {
-					return ferr
-				}
 				first = cmp.Or(first, fmt.Errorf("kiln: outbox entry %s set aside: %w", e.id, err))
 			default:
 				first = cmp.Or(first, err)
+				continue
+			}
+			if serr := o.settle(ctx, tx, e.seq, err); serr != nil {
+				return serr
 			}
 		}
 		n = done

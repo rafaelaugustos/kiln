@@ -31,7 +31,7 @@ type wireParams struct {
 	Title  string       `json:"title,omitempty"`
 	Pri    int16        `json:"pri,omitempty"`
 	Max    int          `json:"max"`
-	Tmo    string       `json:"tmo"`
+	Tmo    string       `json:"tmo,omitempty"`
 	HR     bool         `json:"hr,omitempty"`
 	Run    int64        `json:"run,omitempty"`
 	Delay  int64        `json:"delay,omitempty"`
@@ -57,7 +57,7 @@ func params(jobs []driver.InsertParams) []wireParams {
 		w := wireParams{
 			K: p.Kind, Q: p.Queue, Args: string(p.Args),
 			Meta: object(p.Meta), Tags: list(p.Tags), Title: clip(p.Title, maxTitle),
-			Pri: p.Priority, Max: p.MaxAttempts, Tmo: strconv.FormatInt(int64(p.Timeout), 10),
+			Pri: p.Priority, Max: p.MaxAttempts,
 			HR: !p.RunAt.IsZero(), Delay: micros(p.Delay),
 			UFor: micros(p.UniqueFor), URep: p.UniqueReplace, UDeb: micros(p.UniqueDebounce),
 			LK: p.LimitKey, LMax: p.LimitMax, LRate: p.LimitRate, LPer: micros(p.LimitPer), LBurst: p.LimitBurst,
@@ -65,6 +65,9 @@ func params(jobs []driver.InsertParams) []wireParams {
 		}
 		if w.HR {
 			w.Run = p.RunAt.UnixMicro()
+		}
+		if p.Timeout != 0 {
+			w.Tmo = strconv.FormatInt(int64(p.Timeout), 10)
 		}
 		if len(p.UniqueKey) > 0 {
 			w.UK = base64.RawStdEncoding.EncodeToString(p.UniqueKey)
