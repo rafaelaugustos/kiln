@@ -15,6 +15,7 @@ type options struct {
 	backend   string
 	dsn       string
 	container string
+	redis     string
 	worker    string
 }
 
@@ -23,7 +24,8 @@ func main() {
 	flag.DurationVar(&o.duration, "duration", 15*time.Minute, "how long to enqueue jobs and inject faults before draining")
 	flag.IntVar(&o.workers, "workers", 4, "number of worker processes")
 	flag.Float64Var(&o.rate, "rate", 50, "enqueues per second; a flow enqueue inserts three jobs")
-	flag.StringVar(&o.backend, "backend", "postgres", "postgres or mysql")
+	flag.StringVar(&o.backend, "backend", "postgres", "postgres, mysql, or redis: jobs in Redis, enqueued through an outbox in PostgreSQL")
+	flag.StringVar(&o.redis, "redis", "localhost:56379", "Redis address for the redis backend")
 	flag.StringVar(&o.dsn, "dsn", "", "database to use instead of the backend's local test container")
 	flag.StringVar(&o.container, "container", "", "docker container to restart, by default the backend's test container when -dsn is not set; none turns restarts off")
 	flag.StringVar(&o.worker, "worker", "", "run as the worker process with this name")
@@ -49,6 +51,8 @@ func (o *options) resolve() error {
 		dsn, container = "postgres://kiln:kiln@localhost:55432/kiln", "kiln-postgres"
 	case "mysql":
 		dsn, container = "kiln:kiln@tcp(localhost:53306)/kiln", "kiln-mysql"
+	case "redis":
+		dsn, container = "postgres://kiln:kiln@localhost:55432/kiln", "kiln-redis"
 	default:
 		return fmt.Errorf("unknown backend %q", o.backend)
 	}

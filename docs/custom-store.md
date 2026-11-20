@@ -21,7 +21,7 @@ what that method must do.
 | `Admin` | delete, requeue, pause, and recurring definitions |
 | `Inspector` | the read side the dashboard uses |
 
-Five more are optional. kiln checks for them and works without them:
+Six more are optional. kiln checks for them and works without them:
 
 | Interface | Without it |
 |---|---|
@@ -29,10 +29,17 @@ Five more are optional. kiln checks for them and works without them:
 | `Transactor` | `StartBatch` inserts step by step and cleans up after a failure |
 | `Console` | the job console stays empty |
 | `LimitReader` | the dashboard has no Limits page |
+| `Stager` | the outboxes of `pgstore` and `mysqlstore` cannot enqueue for the store |
 
 To let applications enqueue in their own transactions, also give the store a method that wraps one in a
 `driver.Writer`, as `Tx` does in the stores here. A writer that can admit and notify after the commit
 implements `driver.TxWriter`.
+
+A store that is not the application's database, as `redisstore` is not, gets there through `Stager`
+instead: `Stage` checks writes and hands out their ids without storing anything, and `Apply` makes them
+exist from their encoded form, once per id. An outbox keeps the encoded writes in the application's
+transaction and applies them after the commit. `drivertest.Run` has a Stage group for it, and
+`drivertest.RunOutbox` checks an implementation of `driver.Outbox` for another database.
 
 ## The rules most stores get wrong first
 

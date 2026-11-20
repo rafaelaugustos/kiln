@@ -1,7 +1,9 @@
 # Storage backends
 
 kiln keeps jobs in a database through a store. Pick the one for the database you already run; switching
-later means changing the line that builds the store, not the code that enqueues or handles jobs.
+later means changing the line that builds the store, not the code that enqueues or handles jobs. Jobs can
+also live in Redis, on their own or behind your database's transactions: [Where jobs live](placement.md)
+compares the three.
 
 | Backend | Package | Notes |
 |---|---|---|
@@ -9,6 +11,7 @@ later means changing the line that builds the store, not the code that enqueues 
 | SQL Server 2019+ and Azure SQL (CI runs 2022) | `mssqlstore` | any `*sql.DB` from `go-mssqldb`, table prefix option; needs `READ_COMMITTED_SNAPSHOT`; servers are woken through a `Bus`, or poll without one |
 | MySQL 8.0.19+ (CI runs 8.4) | `mysqlstore` | any `*sql.DB`, table prefix option; servers are woken through a `Bus`, or poll without one |
 | SQLite 3.38+ | `sqlitestore` | any `database/sql` driver, WAL; servers in the same process are woken directly, other processes through a `Bus` |
+| Redis 7+ and Valkey (CI runs Redis 7) | `redisstore` | go-redis v9, key prefix option; Pub/Sub wakeups; durability follows the server's persistence |
 | in memory | `memstore` | tests and single-process tools; everything is lost when the process exits |
 
 Every backend passes the same conformance suite, `drivertest.Run`, so the semantics (retries,
@@ -16,12 +19,12 @@ continuations, batches, uniqueness, limits, fencing) do not change when the data
 new backend means implementing `driver.Store` and making that suite pass; see
 [Writing a store](custom-store.md).
 
-| | PostgreSQL | MySQL | SQL Server | SQLite | in memory |
-|---|---|---|---|---|---|
-| Wakes servers | `LISTEN`/`NOTIFY` | through a `Bus` | through a `Bus` | in its process; others through a `Bus` | in its process |
-| Enqueue in your transaction | `Tx(pgx.Tx)`, `SQLTx(*sql.Tx)` | `Tx(*sql.Tx)` | `Tx(*sql.Tx)` | `Tx(*sql.Tx)` | `Begin()` |
-| Where its tables live | a schema (`Schema`) | a table prefix (`Prefix`) | a table prefix (`Prefix`) | a table prefix (`Prefix`) | memory |
-| Job console, Limits page | yes | yes | yes | yes | yes |
+| | PostgreSQL | MySQL | SQL Server | SQLite | Redis | in memory |
+|---|---|---|---|---|---|---|
+| Wakes servers | `LISTEN`/`NOTIFY` | through a `Bus` | through a `Bus` | in its process; others through a `Bus` | Pub/Sub | in its process |
+| Enqueue in your transaction | `Tx(pgx.Tx)`, `SQLTx(*sql.Tx)` | `Tx(*sql.Tx)` | `Tx(*sql.Tx)` | `Tx(*sql.Tx)` | through an outbox in PostgreSQL or MySQL | `Begin()` |
+| Where its data lives | a schema (`Schema`) | a table prefix (`Prefix`) | a table prefix (`Prefix`) | a table prefix (`Prefix`) | a key prefix (`Prefix`) | memory |
+| Job console, Limits page | yes | yes | yes | yes | yes | yes |
 
 PostgreSQL wakes servers with `LISTEN`/`NOTIFY`. MySQL and SQL Server have nothing equivalent, and SQLite
 can only wake servers in its own process, so all three accept a `driver.Bus`. `redisbus` is one over Redis Pub/Sub:
@@ -76,3 +79,14 @@ store, err := sqlitestore.New(ctx, db)
 - Use `_txlock=immediate` for transactions you pass to `store.Tx`, and keep them short: while one is
   open, every other writer on the file waits, kiln's servers included.
 - Leave `SetMaxOpenConns` at 2 or more.
+
+`redisstore` takes any go-redis client and needs Redis 7.0 or later, with `maxmemory-policy noeviction`:
+
+```go
+rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", ContextTimeoutEnabled: true})
+store, err := redisstore.New(ctx, rdb)
+```
+
+It loads its code into the server as a function library and runs every operation as one call, so there
+are no row locks to wait on. What Redis changes about durability, memory and transactions, and how to
+enqueue inside a database transaction while the jobs run in Redis, is in [Where jobs live](placement.md).

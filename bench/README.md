@@ -23,6 +23,16 @@ and `-libs kiln,river` narrow the run, `-json file` writes the raw per-round num
 workload sizes. The run below (warm-up plus 5 rounds) took 11m38s; most of that is River draining at its
 default fetch rate.
 
+## What kiln writes to PostgreSQL
+
+`go run . -load` measures something else: what the queue costs the database it shares with an
+application. It places 10,000 orders (`-load-jobs`), each in a transaction that inserts the order row and
+enqueues one job, runs the jobs, and reads PostgreSQL's own counters before and after: WAL bytes,
+commits and rows written. It does so three times, with no jobs at all, with the jobs in PostgreSQL, and
+with the jobs in Redis (`-redis`, default `localhost:56379`) behind a PostgreSQL outbox, and prints the
+numbers per job with the first run subtracted. Nothing else should be writing to the database while it
+runs.
+
 ## Scenarios
 
 1. **Bulk insert.** 100,000 jobs in 10 calls of 10,000: kiln `EnqueueMany`, River `InsertMany` and

@@ -36,9 +36,22 @@
 //
 // # Transactions
 //
-// Redis is not the application's database, so there is no writer bound to the application's
-// transaction: a job enqueued here is not rolled back with it. [Store.InTx] groups the store's own
-// writes, which is what package kiln uses to insert a batch together with its jobs.
+// Redis is not the application's database, so the store has no writer bound to the application's
+// transaction of its own. An outbox gives one: [github.com/rafaelaugustos/kiln/pgstore.NewOutbox]
+// and its mysqlstore counterpart keep the jobs of a transaction in a small table of the
+// application's database, where they commit or roll back with it, and hand them to this store
+// right after the commit.
+//
+//	ob, err := pgstore.NewOutbox(ctx, pool, store)
+//	w := ob.Tx(tx)
+//	_, err = client.EnqueueTx(ctx, w, SendEmail{To: "a@b.c"})
+//	err = tx.Commit(ctx)
+//	w.Notify(ctx)
+//
+// The store is a [driver.Stager] for that: [Store.Stage] checks the writes and gives them their
+// ids, which costs one call to Redis inside the transaction, and [Store.Apply] makes them exist.
+// [Store.InTx] groups the store's own writes, which is what package kiln uses to insert a batch
+// together with its jobs.
 //
 // # Redis Cluster
 //

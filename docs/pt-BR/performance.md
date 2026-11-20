@@ -28,6 +28,21 @@ Por padrão, o River busca no máximo uma vez a cada 100ms, e é isso que limita
 com essa pausa reduzida, o esvaziamento no-op empata, e a latência p99 dos dois ficou ruidosa demais
 nessa máquina para decidir a favor de um ou de outro.
 
+## O que o kiln escreve no PostgreSQL
+
+A vazão diz quão rápida é a fila; isto diz quanto ela custa ao banco de dados que divide com a sua
+aplicação. 10.000 pedidos feitos por 8 goroutines, cada um em uma transação que insere o pedido e
+enfileira um job, com um servidor rodando os jobs. PostgreSQL 17, números por job além do insert do
+próprio pedido.
+
+| | WAL escrito | Commits | Linhas escritas |
+|---|---|---|---|
+| Jobs no PostgreSQL (`pgstore`) | 1.326 bytes | 2,4 | 4,2 |
+| Jobs no Redis, outbox no PostgreSQL | 387 bytes | 1, sem esperar | 2 |
+| Jobs no Redis, enfileirados direto | 0 | 0 | 0 |
+
+`cd bench && go run . -load` reproduz isso; [Onde os jobs moram](placement.md) explica os três setups.
+
 ## Sob uma carga parecida com produção
 
 Os números acima são benchmarks de propósito único. Para ver o kiln em algo mais parecido com produção,
@@ -91,6 +106,23 @@ DigitalOcean com 2 vCPU / 2 GB, com o kiln v0.8.0:
 
 Os workers registraram erros do store em volta de cada restart do banco de dados (capturas, heartbeats,
 leases), como esperado; nenhum deles custou um job.
+
+O mesmo harness com os jobs no Redis e os enqueues passando por um outbox no PostgreSQL
+(`-backend redis`), 15 minutos, 4 workers, 50 enqueues por segundo, Redis com o append-only file ligado:
+
+| | |
+|---|---|
+| Jobs | 58.067 |
+| Caos | 32 `SIGKILL`s, 24 `SIGTERM`s, 4 restarts do Redis |
+| Jobs perdidos | 0 |
+| Jobs executados mais vezes do que o permitido | 0 |
+| Pico de concorrência por chave limitada | igual ou abaixo do seu `Max` |
+| Enqueues tentados enquanto o Redis reiniciava | 20, todos desfeitos junto com a transação |
+| Store depois da execução | contadores de limit em 0, nada para o Sweep reparar, esvaziado em 17s |
+
+Um enqueue pelo outbox precisa do Redis por um instante, para checar o job e dar um id a ele, então as 20
+transações que encontraram o Redis reiniciando falharam por inteiro e não deixaram nada para trás, em
+nenhum dos dois stores.
 
 ```
 cd soak && go run . -duration 24h -rate 20

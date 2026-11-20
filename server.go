@@ -167,6 +167,11 @@ func (s *Server) Run(ctx context.Context) error {
 	work.Go(func() {
 		s.promote(ctx)
 	})
+	if s.cfg.Outbox != nil {
+		work.Go(func() {
+			s.relay(ctx)
+		})
+	}
 	if !s.cfg.DisableMaintenance {
 		lead.Go(func() {
 			s.lead(ctx)

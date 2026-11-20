@@ -1,5 +1,5 @@
 local function overlay()
-  return {jobs = {}, batches = {}}
+  return {jobs = {}, batches = {}, keys = {}}
 end
 
 local function finished(v, ov)
@@ -16,13 +16,21 @@ end
 
 local function replan(op)
   local pl = op.plan
+  local dup, rep, alias, holder = pl.dup or {}, pl.rep or {}, pl.alias or {}, pl.holder or {}
   local p = {items = {}, res = {}, order = {}}
   for i, ps in ipairs(op.jobs) do
     norm(ps)
-    p.items[i] = {p = ps, alias = pl.alias[i], holder = tonumber(pl.holder[i])}
-    p.res[i] = {id = tonumber(pl.ids[i]), st = pl.st[i], dup = pl.dup[i], rep = pl.rep[i]}
+    p.items[i] = {p = ps, alias = alias[i] or 0, holder = tonumber(holder[i] or 0)}
+    p.res[i] = {id = tonumber(pl.ids[i]), st = '', dup = dup[i] or false, rep = rep[i] or false}
   end
-  for _, i in ipairs(pl.order) do
+  local order = pl.order
+  if not order then
+    order = {}
+    for i = 1, #op.jobs do
+      order[i] = i
+    end
+  end
+  for _, i in ipairs(order) do
     local ps, r = p.items[i].p, p.res[i]
     local u = ps.uk ~= '' and S.holder(ps.uk) or nil
     if u and u.job ~= r.id then
@@ -65,8 +73,11 @@ local function check(op, ov)
   local p = replan(op)
   S.resolve(p, ov)
   for _, i in ipairs(p.order) do
-    local r, b = p.res[i], p.items[i].p.b
+    local r, b, uk = p.res[i], p.items[i].p.b, p.items[i].p.uk
     ov.jobs[r.id] = r.st
+    if uk ~= '' then
+      ov.keys[uk] = r.id
+    end
     if b ~= 0 and not ARCH[r.st] then
       local v = S.view(b, ov)
       v.live = v.live + 1
@@ -80,7 +91,7 @@ local function release(ops)
     if op.plan then
       for i, ps in ipairs(op.jobs) do
         local uk = ps.uk or ''
-        if uk ~= '' and not op.plan.dup[i] then
+        if uk ~= '' and not (op.plan.dup and op.plan.dup[i]) then
           local u = S.rawu(uk)
           if u and u.dl ~= 0 and u.job == tonumber(op.plan.ids[i]) then
             S.delu(uk)
@@ -110,19 +121,29 @@ function H.stage(a)
   end
   local p = S.prepare(a.jobs, ov)
   S.resolve(p, ov)
-  local pl = {ids = {}, st = {}, dup = {}, rep = {}, alias = {}, holder = {}, order = p.order}
+  local pl = {ids = {}}
+  local dup, rep, alias, holder = {}, {}, {}, {}
+  local dups, reps, aliases, holders, plain = false, false, false, false, #p.order == #p.res
   for i, r in ipairs(p.res) do
     local it = p.items[i]
     local ps = it.p
-    if not r.dup and ps.uk ~= '' then
+    if a.ttl > 0 and not r.dup and ps.uk ~= '' then
       S.setu(ps.uk, r.id, ps.ufor > 0 and NOW + ps.ufor or 0, NOW + a.ttl)
     end
     if it.alias > 0 then
       r.st = p.res[it.alias].st
     end
-    pl.ids[i], pl.st[i], pl.dup[i], pl.rep[i] = I(r.id), r.st, r.dup, r.rep
-    pl.alias[i], pl.holder[i] = it.alias, I(it.holder)
+    pl.ids[i] = I(r.id)
+    dup[i], rep[i], alias[i], holder[i] = r.dup, r.rep, it.alias, I(it.holder)
+    dups, reps = dups or r.dup, reps or r.rep
+    aliases, holders = aliases or it.alias > 0, holders or it.holder ~= 0
+    plain = plain and p.order[i] == i
   end
+  pl.dup = dups and dup or nil
+  pl.rep = reps and rep or nil
+  pl.alias = aliases and alias or nil
+  pl.holder = holders and holder or nil
+  pl.order = not plain and p.order or nil
   return {plan = pl, res = S.results(p)}
 end
 

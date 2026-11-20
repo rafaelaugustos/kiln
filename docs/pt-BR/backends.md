@@ -2,7 +2,8 @@
 
 O kiln guarda jobs em um banco de dados através de um store. Escolha o que corresponde ao banco de dados
 que você já usa; trocar depois significa mudar a linha que constrói o store, não o código que enfileira
-ou processa os jobs.
+ou processa os jobs. Os jobs também podem morar no Redis, sozinhos ou atrás das transações do seu banco de
+dados: [Onde os jobs moram](placement.md) compara os três.
 
 | Backend | Pacote | Notas |
 |---|---|---|
@@ -10,6 +11,7 @@ ou processa os jobs.
 | SQL Server 2019+ e Azure SQL (CI na 2022) | `mssqlstore` | qualquer `*sql.DB` do `go-mssqldb`, opção de prefixo de tabela; precisa de `READ_COMMITTED_SNAPSHOT`; os servidores são avisados através de um `Bus`, ou fazem poll sem um |
 | MySQL 8.0.19+ (CI na 8.4) | `mysqlstore` | qualquer `*sql.DB`, opção de prefixo de tabela; os servidores são avisados através de um `Bus`, ou fazem poll sem um |
 | SQLite 3.38+ | `sqlitestore` | qualquer driver `database/sql`, WAL; servidores no mesmo processo são avisados direto, outros processos através de um `Bus` |
+| Redis 7+ e Valkey (CI no Redis 7) | `redisstore` | go-redis v9, opção de prefixo de chave; avisos via Pub/Sub; a durabilidade segue a persistência do servidor |
 | em memória | `memstore` | testes e ferramentas de um único processo; tudo se perde quando o processo termina |
 
 Todo backend passa pela mesma suíte de conformidade, `drivertest.Run`, então a semântica (retentativas,
@@ -17,12 +19,12 @@ continuações, lotes, unicidade, limites, fencing) não muda quando o banco de 
 novo backend significa implementar `driver.Store` e fazer essa suíte passar; veja
 [Escrevendo um store](custom-store.md).
 
-| | PostgreSQL | MySQL | SQL Server | SQLite | em memória |
-|---|---|---|---|---|---|
-| Avisa os servidores | `LISTEN`/`NOTIFY` | através de um `Bus` | através de um `Bus` | no próprio processo; outros através de um `Bus` | no próprio processo |
-| Enfileirar na sua transação | `Tx(pgx.Tx)`, `SQLTx(*sql.Tx)` | `Tx(*sql.Tx)` | `Tx(*sql.Tx)` | `Tx(*sql.Tx)` | `Begin()` |
-| Onde ficam suas tabelas | um schema (`Schema`) | um prefixo de tabela (`Prefix`) | um prefixo de tabela (`Prefix`) | um prefixo de tabela (`Prefix`) | memória |
-| Console do job, página de Limites | sim | sim | sim | sim | sim |
+| | PostgreSQL | MySQL | SQL Server | SQLite | Redis | em memória |
+|---|---|---|---|---|---|---|
+| Avisa os servidores | `LISTEN`/`NOTIFY` | através de um `Bus` | através de um `Bus` | no próprio processo; outros através de um `Bus` | Pub/Sub | no próprio processo |
+| Enfileirar na sua transação | `Tx(pgx.Tx)`, `SQLTx(*sql.Tx)` | `Tx(*sql.Tx)` | `Tx(*sql.Tx)` | `Tx(*sql.Tx)` | através de um outbox no PostgreSQL ou MySQL | `Begin()` |
+| Onde ficam seus dados | um schema (`Schema`) | um prefixo de tabela (`Prefix`) | um prefixo de tabela (`Prefix`) | um prefixo de tabela (`Prefix`) | um prefixo de chave (`Prefix`) | memória |
+| Console do job, página de Limites | sim | sim | sim | sim | sim | sim |
 
 O PostgreSQL avisa os servidores com `LISTEN`/`NOTIFY`. MySQL e SQL Server não têm nada equivalente, e o
 SQLite só consegue avisar servidores no próprio processo, então os três aceitam um `driver.Bus`.
@@ -81,3 +83,16 @@ store, err := sqlitestore.New(ctx, db)
 - Use `_txlock=immediate` nas transações que você passa para `store.Tx`, e mantenha elas curtas: enquanto
   uma está aberta, todo outro writer do arquivo espera, incluindo os servidores do kiln.
 - Deixe `SetMaxOpenConns` em 2 ou mais.
+
+O `redisstore` recebe qualquer client go-redis e precisa do Redis 7.0 ou superior, com
+`maxmemory-policy noeviction`:
+
+```go
+rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", ContextTimeoutEnabled: true})
+store, err := redisstore.New(ctx, rdb)
+```
+
+Ele carrega seu código no servidor como uma biblioteca de funções e roda cada operação como uma única
+chamada, então não há locks de linha para esperar. O que o Redis muda em durabilidade, memória e
+transações, e como enfileirar dentro de uma transação do banco de dados enquanto os jobs rodam no Redis,
+está em [Onde os jobs moram](placement.md).

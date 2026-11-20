@@ -57,7 +57,7 @@ function sidebar(prefix: string, t: Record<string, string>): DefaultTheme.Sideba
     },
     {
       text: t.stores,
-      items: [page('backends', 'backends'), page('customStore', 'custom-store')],
+      items: [page('backends', 'backends'), page('placement', 'placement'), page('customStore', 'custom-store')],
     },
     {
       text: t.more,
@@ -97,6 +97,7 @@ const en = {
   upgrading: 'Upgrading',
   compatibility: 'Compatibility',
   backends: 'Storage backends',
+  placement: 'Where jobs live',
   customStore: 'Writing a store',
   hangfire: 'Coming from Hangfire',
   comparison: 'How kiln compares',
@@ -130,6 +131,7 @@ const pt = {
   upgrading: 'Atualizando',
   compatibility: 'Compatibilidade',
   backends: 'Bancos de dados',
+  placement: 'Onde os jobs moram',
   customStore: 'Escrevendo um store',
   hangfire: 'Vindo do Hangfire',
   comparison: 'Comparação',
@@ -140,8 +142,9 @@ const pt = {
 
 export default withMermaid({
   title: 'kiln',
-  description: 'Background jobs for Go, kept in PostgreSQL, MySQL, SQL Server or SQLite.',
+  description: 'Background jobs for Go, kept in PostgreSQL, MySQL, SQL Server, SQLite or Redis.',
   cleanUrls: true,
+  appearance: 'dark',
   lastUpdated: existsSync(new URL('../../.git', import.meta.url)),
   srcExclude: ['node_modules/**'],
   sitemap: { hostname: site },
@@ -212,7 +215,7 @@ export default withMermaid({
       label: 'Português',
       lang: 'pt-BR',
       link: '/pt-BR/',
-      description: 'Jobs em segundo plano para Go, guardados em PostgreSQL, MySQL, SQL Server ou SQLite.',
+      description: 'Jobs em segundo plano para Go, guardados em PostgreSQL, MySQL, SQL Server, SQLite ou Redis.',
       themeConfig: {
         nav: [
           { text: 'Guia', link: '/pt-BR/getting-started', activeMatch: '^/pt-BR/.+' },

@@ -21,7 +21,7 @@ detalha o que esse método precisa fazer.
 | `Admin` | excluir, reenfileirar, pausar, e definições de jobs recorrentes |
 | `Inspector` | o lado de leitura que o dashboard usa |
 
-Mais cinco são opcionais. O kiln verifica se elas existem e funciona sem elas:
+Mais seis são opcionais. O kiln verifica se elas existem e funciona sem elas:
 
 | Interface | Sem ela |
 |---|---|
@@ -29,10 +29,17 @@ Mais cinco são opcionais. O kiln verifica se elas existem e funciona sem elas:
 | `Transactor` | `StartBatch` insere passo a passo e limpa depois de uma falha |
 | `Console` | o console do job fica vazio |
 | `LimitReader` | o dashboard fica sem a página de Limites |
+| `Stager` | os outboxes do `pgstore` e do `mysqlstore` não conseguem enfileirar para o store |
 
 Para deixar aplicações enfileirarem nas próprias transações, dê ao store também um método que envolve
 uma transação em um `driver.Writer`, como o `Tx` faz nos stores daqui. Um writer que consegue admitir e
 notificar depois do commit implementa `driver.TxWriter`.
+
+Um store que não é o banco de dados da aplicação, como é o caso do `redisstore`, chega lá pelo `Stager`:
+o `Stage` verifica as escritas e entrega os ids delas sem guardar nada, e o `Apply` faz com que existam a
+partir da forma codificada, uma vez por id. Um outbox guarda as escritas codificadas na transação da
+aplicação e as aplica depois do commit. O `drivertest.Run` tem um grupo Stage para isso, e o
+`drivertest.RunOutbox` verifica uma implementação de `driver.Outbox` para outro banco de dados.
 
 ## As regras que a maioria dos stores erra primeiro
 

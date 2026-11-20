@@ -8,13 +8,15 @@ This is a separate module, outside `go.work` and CI, like `bench/`.
 
 ## Running
 
-It expects the local test containers: `kiln-postgres` on :55432 for PostgreSQL (the default) and
-`kiln-mysql` on :53306 for MySQL.
+It expects the local test containers: `kiln-postgres` on :55432 for PostgreSQL (the default),
+`kiln-mysql` on :53306 for MySQL, and `kiln-redis` on :56379 for the `redis` backend, which keeps the
+jobs in Redis and enqueues them through an outbox in PostgreSQL.
 
 ```
 cd soak
 GOWORK=off go run . -duration 15m
 GOWORK=off go run . -backend mysql -duration 24h -rate 20
+GOWORK=off go run . -backend redis -duration 15m
 ```
 
 | flag | default | |
@@ -22,9 +24,10 @@ GOWORK=off go run . -backend mysql -duration 24h -rate 20
 | `-duration` | 15m | how long to enqueue jobs and inject faults; the drain and the checks come after |
 | `-workers` | 4 | worker processes, each a kiln server |
 | `-rate` | 50 | enqueues per second; a flow enqueue inserts three jobs |
-| `-backend` | postgres | `postgres` or `mysql` |
+| `-backend` | postgres | `postgres`, `mysql`, or `redis`: jobs in Redis, enqueued through an outbox in PostgreSQL |
+| `-redis` | localhost:56379 | Redis address for the `redis` backend |
 | `-dsn` | the test container | database to use |
-| `-container` | the test container | container that `docker restart` hits; `none` turns restarts off. Without `-dsn` it defaults to `kiln-postgres` or `kiln-mysql`; with `-dsn` there are no restarts unless it is set |
+| `-container` | the test container | container that `docker restart` hits; `none` turns restarts off. Without `-dsn` it defaults to `kiln-postgres`, `kiln-mysql` or, for the `redis` backend, `kiln-redis`; with `-dsn` there are no restarts unless it is set |
 
 Each run drops and recreates the kiln schema `kiln_soak` (PostgreSQL) or the `kiln_soak_` tables
 (MySQL), and the harness's own tables `soak_enqueued` and `soak_runs`. Worker logs go to a

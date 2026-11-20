@@ -6,7 +6,7 @@
 </p>
 
 <p align="center">
-  Background jobs for Go, kept in PostgreSQL, MySQL, SQL Server or SQLite.
+  Background jobs for Go, kept in PostgreSQL, MySQL, SQL Server, SQLite or Redis.
 </p>
 
 <p align="center">
@@ -27,6 +27,8 @@
 kiln runs background jobs for Go programs, the way Hangfire does for .NET. Jobs are rows in the database
 you already have, so they survive restarts and crashes, they can be enqueued in the same transaction as the
 data that produced them, and you can watch and retry them from a dashboard that comes with the library.
+When the queue starts to weigh on that database, the same jobs can [live in Redis](#where-jobs-live), on
+their own or still enqueued inside your database's transactions.
 
 - **Retries** with exponential or custom backoff, snoozes, timeouts and permanent failures
 - **Workflows**: jobs that wait for one or many other jobs and read their outputs, and batches, nested if
@@ -40,7 +42,7 @@ data that produced them, and you can watch and retry them from a dashboard that 
 - **Cancellation** of a running job from any process
 - **Dashboard** in English or Brazilian Portuguese, and a JSON API, mounted on your own HTTP server
 - **OpenTelemetry** traces from the request that enqueued a job to the handler that ran it
-- **PostgreSQL, MySQL, SQL Server and SQLite**, plus an in-memory store for tests, all held to one
+- **PostgreSQL, MySQL, SQL Server, SQLite and Redis**, plus an in-memory store for tests, all held to one
   conformance suite
 
 Everything above is in this repository, under the MIT license. There is no paid edition. The full
@@ -50,6 +52,7 @@ documentation is at [kiln.rafaelaugusto.dev](https://kiln.rafaelaugusto.dev/).
 
 - [Quick start](#quick-start)
 - [How it works](#how-it-works)
+- [Where jobs live](#where-jobs-live)
 - [Concepts](#concepts)
 - [Behaviour worth knowing](#behaviour-worth-knowing)
 - [Dashboard](#dashboard)
@@ -182,6 +185,54 @@ learn about new work from the database's notifications (`LISTEN`/`NOTIFY` on Pos
 Redis bus on MySQL, SQL Server and SQLite) and by polling. One server at a time is also the leader: it fires recurring
 jobs, rescues the jobs of servers that stopped heartbeating, and prunes old jobs. There is no broker and
 no extra service to run.
+
+## Where jobs live
+
+Your database is the place to start: one system to run, and a job commits or rolls back with the rows it
+belongs to. When the queue's writes begin to compete with the application's own, the jobs can move to
+Redis, and the code that enqueues and handles them stays as it is.
+
+| | In your database | In Redis | Both, through an outbox |
+|---|---|---|---|
+| Store | `pgstore`, `mysqlstore`, `mssqlstore`, `sqlitestore` | `redisstore` | `redisstore` with `pgstore.NewOutbox` or `mysqlstore.NewOutbox` |
+| Enqueue inside your transaction | yes | no | yes |
+| What your database does for a job | everything | nothing | one insert in your transaction, one delete after it |
+| A job survives | what your database survives | what Redis is set up to survive | your database until the handoff, Redis after it |
+
+With the jobs in Redis:
+
+```go
+rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379", ContextTimeoutEnabled: true})
+store, err := redisstore.New(ctx, rdb)
+```
+
+With both, the job is written in your transaction and runs in Redis. `ob.Tx(tx)` takes the place of
+`store.Tx(tx)`:
+
+```go
+ob, err := pgstore.NewOutbox(ctx, pool, store)
+server, err := kiln.NewServer(client, mux, kiln.ServerConfig{Outbox: ob})
+
+w := ob.Tx(tx)
+client.EnqueueTx(ctx, w, SendReceipt{OrderID: id})
+tx.Commit(ctx)
+w.Notify(ctx)
+```
+
+A commit means the job reaches Redis, through `Notify` or through a server if the process stopped first,
+and a rollback means it never does. Measured on PostgreSQL 17, with 10,000 orders that each enqueue one
+job, this is what the queue adds to the database per job:
+
+| | WAL written | Commits | Rows written |
+|---|---|---|---|
+| Jobs in PostgreSQL | 1,326 bytes | 2.4 | 4.2 |
+| Jobs in Redis, outbox in PostgreSQL | 387 bytes | 1, not waited for | 2 |
+| Jobs in Redis, enqueued directly | 0 | 0 | 0 |
+
+The outbox writes 71% less to the log than keeping the jobs in PostgreSQL, and nothing stays behind to
+be pruned. `redisstore` passes the same conformance suite as the SQL stores; what it changes is
+durability, which is whatever Redis's persistence gives. [Where jobs live](docs/placement.md) has the
+trade-offs, and `cd bench && go run . -load` repeats the measurement.
 
 ## Concepts
 
@@ -378,6 +429,9 @@ Every store's transactional writer is a `driver.TxWriter` (`Notify` included, a 
 so code that runs on more than one store can hold one instead of switching on types. On PostgreSQL
 through `database/sql` (sqlx, bun, GORM with pgx's stdlib driver), `store.SQLTx(tx)` takes a `*sql.Tx`.
 
+With the jobs in Redis, the writer comes from an outbox in your database, `ob.Tx(tx)`, and the four lines
+above stay the same; see [Where jobs live](#where-jobs-live).
+
 ### Cancellation
 
 `client.Delete` on a job that is currently `processing` cancels that job's `context.Context` on
@@ -479,7 +533,7 @@ October 2026:
 
 | | kiln | Hangfire | River | Asynq |
 |---|---|---|---|---|
-| Storage | PostgreSQL, MySQL, SQL Server, SQLite | SQL Server; Redis with Pro; others from the community | PostgreSQL; SQLite (experimental) | Redis |
+| Storage | PostgreSQL, MySQL, SQL Server, SQLite, Redis | SQL Server; Redis with Pro; others from the community | PostgreSQL; SQLite (experimental) | Redis |
 | License | MIT | LGPL-3.0, paid Pro and Ace | MPL-2.0, paid Pro | MIT |
 | Retries with backoff | yes | yes | yes | yes |
 | Job waits for other jobs | yes | yes, several parents with Pro | Pro (workflows) | no |
@@ -507,6 +561,15 @@ On an Apple M4 Max, with PostgreSQL and MySQL in Docker on the same machine:
 | One server, 100 workers, no-op handler | ~21k jobs/s | ~6k jobs/s | ~70k jobs/s |
 | Enqueue to handler start | p50 3.3ms | ~5–20ms with `redisbus` | p50 0.16ms in the same process |
 
+What the queue writes to PostgreSQL per job, which is what it costs the database it shares with your
+application:
+
+| | WAL written | Commits | Rows written |
+|---|---|---|---|
+| Jobs in PostgreSQL | 1,326 bytes | 2.4 | 4.2 |
+| Jobs in Redis, outbox in PostgreSQL | 387 bytes | 1, not waited for | 2 |
+| Jobs in Redis, enqueued directly | 0 | 0 | 0 |
+
 Against [River](https://github.com/riverqueue/river) on the same PostgreSQL, kiln drains no-op jobs about
 as fast as River tuned to a 1ms fetch cooldown, and 20 times faster than River's defaults.
 [Performance](docs/performance.md) has the full numbers and how they were measured, along with a run under a
@@ -519,6 +582,7 @@ held.
 - [API reference](https://pkg.go.dev/github.com/rafaelaugustos/kiln) on pkg.go.dev
 - [The documentation site](https://kiln.rafaelaugusto.dev/), with everything below
 - [Storage backends](docs/backends.md): what each database needs, wakeups and the Redis bus
+- [Where jobs live](docs/placement.md): your database, Redis, or both through an outbox
 - [Operating kiln](docs/operating.md): timings, dead workers, connections, polling and health checks
 - [Upgrading](docs/upgrading.md): rolling deploys and what each release changes in the schema
 - [Compatibility](docs/compatibility.md): what stays stable across releases, and the Go versions kiln needs
@@ -532,7 +596,7 @@ kiln runs in production at [Sodexo](https://www.sodexo.com), [Zeep Labs](https:/
 [Starbem](https://github.com/Starbem) and in [Orbit](https://getcortexlabs.com/products/orbit/), by Cortex Labs.
 If your team uses it too, open a pull request to add yourself here.
 
-v1.0.0 is the first stable release. [Compatibility](docs/compatibility.md) describes what stays stable
+kiln has been stable since v1.0.0. [Compatibility](docs/compatibility.md) describes what stays stable
 throughout v1: the public API, the store interface and the dashboard's JSON API. Schema changes stay
 additive, and rolling upgrades are covered by the compatibility tests. Every release is listed in the
 [changelog](CHANGELOG.md).
