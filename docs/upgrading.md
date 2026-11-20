@@ -39,3 +39,7 @@ v1.0.0-rc.1 has no schema or API changes from v0.9.
 
 v1.0.0 is the first stable release, with no schema or API changes from v1.0.0-rc.1 or v0.9.
 Update every kiln module you use to v1.0.0 together.
+
+v1.1 has no schema changes for the existing stores and no API changes. `redisstore` is new in it, and so
+are the outboxes of `pgstore` and `mysqlstore`, which create two tables of their own, `outbox` and
+`outbox_failed`, the first time `NewOutbox` runs. Update every kiln module you use to v1.1.0 together.

@@ -3,7 +3,10 @@
 Every module in this repository (`kiln`, `pgstore`, `mysqlstore`, `mssqlstore`, `sqlitestore`, `redisstore`, `kilnotel`,
 `redisbus`) is released together under the same version. The GitHub releases have the full notes.
 
-## Unreleased
+## v1.1.0 (2026-11-20)
+
+Jobs can now live in Redis, on their own or behind the transactions of your database. Nothing changes
+for the SQL stores, and the public API and the store interface only gained things.
 
 ### Added
 - `redisstore`, a store that keeps jobs in Redis 7 or later, for applications that want their queue off
@@ -18,6 +21,20 @@ Every module in this repository (`kiln`, `pgstore`, `mysqlstore`, `mssqlstore`, 
   process did not get to notify.
 - driver: `Stager`, `Staged` and `Outbox`, the optional interfaces behind it, with conformance cases in
   `drivertest.Run` and a suite for outboxes in `drivertest.RunOutbox`.
+
+### Docs
+- [Where jobs live](https://kiln.rafaelaugusto.dev/placement): your database, Redis, or both through an
+  outbox, with what each one guarantees and what the queue writes to PostgreSQL in each: 1,326 bytes of
+  WAL per job with the jobs in PostgreSQL, 387 through the outbox, none with Redis alone.
+- The documentation site has a new home and a new look, with the dark theme as the default.
+
+### Upgrading
+- No schema changes for the existing stores, and no API changes: update every kiln module to v1.1.0
+  together.
+- `redisstore` is a new module, `github.com/rafaelaugustos/kiln/redisstore`. It needs Redis 7.0 or later
+  with `maxmemory-policy noeviction`.
+- An outbox creates its own two tables, `outbox` and `outbox_failed`, the first time `NewOutbox` runs,
+  next to kiln's tables or wherever `Schema` or `Prefix` says.
 
 ## v1.0.0 (2026-10-29)
 

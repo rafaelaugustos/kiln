@@ -42,3 +42,8 @@ A v0.9 também não tem mudanças de schema. `Client.OpenBatch` agora recebe um 
 
 A v1.0.0 é a primeira versão estável, sem mudanças de schema ou API em relação à v1.0.0-rc.1 ou à v0.9.
 Atualize todos os módulos do kiln que você usa para a v1.0.0 juntos.
+
+A v1.1 não tem mudanças de schema para os stores existentes nem mudanças de API. O `redisstore` é novo
+nela, assim como os outboxes do `pgstore` e do `mysqlstore`, que criam duas tabelas próprias, `outbox` e
+`outbox_failed`, na primeira vez que o `NewOutbox` roda. Atualize todos os módulos do kiln que você usa
+para a v1.1.0 juntos.
