@@ -8,6 +8,8 @@
     "docs:preview": "vitepress preview docs"
   },
   "devDependencies": {
+    "@fontsource/instrument-serif": "^5.3.0",
+    "@rafaelaugusto/jolt": "0.1.0-rc.17",
     "mermaid": "^11.4.1",
     "vitepress": "1.6.4",
     "vitepress-plugin-mermaid": "^2.0.17",
