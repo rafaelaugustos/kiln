@@ -92,6 +92,8 @@ func (r *sqlResults) Close() error {
 	return r.err
 }
 
+func (r *sqlResults) Tx() pgx.Tx { return nil }
+
 type sqlRows struct {
 	rows *sql.Rows
 	t    *sqlTx
