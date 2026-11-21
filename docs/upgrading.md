@@ -43,3 +43,6 @@ Update every kiln module you use to v1.0.0 together.
 v1.1 has no schema changes for the existing stores and no API changes. `redisstore` is new in it, and so
 are the outboxes of `pgstore` and `mysqlstore`, which create two tables of their own, `outbox` and
 `outbox_failed`, the first time `NewOutbox` runs. Update every kiln module you use to v1.1.0 together.
+
+v1.1.1 has no schema or API changes. `pgstore` now builds with pgx v5.12 and later and requires at least
+v5.12.0, the pgx release with two security fixes.

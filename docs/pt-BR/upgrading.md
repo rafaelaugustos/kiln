@@ -47,3 +47,6 @@ A v1.1 não tem mudanças de schema para os stores existentes nem mudanças de A
 nela, assim como os outboxes do `pgstore` e do `mysqlstore`, que criam duas tabelas próprias, `outbox` e
 `outbox_failed`, na primeira vez que o `NewOutbox` roda. Atualize todos os módulos do kiln que você usa
 para a v1.1.0 juntos.
+
+A v1.1.1 não tem mudanças de schema nem de API. O `pgstore` agora compila com o pgx v5.12 ou mais novo e
+exige pelo menos a v5.12.0, a versão do pgx com duas correções de segurança.

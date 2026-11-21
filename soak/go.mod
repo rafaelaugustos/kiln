@@ -14,10 +14,10 @@ replace (
 require (
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/jackc/pgx/v5 v5.12.0
-	github.com/rafaelaugustos/kiln v1.1.0
-	github.com/rafaelaugustos/kiln/mysqlstore v1.1.0
-	github.com/rafaelaugustos/kiln/pgstore v1.1.0
-	github.com/rafaelaugustos/kiln/redisstore v1.1.0
+	github.com/rafaelaugustos/kiln v1.1.1
+	github.com/rafaelaugustos/kiln/mysqlstore v1.1.1
+	github.com/rafaelaugustos/kiln/pgstore v1.1.1
+	github.com/rafaelaugustos/kiln/redisstore v1.1.1
 	github.com/redis/go-redis/v9 v9.22.0
 )
 

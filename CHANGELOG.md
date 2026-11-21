@@ -3,13 +3,17 @@
 Every module in this repository (`kiln`, `pgstore`, `mysqlstore`, `mssqlstore`, `sqlitestore`, `redisstore`, `kilnotel`,
 `redisbus`) is released together under the same version. The GitHub releases have the full notes.
 
-## Unreleased
+## v1.1.1 (2026-11-21)
 
 ### Fixed
 - `pgstore` builds with pgx v5.12 and later. pgx v5.12 added a `Tx` method to `pgx.BatchResults`, and
   the adapter `pgstore` uses for `database/sql` transactions lacked it, so a module that upgraded pgx
   stopped compiling. `pgstore` now requires pgx v5.12.0, the release that fixes GHSA-95fj-3fxw-g62g
   and an SQL injection in simple-protocol batches.
+
+### Upgrading
+- No schema or API changes. Update every kiln module to v1.1.1 together; a module that uses `pgstore`
+  moves to pgx v5.12.0 or later with it.
 
 ## v1.1.0 (2026-11-20)
 

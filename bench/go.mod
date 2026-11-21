@@ -12,9 +12,9 @@ replace (
 
 require (
 	github.com/jackc/pgx/v5 v5.12.0
-	github.com/rafaelaugustos/kiln v1.1.0
-	github.com/rafaelaugustos/kiln/pgstore v1.1.0
-	github.com/rafaelaugustos/kiln/redisstore v1.1.0
+	github.com/rafaelaugustos/kiln v1.1.1
+	github.com/rafaelaugustos/kiln/pgstore v1.1.1
+	github.com/rafaelaugustos/kiln/redisstore v1.1.1
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/riverqueue/river v0.47.0
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.47.0
